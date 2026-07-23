@@ -7,12 +7,16 @@ permitindo medir Precision@10 e falsos positivos ao longo do tempo.
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from datetime import date, datetime, timezone
 from pathlib import Path
 
 from julius.inventory.model import Account
 from julius.opportunities.base import Opportunity
+from julius.opportunities.lifecycle import LifecycleEvent
+from julius.state.diff import DiffEvent
+from julius.state.validation import ValidationResult
 
 
 @dataclass(frozen=True)
@@ -22,6 +26,31 @@ class ReviewSummary:
     false_positives: int = 0
     precision: float | None = None
     false_positive_rate: float | None = None
+
+
+@dataclass(frozen=True)
+class CalibrationFactor:
+    rule_id: str
+    sample_count: int
+    predicted_total: float
+    realized_total: float
+    factor: float
+    mean_precision: float
+
+
+@dataclass(frozen=True)
+class BenefitSummary:
+    validations: int = 0
+    predicted_monthly: float = 0.0
+    realized_monthly: float = 0.0
+    realization_rate: float | None = None
+
+
+@dataclass(frozen=True)
+class LifecycleLeadTimes:
+    detected_to_accepted_days: float | None = None
+    accepted_to_implemented_days: float | None = None
+    implemented_to_validated_days: float | None = None
 
 
 class HistoryStore:
@@ -92,7 +121,65 @@ class HistoryStore:
                 notes VARCHAR NOT NULL,
                 PRIMARY KEY (fingerprint, reviewed_at)
             );
+
+            CREATE TABLE IF NOT EXISTS lifecycle_events (
+                fingerprint VARCHAR NOT NULL,
+                account VARCHAR NOT NULL,
+                opportunity_id VARCHAR NOT NULL,
+                occurred_at TIMESTAMP NOT NULL,
+                from_status VARCHAR NOT NULL,
+                to_status VARCHAR NOT NULL,
+                actor VARCHAR NOT NULL,
+                reason VARCHAR NOT NULL,
+                automatic BOOLEAN NOT NULL,
+                PRIMARY KEY (fingerprint, occurred_at, to_status)
+            );
+
+            CREATE TABLE IF NOT EXISTS diff_events (
+                scan_id VARCHAR NOT NULL,
+                event_type VARCHAR NOT NULL,
+                fingerprint VARCHAR NOT NULL,
+                account VARCHAR NOT NULL,
+                asset_name VARCHAR NOT NULL,
+                rule_id VARCHAR NOT NULL,
+                previous_value DOUBLE,
+                current_value DOUBLE,
+                details_json VARCHAR NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS validations (
+                fingerprint VARCHAR NOT NULL,
+                account VARCHAR NOT NULL,
+                opportunity_id VARCHAR NOT NULL,
+                rule_id VARCHAR NOT NULL,
+                validated_at TIMESTAMP NOT NULL,
+                predicted_monthly DOUBLE NOT NULL,
+                realized_monthly DOUBLE NOT NULL,
+                absolute_saving DOUBLE NOT NULL,
+                baseline_cost DOUBLE NOT NULL,
+                after_cost DOUBLE NOT NULL,
+                baseline_volume DOUBLE,
+                after_volume DOUBLE,
+                baseline_cost_per_unit DOUBLE,
+                after_cost_per_unit DOUBLE,
+                normalized_saving DOUBLE,
+                estimation_precision DOUBLE NOT NULL,
+                realization_rate DOUBLE,
+                performance_change_pct DOUBLE,
+                failure_rate_change_pct DOUBLE,
+                actor VARCHAR NOT NULL,
+                notes VARCHAR NOT NULL,
+                PRIMARY KEY (fingerprint, validated_at)
+            );
             """
+        )
+        self._db.execute(
+            "ALTER TABLE opportunity_snapshots "
+            "ADD COLUMN IF NOT EXISTS evidence_hash VARCHAR DEFAULT ''"
+        )
+        self._db.execute(
+            "ALTER TABLE opportunity_snapshots "
+            "ADD COLUMN IF NOT EXISTS urgency DOUBLE DEFAULT 1.0"
         )
 
     def record_run(
@@ -130,6 +217,8 @@ class HistoryStore:
                 o.status,
                 o.first_seen,
                 o.last_seen,
+                o.evidence_signature(),
+                o.urgency,
             ]
             for o in opportunities
         ]
@@ -160,8 +249,13 @@ class HistoryStore:
             if rows:
                 self._db.executemany(
                     """
-                    INSERT INTO opportunity_snapshots
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    INSERT INTO opportunity_snapshots (
+                        scan_id, fingerprint, opportunity_id, account, rule_id,
+                        asset_type, asset_name, bucket, execution_priority,
+                        monthly_expected, confidence, actionable, status,
+                        first_seen, last_seen, evidence_hash, urgency
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     rows,
                 )
@@ -239,6 +333,207 @@ class HistoryStore:
             false_positive_rate=round(false_positives / reviewed, 3),
         )
 
+    def latest_snapshots(self, account: str) -> list[dict]:
+        """Último snapshot completo anterior à próxima execução da conta."""
+        row = self._db.execute(
+            """
+            SELECT scan_id FROM runs
+            WHERE account = ?
+            ORDER BY scanned_on DESC, scan_id DESC
+            LIMIT 1
+            """,
+            [account],
+        ).fetchone()
+        if row is None:
+            return []
+        cursor = self._db.execute(
+            """
+            SELECT fingerprint, opportunity_id, account, rule_id, asset_type,
+                   asset_name, bucket, execution_priority, monthly_expected,
+                   confidence, actionable, status, first_seen, last_seen,
+                   evidence_hash, urgency
+            FROM opportunity_snapshots
+            WHERE account = ? AND scan_id = ?
+            """,
+            [account, row[0]],
+        )
+        columns = [item[0] for item in cursor.description]
+        return [dict(zip(columns, values)) for values in cursor.fetchall()]
+
+    def record_diff_events(self, scan_id: str, events: list[DiffEvent]) -> None:
+        if not events:
+            return
+        self._db.executemany(
+            """
+            INSERT INTO diff_events VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            [
+                [
+                    scan_id,
+                    event.event_type,
+                    event.fingerprint,
+                    event.account,
+                    event.asset_name,
+                    event.rule_id,
+                    event.previous_value,
+                    event.current_value,
+                    json.dumps(event.details, ensure_ascii=False, sort_keys=True),
+                ]
+                for event in events
+            ],
+        )
+
+    def record_lifecycle_event(self, event: LifecycleEvent) -> None:
+        self._db.execute(
+            """
+            INSERT INTO lifecycle_events VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            [
+                event.fingerprint,
+                event.account,
+                event.opportunity_id,
+                event.occurred_at.replace(tzinfo=None),
+                event.from_status,
+                event.to_status,
+                event.actor,
+                event.reason,
+                event.automatic,
+            ],
+        )
+
+    def record_validation(self, result: ValidationResult) -> None:
+        self._db.execute(
+            """
+            INSERT INTO validations VALUES (
+                ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+            )
+            """,
+            [
+                result.fingerprint,
+                result.account,
+                result.opportunity_id,
+                result.rule_id,
+                result.validated_at.replace(tzinfo=None),
+                result.predicted_monthly,
+                result.realized_monthly,
+                result.absolute_saving,
+                result.baseline_cost,
+                result.after_cost,
+                result.baseline_volume,
+                result.after_volume,
+                result.baseline_cost_per_unit,
+                result.after_cost_per_unit,
+                result.normalized_saving,
+                result.estimation_precision,
+                result.realization_rate,
+                result.performance_change_pct,
+                result.failure_rate_change_pct,
+                result.actor,
+                result.notes,
+            ],
+        )
+
+    def calibration_for(
+        self, rule_id: str, *, minimum_samples: int = 3
+    ) -> CalibrationFactor | None:
+        row = self._db.execute(
+            """
+            SELECT count(*) AS samples,
+                   sum(predicted_monthly) AS predicted,
+                   sum(realized_monthly) AS realized,
+                   avg(estimation_precision) AS mean_precision
+            FROM validations
+            WHERE rule_id = ?
+            """,
+            [rule_id],
+        ).fetchone()
+        if row is None or int(row[0]) < minimum_samples or float(row[1] or 0) <= 0:
+            return None
+        raw_factor = float(row[2]) / float(row[1])
+        return CalibrationFactor(
+            rule_id=rule_id,
+            sample_count=int(row[0]),
+            predicted_total=round(float(row[1]), 2),
+            realized_total=round(float(row[2]), 2),
+            factor=round(max(0.25, min(2.0, raw_factor)), 4),
+            mean_precision=round(float(row[3] or 0), 4),
+        )
+
+    def benefit_summary(self, account: str) -> BenefitSummary:
+        row = self._db.execute(
+            """
+            WITH latest AS (
+                SELECT *, row_number() OVER (
+                    PARTITION BY fingerprint ORDER BY validated_at DESC
+                ) AS position
+                FROM validations
+                WHERE account = ?
+            )
+            SELECT count(*), sum(predicted_monthly), sum(realized_monthly)
+            FROM latest WHERE position = 1
+            """,
+            [account],
+        ).fetchone()
+        count = int(row[0] or 0)
+        predicted = float(row[1] or 0.0)
+        realized = float(row[2] or 0.0)
+        return BenefitSummary(
+            validations=count,
+            predicted_monthly=round(predicted, 2),
+            realized_monthly=round(realized, 2),
+            realization_rate=round(realized / predicted, 4)
+            if predicted > 0
+            else None,
+        )
+
+    def latest_validations(self, account: str, *, limit: int = 10) -> list[dict]:
+        cursor = self._db.execute(
+            """
+            SELECT opportunity_id, rule_id, validated_at, predicted_monthly,
+                   realized_monthly, estimation_precision, realization_rate,
+                   normalized_saving, actor, notes
+            FROM validations
+            WHERE account = ?
+            ORDER BY validated_at DESC
+            LIMIT ?
+            """,
+            [account, limit],
+        )
+        columns = [item[0] for item in cursor.description]
+        return [dict(zip(columns, values)) for values in cursor.fetchall()]
+
+    def lifecycle_lead_times(self, account: str) -> LifecycleLeadTimes:
+        row = self._db.execute(
+            """
+            WITH first_seen AS (
+                SELECT fingerprint,
+                       min(try_cast(nullif(first_seen, '') AS DATE)) AS detected_at
+                FROM opportunity_snapshots
+                WHERE account = ?
+                GROUP BY fingerprint
+            ), milestones AS (
+                SELECT fingerprint,
+                       min(CASE WHEN to_status = 'accepted' THEN occurred_at END) accepted_at,
+                       min(CASE WHEN to_status = 'implemented' THEN occurred_at END) implemented_at,
+                       min(CASE WHEN to_status = 'validated' THEN occurred_at END) validated_at
+                FROM lifecycle_events
+                WHERE account = ?
+                GROUP BY fingerprint
+            )
+            SELECT
+                avg(date_diff('day', detected_at, accepted_at)),
+                avg(date_diff('day', accepted_at, implemented_at)),
+                avg(date_diff('day', implemented_at, validated_at))
+            FROM first_seen JOIN milestones USING (fingerprint)
+            """,
+            [account, account],
+        ).fetchone()
+        return LifecycleLeadTimes(
+            detected_to_accepted_days=_round_optional(row[0]),
+            accepted_to_implemented_days=_round_optional(row[1]),
+            implemented_to_validated_days=_round_optional(row[2]),
+        )
+
     def run_count(self) -> int:
         """Quantidade de snapshots de execução persistidos."""
         return int(self._db.execute("SELECT count(*) FROM runs").fetchone()[0])
@@ -248,7 +543,14 @@ class HistoryStore:
         directory = Path(directory)
         directory.mkdir(parents=True, exist_ok=True)
         written: list[Path] = []
-        for table in ("runs", "opportunity_snapshots", "reviews"):
+        for table in (
+            "runs",
+            "opportunity_snapshots",
+            "reviews",
+            "lifecycle_events",
+            "diff_events",
+            "validations",
+        ):
             target = directory / f"{table}.parquet"
             escaped = str(target.resolve()).replace("'", "''")
             self._db.execute(
@@ -259,3 +561,7 @@ class HistoryStore:
             )
             written.append(target)
         return written
+
+
+def _round_optional(value) -> float | None:
+    return round(float(value), 2) if value is not None else None

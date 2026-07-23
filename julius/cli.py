@@ -12,10 +12,11 @@ import typer
 from julius.notification import NotificationService
 from julius.notification.transports import DryRunTransport
 from julius.metrics import compute_kpis
+from julius.opportunities.lifecycle import can_transition
 from julius.pipeline import analyze
 from julius.portfolio import analyze_portfolio, discover_inputs
 from julius.report import renderer
-from julius.state import BacklogStore, HistoryStore
+from julius.state import BacklogStore, HistoryStore, validate_benefit
 
 app = typer.Typer(add_completion=False, help="Julius — oportunidades de otimização AWS (MVP 2).")
 
@@ -64,9 +65,18 @@ def report(
     input: str = typer.Option(_DEFAULT_INPUT, "--input", "-i"),
     output: str = typer.Option("data/reports", "--output", "-o"),
     fmt: str = typer.Option("all", "--format", "-f", help="html | json | all"),
+    store: str = typer.Option(_DEFAULT_STORE, "--store"),
+    history_db: str = typer.Option(_DEFAULT_HISTORY, "--history-db"),
+    parquet_dir: str = typer.Option(_DEFAULT_PARQUET, "--parquet-dir"),
 ) -> None:
     """Gera os artefatos (report.html, report.json, email.html/.txt)."""
-    a = analyze(input)
+    with HistoryStore(history_db) as history:
+        a = analyze(
+            input,
+            store=BacklogStore(store),
+            history=history,
+        )
+        history.export_parquet(parquet_dir)
     out = Path(output)
     out.mkdir(parents=True, exist_ok=True)
     written: list[str] = []
@@ -283,9 +293,11 @@ def review(
     notes: str = typer.Option("", "--notes"),
     history_db: str = typer.Option(_DEFAULT_HISTORY, "--history-db"),
     parquet_dir: str = typer.Option(_DEFAULT_PARQUET, "--parquet-dir"),
+    store: str = typer.Option(_DEFAULT_STORE, "--store"),
 ) -> None:
     """Lista ou registra a revisão humana das recomendações do Top 10."""
-    analysis = analyze(input)
+    backlog = BacklogStore(store)
+    analysis = analyze(input, store=backlog)
     top10 = analysis.opportunities[:10]
 
     with HistoryStore(history_db) as history:
@@ -326,6 +338,16 @@ def review(
             reviewer=reviewer.strip(),
             notes=notes,
         )
+        current_status = backlog.status_for(opportunity.fingerprint()) or "detected"
+        target_status = "reviewed" if verdict == "confirmed" else "dismissed"
+        if can_transition(current_status, target_status):
+            lifecycle_event = backlog.transition(
+                opportunity.fingerprint(),
+                target_status,
+                actor=reviewer.strip(),
+                reason=notes or f"revisão humana: {verdict}",
+            )
+            history.record_lifecycle_event(lifecycle_event)
         history.export_parquet(parquet_dir)
         labels = history.labels_for(analysis.opportunities)
         kpis = compute_kpis(analysis.account, analysis.opportunities, labels)
@@ -340,6 +362,144 @@ def review(
             f"falsos positivos {kpis.false_positives_at_10} "
             f"({kpis.false_positive_rate_at_10*100:.0f}%)"
         )
+
+
+@app.command("lifecycle")
+def lifecycle_command(
+    opportunity_id: str = typer.Option(..., "--opportunity-id"),
+    status: str = typer.Option(
+        ..., "--status", help="reviewed | accepted | planned | implemented | validated | dismissed"
+    ),
+    actor: str = typer.Option(..., "--actor"),
+    reason: str = typer.Option(..., "--reason"),
+    input: str = typer.Option(_DEFAULT_INPUT, "--input", "-i"),
+    store: str = typer.Option(_DEFAULT_STORE, "--store"),
+    history_db: str = typer.Option(_DEFAULT_HISTORY, "--history-db"),
+    parquet_dir: str = typer.Option(_DEFAULT_PARQUET, "--parquet-dir"),
+) -> None:
+    """Registra uma transição explícita do ciclo de vida."""
+    backlog = BacklogStore(store)
+    analysis = analyze(input, store=backlog)
+    opportunity = _opportunity_by_id(analysis, opportunity_id)
+    with HistoryStore(history_db) as history:
+        event = backlog.transition(
+            opportunity.fingerprint(),
+            status,
+            actor=actor,
+            reason=reason,
+        )
+        history.record_lifecycle_event(event)
+        history.export_parquet(parquet_dir)
+    typer.echo(
+        f"Estado: {opportunity_id} · {event.from_status} -> {event.to_status}"
+    )
+
+
+@app.command("diff")
+def diff_command(
+    input: str = typer.Option(_DEFAULT_INPUT, "--input", "-i"),
+    store: str = typer.Option(_DEFAULT_STORE, "--store"),
+    history_db: str = typer.Option(_DEFAULT_HISTORY, "--history-db"),
+    parquet_dir: str = typer.Option(_DEFAULT_PARQUET, "--parquet-dir"),
+) -> None:
+    """Compara a execução atual com o último snapshot persistido."""
+    with HistoryStore(history_db) as history:
+        analysis = analyze(
+            input,
+            store=BacklogStore(store),
+            history=history,
+        )
+        history.export_parquet(parquet_dir)
+    if not analysis.events:
+        typer.echo("Sem mudanças desde a última execução.")
+        return
+    typer.echo(f"Diff {analysis.scan_id}: {len(analysis.events)} evento(s)")
+    for event in analysis.events:
+        values = ""
+        if event.previous_value is not None or event.current_value is not None:
+            values = f" · {event.previous_value} -> {event.current_value}"
+        typer.echo(
+            f"- {event.event_type:<18} {event.asset_name} · {event.rule_id}{values}"
+        )
+
+
+@app.command("validate")
+def validate_command(
+    opportunity_id: str = typer.Option(..., "--opportunity-id"),
+    baseline_cost: float = typer.Option(..., "--baseline-cost"),
+    after_cost: float = typer.Option(..., "--after-cost"),
+    actor: str = typer.Option(..., "--actor"),
+    input: str = typer.Option(_DEFAULT_INPUT, "--input", "-i"),
+    baseline_volume: float | None = typer.Option(None, "--baseline-volume"),
+    after_volume: float | None = typer.Option(None, "--after-volume"),
+    baseline_performance: float | None = typer.Option(None, "--baseline-performance"),
+    after_performance: float | None = typer.Option(None, "--after-performance"),
+    baseline_failure_rate: float | None = typer.Option(None, "--baseline-failure-rate"),
+    after_failure_rate: float | None = typer.Option(None, "--after-failure-rate"),
+    notes: str = typer.Option("", "--notes"),
+    store: str = typer.Option(_DEFAULT_STORE, "--store"),
+    history_db: str = typer.Option(_DEFAULT_HISTORY, "--history-db"),
+    parquet_dir: str = typer.Option(_DEFAULT_PARQUET, "--parquet-dir"),
+) -> None:
+    """Valida o ganho realizado de uma oportunidade implementada."""
+    backlog = BacklogStore(store)
+    analysis = analyze(input, store=backlog)
+    opportunity = _opportunity_by_id(analysis, opportunity_id)
+    status = backlog.status_for(opportunity.fingerprint())
+    if status != "implemented":
+        raise typer.BadParameter(
+            f"A oportunidade precisa estar `implemented`; estado atual: {status}."
+        )
+    result = validate_benefit(
+        opportunity,
+        baseline_cost=baseline_cost,
+        after_cost=after_cost,
+        baseline_volume=baseline_volume,
+        after_volume=after_volume,
+        baseline_performance=baseline_performance,
+        after_performance=after_performance,
+        baseline_failure_rate=baseline_failure_rate,
+        after_failure_rate=after_failure_rate,
+        actor=actor,
+        notes=notes,
+    )
+    with HistoryStore(history_db) as history:
+        history.record_validation(result)
+        event = backlog.transition(
+            opportunity.fingerprint(),
+            "validated",
+            actor=actor,
+            reason=notes or "benefício realizado medido",
+        )
+        history.record_lifecycle_event(event)
+        calibration = history.calibration_for(opportunity.rule_id)
+        history.export_parquet(parquet_dir)
+    typer.echo(
+        f"Validada: prevista R$ {result.predicted_monthly:,.2f} · "
+        f"realizada R$ {result.realized_monthly:,.2f} · "
+        f"precisão {result.estimation_precision*100:.0f}%"
+    )
+    if calibration is not None:
+        typer.echo(
+            f"Calibração {opportunity.rule_id}: fator {calibration.factor:.3f} "
+            f"({calibration.sample_count} amostras)"
+        )
+
+
+def _opportunity_by_id(analysis, opportunity_id: str):
+    opportunity = next(
+        (
+            item
+            for item in analysis.opportunities
+            if item.opportunity_id == opportunity_id
+        ),
+        None,
+    )
+    if opportunity is None:
+        raise typer.BadParameter(
+            f"Oportunidade {opportunity_id!r} não existe na análise atual."
+        )
+    return opportunity
 
 
 def _graph_payload(analysis) -> dict:

@@ -1,7 +1,7 @@
 [project]
 name = "julius"
-version = "0.4.0"
-description = "Portfólio contínuo de oportunidades de otimização AWS (Data Mesh) — MVP 2"
+version = "0.5.0"
+description = "Portfólio contínuo de oportunidades de otimização AWS (Data Mesh) — MVP 3"
 requires-python = ">=3.11"
 dependencies = [
     "typer>=0.12",

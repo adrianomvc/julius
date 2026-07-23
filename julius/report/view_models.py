@@ -238,6 +238,11 @@ class ReportViewModel:
     producers: list[ProducerVM] = field(default_factory=list)
     previous_results: list[PreviousResultVM] = field(default_factory=list)
     manifest: list[dict] = field(default_factory=list)
+    diff_events: list[dict] = field(default_factory=list)
+    committed_fmt: str = "R$ 0"
+    realized_fmt: str = "R$ 0"
+    realization_rate_pct: str = "—"
+    lifecycle_lead_times: list[dict] = field(default_factory=list)
 
 
 def _recommendation(do_now: list[Opportunity]) -> str:
