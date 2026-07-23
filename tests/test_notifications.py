@@ -6,6 +6,7 @@ import json
 from email import policy
 from email.parser import BytesParser
 
+import pytest
 from typer.testing import CliRunner
 
 from julius.cli import app
@@ -14,8 +15,10 @@ from julius.notification import (
     EmailSettings,
     NotificationPolicy,
     NotificationService,
+    RecipientRegistryError,
     SendLog,
     SendResult,
+    load_recipient_registry,
     load_settings,
 )
 from julius.notification.transports import DryRunTransport, SesTransport, SmtpTransport
@@ -26,7 +29,6 @@ def _settings(**overrides) -> EmailSettings:
         "mode": "active",
         "transport": "ses",
         "sender": "julius@empresa.com",
-        "default_to": ["squad@empresa.com"],
         "allowed_recipient_domains": ["empresa.com"],
         "approved_recipient_groups": ["account-owners"],
     }
@@ -243,6 +245,92 @@ def test_email_config_contains_no_credentials(tmp_path):
     settings = load_settings(path)
     assert settings.mode == "dry-run"
     assert not hasattr(settings, "smtp_password")
+
+
+def test_recipient_registry_resolves_exact_enabled_account(tmp_path):
+    path = tmp_path / "recipients.json"
+    path.write_text(
+        json.dumps(
+            {
+                "schema_version": "1.0",
+                "accounts": [
+                    {
+                        "account": "consumer-avi",
+                        "to": ["squad-avi@empresa.com"],
+                        "cc": ["finops@empresa.com"],
+                        "recipient_group": "account-owners",
+                        "enabled": True,
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    recipients = load_recipient_registry(path).for_account("consumer-avi")
+    assert recipients.to == ["squad-avi@empresa.com"]
+    assert recipients.cc == ["finops@empresa.com"]
+    with pytest.raises(RecipientRegistryError, match="sem cadastro"):
+        load_recipient_registry(path).for_account("outra-conta")
+
+
+def test_recipient_registry_blocks_disabled_and_duplicate_addresses(tmp_path):
+    disabled = tmp_path / "disabled.json"
+    disabled.write_text(
+        json.dumps(
+            {
+                "schema_version": "1.0",
+                "accounts": [
+                    {
+                        "account": "consumer-avi",
+                        "to": ["squad@empresa.com"],
+                        "cc": [],
+                        "recipient_group": "account-owners",
+                        "enabled": False,
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(RecipientRegistryError, match="desabilitado"):
+        load_recipient_registry(disabled).for_account("consumer-avi")
+
+    duplicate = tmp_path / "duplicate.json"
+    duplicate.write_text(
+        json.dumps(
+            {
+                "schema_version": "1.0",
+                "accounts": [
+                    {
+                        "account": "consumer-avi",
+                        "to": ["squad@empresa.com"],
+                        "cc": ["SQUAD@empresa.com"],
+                        "recipient_group": "account-owners",
+                        "enabled": True,
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(RecipientRegistryError, match="duplicado"):
+        load_recipient_registry(duplicate)
+
+
+def test_active_cli_rejects_manual_recipient_before_transport_access():
+    result = CliRunner().invoke(
+        app,
+        [
+            "notify",
+            "--mode",
+            "active",
+            "--to",
+            "manual@empresa.com",
+        ],
+    )
+    assert result.exit_code != 0
+    assert "--to não é permitido" in result.output
 
 
 def test_notify_cli_defaults_to_offline_dry_run(tmp_path):

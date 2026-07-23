@@ -13,7 +13,6 @@ class EmailSettings:
     transport: str = "ses"
     aws_region: str = "sa-east-1"
     sender: str = ""
-    default_to: list[str] = field(default_factory=list)
     allowed_recipient_domains: list[str] = field(default_factory=list)
     approved_recipient_groups: list[str] = field(default_factory=list)
     max_recipients: int = 10

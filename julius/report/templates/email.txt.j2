@@ -1,6 +1,12 @@
 Julius · {{ r.account_masked }} · {{ r.period }}
 Identificamos {{ r.identified_fmt }}/mês em oportunidades.
 
+{% if r.ai_summary %}
+== ANÁLISE CONTEXTUAL PELO DEVIN ===================
+{{ r.ai_summary }}
+===================================================
+
+{% endif %}
 == FOCO 80/20 =====================================
  {{ r.pareto_count }} ações capturam ~{{ r.pareto_pct }}% da economia
  ({{ r.executable_count }} já executáveis = {{ r.executable_pct }}%)
@@ -12,6 +18,10 @@ Identificamos {{ r.identified_fmt }}/mês em oportunidades.
    Dificuldade: {{ o.difficulty_label }} · Responsável: {{ o.owner }}
    Como aplicar: {{ o.how_to_apply }}
 {% if o.doc_url %}   Doc AWS: {{ o.doc_url }}{% endif %}
+{% if o.ai_diagnosis %}   Contexto Devin: {{ o.ai_diagnosis }}
+   Próxima ação: {{ o.ai_recommendation }}
+{% for doc in o.ai_documentation %}   Doc validada: {{ doc.title }} — {{ doc.url }}
+{% endfor %}{% endif %}
 
 {% endfor %}
 Abrir relatório completo: {{ report_url }}

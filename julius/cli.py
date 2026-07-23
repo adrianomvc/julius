@@ -10,11 +10,21 @@ from pathlib import Path
 
 import typer
 
+from julius.agent import (
+    AgentOutputError,
+    load_agent_context,
+    prepare_agent_workspace,
+    validate_result_file,
+    write_validated_result,
+)
 from julius.aws.session import make_session
+from julius.ingest import load_account
 from julius.notification import (
     NotificationPolicy,
     NotificationService,
+    RecipientRegistryError,
     SendLog,
+    load_recipient_registry,
     load_settings,
 )
 from julius.notification.transports import DryRunTransport, SesTransport, SmtpTransport
@@ -23,14 +33,94 @@ from julius.opportunities.lifecycle import can_transition
 from julius.pipeline import analyze
 from julius.portfolio import analyze_portfolio, discover_inputs
 from julius.report import renderer
+from julius.report.contextual import attach_contextual_analysis
 from julius.state import BacklogStore, HistoryStore, validate_benefit
 
 app = typer.Typer(add_completion=False, help="Julius — oportunidades de otimização AWS (MVP 2).")
+agent_app = typer.Typer(
+    add_completion=False,
+    help="Ferramentas locais usadas pelo Devin para analisar com o Julius.",
+)
+app.add_typer(agent_app, name="agent")
 
 _DEFAULT_INPUT = "data/sample/consumer-avi.json"
 _DEFAULT_STORE = "data/state/backlog.json"
 _DEFAULT_HISTORY = "data/state/julius.duckdb"
 _DEFAULT_PARQUET = "data/state/parquet"
+
+
+def _load_agent_enrichment(
+    context_path: str,
+    result_path: str,
+):
+    if bool(context_path) != bool(result_path):
+        raise typer.BadParameter(
+            "--agent-context e --agent-result devem ser informados juntos."
+        )
+    if not context_path:
+        return None, None
+    try:
+        context = load_agent_context(context_path)
+        contextual = validate_result_file(context_path, result_path)
+    except (
+        AgentOutputError,
+        FileNotFoundError,
+        json.JSONDecodeError,
+        KeyError,
+        TypeError,
+        ValueError,
+    ) as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    return context, contextual
+
+
+@agent_app.command("prepare")
+def agent_prepare(
+    input: str = typer.Option(_DEFAULT_INPUT, "--input", "-i"),
+    output: str = typer.Option("data/agent", "--output", "-o"),
+    top: int = typer.Option(10, "--top", min=1, max=25),
+) -> None:
+    """Prepara contexto, contrato e instruções que o Devin analisará localmente."""
+    analysis = analyze(input)
+    context, files = prepare_agent_workspace(analysis, output, top=top)
+    typer.echo(
+        f"Contexto Devin preparado: conta {context.account['id']} · "
+        f"scan {context.scan_id} · {len(context.opportunities)} oportunidades"
+    )
+    for path in files:
+        typer.echo(f"- {path}")
+    typer.echo("Nenhum serviço externo foi chamado.")
+
+
+@agent_app.command("validate")
+def agent_validate(
+    context: str = typer.Option("data/agent/context.json", "--context"),
+    result: str = typer.Option("data/agent/result.json", "--result"),
+    output: str = typer.Option("", "--output", "-o"),
+) -> None:
+    """Valida a análise escrita pelo Devin contra o scan e os guardrails."""
+    try:
+        analysis = validate_result_file(context, result)
+    except (
+        AgentOutputError,
+        FileNotFoundError,
+        json.JSONDecodeError,
+        KeyError,
+        TypeError,
+        ValueError,
+    ) as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    output_path = (
+        Path(output)
+        if output
+        else Path(result).with_name("validated-result.json")
+    )
+    write_validated_result(analysis, output_path)
+    typer.echo(
+        f"Análise Devin válida: conta {analysis.account} · scan {analysis.scan_id} · "
+        f"{len(analysis.recommendations)} recomendações"
+    )
+    typer.echo(f"Resultado validado: {output_path}")
 
 
 @app.command()
@@ -75,15 +165,23 @@ def report(
     store: str = typer.Option(_DEFAULT_STORE, "--store"),
     history_db: str = typer.Option(_DEFAULT_HISTORY, "--history-db"),
     parquet_dir: str = typer.Option(_DEFAULT_PARQUET, "--parquet-dir"),
+    agent_context: str = typer.Option("", "--agent-context"),
+    agent_result: str = typer.Option("", "--agent-result"),
 ) -> None:
     """Gera os artefatos (report.html, report.json, email.html/.txt)."""
+    context, contextual = _load_agent_enrichment(agent_context, agent_result)
+    if context and str(context.account["id"]) != load_account(input).account_id:
+        raise typer.BadParameter("contexto Devin pertence a outra conta.")
     with HistoryStore(history_db) as history:
         a = analyze(
             input,
             store=BacklogStore(store),
             history=history,
+            scan_id=context.scan_id if context else None,
         )
         history.export_parquet(parquet_dir)
+    if context:
+        attach_contextual_analysis(a.vm, contextual)
     out = Path(output)
     out.mkdir(parents=True, exist_ok=True)
     written: list[str] = []
@@ -109,18 +207,25 @@ def notify(
     mode: str = typer.Option("dry-run", "--mode", help="dry-run | active"),
     outbox: str = typer.Option("data/outbox", "--outbox"),
     to: str = typer.Option(
-        "", "--to", help="Destinatários separados por vírgula; no active usa default_to se vazio."
+        "", "--to", help="Destinatários de prévia separados por vírgula (somente dry-run)."
     ),
     report_url: str = typer.Option(
         "", "--report-url", help="URL hospedada do relatório; vazio = anexo (report.html)."
     ),
     open_preview: bool = typer.Option(False, "--open-preview"),
     email_config: str = typer.Option("~/.julius-email.json", "--email-config"),
+    recipients_config: str = typer.Option(
+        "~/.julius-recipients.json",
+        "--recipients-config",
+        help="Cadastro local de destinatários por conta.",
+    ),
     transport: str = typer.Option("", "--transport", help="ses | smtp; vazio usa a configuração."),
     send_log: str = typer.Option("data/state/send_log.json", "--send-log"),
     profile: str = typer.Option("", "--profile", help="Perfil AWS CLI para SES."),
     region: str = typer.Option("", "--region", help="Região do SES."),
-    recipient_group: str = typer.Option("account-owners", "--recipient-group"),
+    recipient_group: str = typer.Option(
+        "", "--recipient-group", help="Grupo da prévia (somente dry-run)."
+    ),
     confirm: bool = typer.Option(
         False, "--confirm", help="Confirmação humana obrigatória para envio ativo manual."
     ),
@@ -129,16 +234,41 @@ def notify(
         "--non-interactive",
         help="Somente para grupos previamente aprovados na configuração.",
     ),
+    agent_context: str = typer.Option("", "--agent-context"),
+    agent_result: str = typer.Option("", "--agent-result"),
 ) -> None:
     """Compõe em outbox por padrão; envio ativo exige configuração e guardrails."""
     if mode not in {"dry-run", "active"}:
         raise typer.BadParameter("--mode deve ser dry-run ou active.")
-    a = analyze(input)
+    context, contextual = _load_agent_enrichment(agent_context, agent_result)
+    if context and str(context.account["id"]) != load_account(input).account_id:
+        raise typer.BadParameter("contexto Devin pertence a outra conta.")
+    a = analyze(input, scan_id=context.scan_id if context else None)
+    if context:
+        attach_contextual_analysis(a.vm, contextual)
     settings = None
+    registered = None
     if mode == "active":
+        if to:
+            raise typer.BadParameter(
+                "--to não é permitido em active; use o cadastro por conta."
+            )
+        if recipient_group:
+            raise typer.BadParameter(
+                "--recipient-group não é permitido em active; use o cadastro por conta."
+            )
         try:
             settings = load_settings(email_config)
-        except (FileNotFoundError, json.JSONDecodeError, TypeError, ValueError) as exc:
+            registered = load_recipient_registry(
+                recipients_config
+            ).for_account(a.account.account_id)
+        except (
+            FileNotFoundError,
+            RecipientRegistryError,
+            json.JSONDecodeError,
+            TypeError,
+            ValueError,
+        ) as exc:
             raise typer.BadParameter(str(exc)) from exc
 
     effective_url = report_url or (settings.report_base_url if settings else "")
@@ -153,11 +283,15 @@ def notify(
 
     if mode == "dry-run":
         recipients = recipients or ["squad@empresa.com"]
+        cc: list[str] = []
+        effective_group = recipient_group or "account-owners"
         sender = "julius@empresa.com"
         service = NotificationService(DryRunTransport(outbox, a.scan_id))
     else:
-        assert settings is not None
-        recipients = recipients or settings.default_to
+        assert settings is not None and registered is not None
+        recipients = registered.to
+        cc = registered.cc
+        effective_group = registered.recipient_group
         sender = settings.sender
         selected_transport = transport or settings.transport
         if selected_transport == "ses":
@@ -187,11 +321,12 @@ def notify(
         subject=renderer.subject(a.vm),
         sender=sender,
         recipients=recipients,
+        cc=cc,
         html_body=html,
         text_body=text,
         scan_id=a.scan_id,
         report_html=report_html,
-        recipient_group=recipient_group,
+        recipient_group=effective_group,
         mode=mode,
         confirmed=confirm,
         non_interactive=non_interactive,

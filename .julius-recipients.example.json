@@ -1,0 +1,25 @@
+{
+  "schema_version": "1.0",
+  "accounts": [
+    {
+      "account": "consumer-avi",
+      "to": [
+        "squad-avi@empresa.com"
+      ],
+      "cc": [
+        "finops@empresa.com"
+      ],
+      "recipient_group": "account-owners",
+      "enabled": false
+    },
+    {
+      "account": "123456789012",
+      "to": [
+        "squad-exemplo@empresa.com"
+      ],
+      "cc": [],
+      "recipient_group": "account-owners",
+      "enabled": false
+    }
+  ]
+}
