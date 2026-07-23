@@ -64,7 +64,17 @@ the contradiction in `missing_evidence` or `assumptions`; do not recalculate it.
    multiple profiles. Do not call AWS Organizations to expand the scope unless
    the user explicitly requests and authorizes it.
 
-4. Before collecting each account, run one of:
+4. For multiple accounts, require `~/.julius-accounts.json` based on
+   `.julius-accounts.example.json`. Only entries with `enabled: true` are in
+   scope. Verify the complete scope before collection:
+
+   ```bash
+   julius agent verify-accounts \
+     --config ~/.julius-accounts.json \
+     --output data/agent/verified-accounts.json
+   ```
+
+5. Before collecting a single account without that manifest, run one of:
 
    ```bash
    aws sts get-caller-identity
@@ -75,7 +85,7 @@ the contradiction in `missing_evidence` or `assumptions`; do not recalculate it.
    and that the configured identity/role is documented as read-only. Stop that
    account on mismatch; do not silently continue under another identity.
 
-5. Use an exported dataset when supplied. For live collection, write one dataset
+6. Use an exported dataset when supplied. For live collection, write one dataset
    per verified account:
 
    ```bash
@@ -87,21 +97,38 @@ the contradiction in `missing_evidence` or `assumptions`; do not recalculate it.
 
    Never reuse one account's output path for another account.
 
-6. Generate a separate agent workspace for each account:
+7. Collect the bounded technical artifacts using the same verified identity:
 
    ```bash
-   julius agent prepare --input <dataset.json> --output data/agent/<account>
+   julius agent collect-artifacts \
+     --input data/collected/<account>.json \
+     --profile <profile> \
+     --output data/artifacts/<account>
    ```
 
-7. Read that account's `instructions.md`, `context.json` and
+   Add `--role-arn` only when the account collection used that same explicit
+   role. This command may call only STS, S3 GetObject and Step Functions
+   list/describe operations. Stop on identity mismatch.
+
+8. Generate a separate agent workspace for each account:
+
+   ```bash
+   julius agent prepare \
+     --input <dataset.json> \
+     --output data/agent/<account> \
+     --artifacts-manifest data/artifacts/<account>/manifest.json
+   ```
+
+9. Read that account's `instructions.md`, `context.json` and
    `output-schema.json`. Analyze only opportunities present in that context.
-8. Prefer evidence in the context. When evidence is absent, explicitly list it
+   Read only technical files referenced by `technical_artifacts`.
+10. Prefer evidence in the context. When evidence is absent, explicitly list it
    under `missing_evidence`.
-9. For every implementation recommendation, provide at least one relevant link
+11. For every implementation recommendation, provide at least one relevant link
    under `https://docs.aws.amazon.com/`. Never invent a URL. Open and verify the
    page before returning it.
-10. Write only the structured result to that account's `result.json`.
-11. Validate it locally:
+12. Write only the structured result to that account's `result.json`.
+13. Validate it locally:
 
     ```bash
     julius agent validate \
@@ -109,9 +136,9 @@ the contradiction in `missing_evidence` or `assumptions`; do not recalculate it.
       --result data/agent/<account>/result.json
     ```
 
-12. For multiple accounts, validate every account independently before creating
+14. For multiple accounts, validate every account independently before creating
     a portfolio summary. Never merge evidence or opportunity IDs across accounts.
-13. Generate the enriched artifacts for each account:
+15. Generate the enriched artifacts for each account:
 
     ```bash
     julius report \

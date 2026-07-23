@@ -21,11 +21,21 @@ def prepare_agent_workspace(
     output_dir: str | Path,
     *,
     top: int = 10,
+    artifacts_manifest: str | Path | None = None,
 ) -> tuple[AgentContext, list[Path]]:
     """Gera contexto, schema e instruções para a sessão Devin corrente."""
     output = Path(output_dir)
     output.mkdir(parents=True, exist_ok=True)
-    context = build_agent_context(analysis, top=top)
+    technical_artifacts = (
+        _load_technical_artifacts(artifacts_manifest, analysis.account.account_id)
+        if artifacts_manifest
+        else []
+    )
+    context = build_agent_context(
+        analysis,
+        top=top,
+        technical_artifacts=technical_artifacts,
+    )
     context_path = output / "context.json"
     schema_path = output / "output-schema.json"
     instructions_path = output / "instructions.md"
@@ -59,6 +69,7 @@ def load_agent_context(path: str | Path) -> AgentContext:
         "constraints",
         "opportunities",
         "graph_edges",
+        "technical_artifacts",
     }
     if not isinstance(raw, dict) or set(raw) != required:
         raise ValueError("contexto Julius inválido")
@@ -67,6 +78,40 @@ def load_agent_context(path: str | Path) -> AgentContext:
     ):
         raise ValueError("contexto Julius inválido")
     return AgentContext(**raw)
+
+
+def _load_technical_artifacts(
+    manifest_path: str | Path,
+    account_id: str,
+) -> list[dict]:
+    path = Path(manifest_path)
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    if (
+        not isinstance(raw, dict)
+        or raw.get("schema_version") != "1.0"
+        or raw.get("account_id") != account_id
+        or raw.get("read_only") is not True
+        or not isinstance(raw.get("artifacts"), list)
+    ):
+        raise ValueError("manifesto de artefatos não pertence à conta ou não é read-only")
+    references = []
+    for item in raw["artifacts"]:
+        if not isinstance(item, dict) or not isinstance(item.get("file"), str):
+            raise ValueError("entrada inválida no manifesto de artefatos")
+        artifact_path = path.parent / item["file"]
+        if not artifact_path.is_file():
+            raise ValueError(f"arquivo técnico ausente: {artifact_path}")
+        references.append(
+            {
+                "kind": item.get("kind"),
+                "asset_name": item.get("asset_name"),
+                "source": item.get("source"),
+                "sha256": item.get("sha256"),
+                "truncated": bool(item.get("truncated")),
+                "path": artifact_path.as_posix(),
+            }
+        )
+    return references
 
 
 def validate_result_file(

@@ -69,7 +69,13 @@ os passos de implementação e os links oficiais da AWS.
 Dentro da sessão, o Devin executa:
 
 ```bash
+julius agent collect-artifacts \
+  --input data/collected/123456789012.json \
+  --output data/artifacts/123456789012
+
 julius agent prepare --input data/sample/consumer-avi.json --output data/agent
+# Em conta real, adicionar:
+# --artifacts-manifest data/artifacts/123456789012/manifest.json
 # Devin lê context.json/instructions.md, analisa e grava result.json
 julius agent validate \
   --context data/agent/context.json \
@@ -92,6 +98,11 @@ Esse mesmo fluxo funciona no Devin CLI e na web do Devin, porque a inteligência
 e a conversa pertencem ao Devin; os comandos acima são ferramentas locais do
 workspace. Os artefatos de `data/agent/` não são versionados.
 
+Para preparar o workspace, use `scripts/bootstrap-devin.sh` no ambiente
+Linux/Devin Cloud ou `scripts/bootstrap-devin.ps1` no PowerShell. Ambos criam a
+`.venv`, instalam `.[aws,dev]`, executam os testes e fazem um smoke test com os
+dados de exemplo; não acessam uma conta AWS durante o bootstrap.
+
 ### Uma ou várias contas AWS
 
 Na máquina de trabalho, o Devin usa a cadeia de credenciais já configurada no
@@ -108,6 +119,21 @@ perfil/role e confere a conta. Cada conta recebe arquivos separados em
 `data/collected/<conta>.json` e `data/agent/<conta>/`; evidências e IDs nunca
 são misturados entre contas. A existência de vários perfis não autoriza
 automaticamente analisar todos eles.
+
+Para múltiplas contas, copie
+[.julius-accounts.example.json](.julius-accounts.example.json) para
+`~/.julius-accounts.json`, informe o ID esperado, perfil, região e role
+opcional, e habilite somente as contas autorizadas. Antes da coleta:
+
+```bash
+julius agent verify-accounts \
+  --config ~/.julius-accounts.json \
+  --output data/agent/verified-accounts.json
+```
+
+O comando para na primeira divergência entre o perfil/role e o ID esperado.
+Ele usa apenas `sts:GetCallerIdentity` e não descobre nem habilita contas
+implicitamente.
 
 ## Como rodar
 
