@@ -321,6 +321,30 @@
     </div>
     {% endif %}
 
+    {% if r.diff_events or r.previous_results or r.lifecycle_lead_times %}
+    <!-- CICLO FECHADO MVP 3 -->
+    <div class="sec" style="margin-top:44px;"><span class="n mono" style="color:#0053b3;">↻</span><h2>Ciclo fechado e benefício realizado</h2></div>
+    <p class="lead">Acompanhamento da decisão até a validação, com comparação temporal e economia medida.</p>
+    <div style="margin-top:18px;display:grid;grid-template-columns:repeat(3,1fr);gap:12px;">
+      <div style="border:1px solid #e2e4dc;border-radius:10px;padding:14px 16px;"><div class="kicker">Economia comprometida</div><div class="mono" style="margin-top:7px;font-size:20px;color:#0053b3;font-weight:600;">{{ r.committed_fmt }}/mês</div></div>
+      <div style="border:1px solid #e2e4dc;border-radius:10px;padding:14px 16px;"><div class="kicker">Economia realizada</div><div class="mono" style="margin-top:7px;font-size:20px;color:#e8730c;font-weight:600;">{{ r.realized_fmt }}/mês</div></div>
+      <div style="border:1px solid #e2e4dc;border-radius:10px;padding:14px 16px;"><div class="kicker">Taxa de realização</div><div class="mono" style="margin-top:7px;font-size:20px;color:#12233f;font-weight:600;">{{ r.realization_rate_pct }}</div></div>
+    </div>
+    {% if r.lifecycle_lead_times %}
+    <div style="margin-top:12px;display:flex;gap:10px;flex-wrap:wrap;">
+      {% for lead in r.lifecycle_lead_times %}<span class="chip mono" style="color:#0053b3;background:#e6effa;">{{ lead.label }} · {{ lead.days }} dias</span>{% endfor %}
+    </div>
+    {% endif %}
+    {% if r.diff_events %}
+    <div style="margin-top:18px;border:1px solid #e2e4dc;border-radius:10px;padding:14px 16px;">
+      <div class="kicker" style="margin-bottom:10px;">Mudanças desde o último scan</div>
+      {% for event in r.diff_events %}
+      <div style="display:flex;justify-content:space-between;gap:14px;padding:7px 0;border-top:1px dotted #e2e4dc;font-size:12.5px;"><span><b>{{ event.type }}</b> · {{ event.asset }}</span><span class="mono" style="color:#7c8374;">{{ event.rule_id }}</span></div>
+      {% endfor %}
+    </div>
+    {% endif %}
+    {% endif %}
+
     {% if r.previous_results %}
     <!-- 07 RESULTADOS ANTERIORES -->
     <div class="sec" style="margin-top:44px;"><span class="n mono" style="color:#e8730c;">07</span><h2>Resultado das recomendações anteriores</h2></div>
@@ -347,7 +371,7 @@
       <div class="mono" style="display:grid;grid-template-columns:repeat(3,1fr);gap:14px 28px;font-size:11.5px;color:#5b6169;">
         {% for m in r.manifest %}<div style="display:flex;justify-content:space-between;gap:10px;border-bottom:1px dotted #e2e4dc;padding-bottom:6px;"><span style="color:#96a0b4;">{{ m.k }}</span><span style="color:#22262c;text-align:right;">{{ m.v }}</span></div>{% endfor %}
       </div>
-      <div style="margin-top:20px;font-size:11.5px;color:#96a0b4;line-height:1.6;">Fonte registrada no run manifest (MVP 1B). Scores, ganho, dificuldade, confiança e prioridade são determinísticos. As estimativas assumem mesmo volume e frequência e serão validadas após a mudança. S3 permanece infraestrutura imutável.</div>
+      <div style="margin-top:20px;font-size:11.5px;color:#96a0b4;line-height:1.6;">Fonte registrada no run manifest (MVP 3). Scores, ganho, dificuldade, confiança, prioridade e transições são determinísticos. Estimativas são calibradas somente após benefícios validados. S3 permanece infraestrutura imutável.</div>
     </div>
 
   </div>

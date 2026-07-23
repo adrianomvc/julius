@@ -100,9 +100,12 @@ def test_duckdb_history_reviews_and_parquet(tmp_path):
 
     assert db_path.exists()
     assert {path.name for path in written} == {
+        "diff_events.parquet",
+        "lifecycle_events.parquet",
         "runs.parquet",
         "opportunity_snapshots.parquet",
         "reviews.parquet",
+        "validations.parquet",
     }
     assert all(path.exists() and path.stat().st_size > 0 for path in written)
 

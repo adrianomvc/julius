@@ -7,6 +7,7 @@ rastreável. Ganho, dificuldade, confiança e prioridade são DETERMINÍSTICOS.
 from __future__ import annotations
 
 import hashlib
+import json
 from dataclasses import asdict, dataclass, field
 
 
@@ -75,6 +76,7 @@ class Opportunity:
     source_process: str | None = None
     downstream_consumers: int = 0
     process_criticality: float = 0.0
+    calibration_factor: float = 1.0
 
     # Evidência / cobertura.
     evidence_coverage: float = 0.0
@@ -104,6 +106,17 @@ class Opportunity:
         raw = f"{self.account}|{self.asset_type}:{self.asset_name}|{self.rule_id}|{scope}"
         digest = hashlib.sha1(raw.encode("utf-8")).hexdigest()[:8]
         return f"{raw}#{digest}"
+
+    def evidence_signature(self) -> str:
+        """Assinatura estável das evidências que podem justificar reabertura."""
+        payload = {
+            "evidence": sorted(self.evidence),
+            "missing_evidence": sorted(self.missing_evidence),
+            "data_sources": sorted(self.data_sources),
+            "confidence": round(self.confidence, 4),
+        }
+        raw = json.dumps(payload, ensure_ascii=False, sort_keys=True)
+        return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:16]
 
     def to_dict(self) -> dict:
         return asdict(self)

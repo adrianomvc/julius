@@ -36,6 +36,13 @@ class ProductKPIs:
     reviewed_at_10: int = 0
     false_positives_at_10: int = 0
     false_positive_rate_at_10: float | None = None
+    identified_monthly: float = 0.0
+    committed_monthly: float = 0.0
+    realized_monthly: float = 0.0
+    realization_rate: float | None = None
+    detected_to_accepted_days: float | None = None
+    accepted_to_implemented_days: float | None = None
+    implemented_to_validated_days: float | None = None
 
 
 def _is_actionable(o: Opportunity) -> bool:
@@ -52,6 +59,11 @@ def compute_kpis(
     account: Account,
     opportunities: list[Opportunity],
     labels: dict[str, bool] | None = None,
+    *,
+    realized_monthly: float = 0.0,
+    detected_to_accepted_days: float | None = None,
+    accepted_to_implemented_days: float | None = None,
+    implemented_to_validated_days: float | None = None,
 ) -> ProductKPIs:
     total = len(opportunities)
     actionable = sum(1 for o in opportunities if _is_actionable(o))
@@ -90,6 +102,18 @@ def compute_kpis(
             precision = round(sum(1 for v in judged if v) / len(judged), 3)
             false_positive_rate = round(false_positives / reviewed, 3)
 
+    identified_monthly = sum(
+        opportunity.estimated_gain.monthly_expected
+        for opportunity in opportunities
+        if not opportunity.estimated_gain.is_strategic
+    )
+    committed_monthly = sum(
+        opportunity.estimated_gain.monthly_expected
+        for opportunity in opportunities
+        if not opportunity.estimated_gain.is_strategic
+        and opportunity.status in {"accepted", "planned", "implemented", "validated"}
+    )
+
     return ProductKPIs(
         total=total,
         actionable=actionable,
@@ -101,4 +125,13 @@ def compute_kpis(
         reviewed_at_10=reviewed,
         false_positives_at_10=false_positives,
         false_positive_rate_at_10=false_positive_rate,
+        identified_monthly=round(identified_monthly, 2),
+        committed_monthly=round(committed_monthly, 2),
+        realized_monthly=round(realized_monthly, 2),
+        realization_rate=round(realized_monthly / committed_monthly, 3)
+        if committed_monthly > 0
+        else None,
+        detected_to_accepted_days=detected_to_accepted_days,
+        accepted_to_implemented_days=accepted_to_implemented_days,
+        implemented_to_validated_days=implemented_to_validated_days,
     )

@@ -1,9 +1,9 @@
-# Julius — MVP 2
+# Julius — MVP 3
 
 Portfólio contínuo de oportunidades de otimização de custo AWS para contas
-Consumer (Data Mesh). O **MVP 2** conecta cada oportunidade ao processo completo:
-agendamento, Step Functions, Glue, tabelas, consumidores e publicação DataWarm.
-O MVP 1B permanece como base auditável em DuckDB/Parquet.
+Consumer (Data Mesh). O **MVP 3** fecha o ciclo: detectar, decidir, implementar,
+comparar execuções, validar o ganho realizado e calibrar estimativas futuras.
+Os MVPs 1B e 2 permanecem como base histórica e de contexto do processo.
 
 Ciclo do produto: **detectar → priorizar → recomendar → acompanhar → validar**.
 Ver o plano completo (fases 1A→4) em `../.claude/plans/quero-criar-uma-ia-compiled-manatee.md`.
@@ -30,6 +30,16 @@ Ver o plano completo (fases 1A→4) em `../.claude/plans/quero-criar-uma-ia-comp
 - Criticidade e alcance do processo anexados às oportunidades.
 - Candidatura a Producer e prontidão de migração calculadas separadamente.
 
+## O que o MVP 3 acrescenta
+
+- Ciclo `detected → reviewed → accepted → planned → implemented → validated`.
+- Rejeição (`dismissed`) sem repetição até surgir nova evidência.
+- Diff entre execuções: novas, piora, nova evidência e desaparecimento.
+- Validação prevista × realizada, com precisão e taxa de realização.
+- Economia normalizada por volume para não confundir queda de demanda com ganho.
+- Calibração por regra após pelo menos três benefícios validados.
+- Eventos de lifecycle, diff e validações persistidos em DuckDB/Parquet.
+
 ## Como rodar
 
 ```bash
@@ -50,6 +60,18 @@ julius review
 # Exporta o grafo de processos da conta
 julius graph
 
+# Registra as etapas de uma oportunidade
+julius lifecycle --opportunity-id <ID> --status accepted --actor <nome> --reason "<motivo>"
+julius lifecycle --opportunity-id <ID> --status planned --actor <nome> --reason "<motivo>"
+julius lifecycle --opportunity-id <ID> --status implemented --actor <nome> --reason "<motivo>"
+
+# Compara a execução atual com o snapshot anterior
+julius diff
+
+# Valida benefício depois da implementação
+julius validate --opportunity-id <ID> --baseline-cost 4500 --after-cost 3100 \
+  --baseline-volume 10 --after-volume 5 --actor <nome>
+
 # Registra a avaliação de uma recomendação
 julius review --opportunity-id <ID> --verdict confirmed --reviewer <nome>
 julius review --opportunity-id <ID> --verdict false-positive --reviewer <nome>
@@ -60,6 +82,17 @@ julius notify --open-preview
 
 Na coleta ao vivo, use `--cloudtrail` para atribuição de ator e
 `--datawarm-job <identificador>` para reconhecer o publicador DataWarm.
+
+## Validações adiadas para a máquina de trabalho
+
+Estas etapas dependem de contexto corporativo e não bloqueiam a validação local:
+
+- revisão humana real do Top 10;
+- teste read-only em contas AWS reais;
+- configuração da tabela de toques, do job DataWarm e do CloudTrail.
+
+Até lá, testes e demonstrações usam somente os datasets de `data/sample/` e
+históricos temporários, sem acesso à AWS e sem avaliações humanas fictícias.
 
 O histórico padrão fica em `data/state/julius.duckdb`; os Parquets ficam em
 `data/state/parquet/`. O backlog operacional permanece em
