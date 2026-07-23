@@ -86,6 +86,12 @@ def render_json(vm: ReportViewModel, opportunities: list[Opportunity]) -> str:
             "diff_events": vm.diff_events,
             "validated_results": [asdict(result) for result in vm.previous_results],
         },
+        "ai_analysis": {
+            "source": "Devin" if vm.ai_summary else None,
+            "executive_summary": vm.ai_summary,
+            "implementation_order": vm.ai_implementation_order,
+            "recommendations": vm.ai_recommendations,
+        },
         "manifest": vm.manifest,
         "opportunities": [asdict(o) for o in opportunities],
     }

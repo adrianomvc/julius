@@ -59,6 +59,16 @@ class OpportunityVM:
     next_action: str | None
     is_strategic: bool
     source_process: str | None
+    ai_diagnosis: str = ""
+    ai_recommendation: str = ""
+    ai_implementation_steps: list[str] = field(default_factory=list)
+    ai_validation_steps: list[str] = field(default_factory=list)
+    ai_dependencies: list[str] = field(default_factory=list)
+    ai_conflicts: list[str] = field(default_factory=list)
+    ai_risks: list[str] = field(default_factory=list)
+    ai_documentation: list[dict] = field(default_factory=list)
+    ai_assumptions: list[str] = field(default_factory=list)
+    ai_missing_evidence: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -243,6 +253,9 @@ class ReportViewModel:
     realized_fmt: str = "R$ 0"
     realization_rate_pct: str = "—"
     lifecycle_lead_times: list[dict] = field(default_factory=list)
+    ai_summary: str = ""
+    ai_implementation_order: list[dict] = field(default_factory=list)
+    ai_recommendations: list[dict] = field(default_factory=list)
 
 
 def _recommendation(do_now: list[Opportunity]) -> str:

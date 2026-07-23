@@ -96,6 +96,19 @@
       <div style="margin-top:4px;font-size:14px;line-height:1.55;color:#3a3f46;">{{ r.recommendation }}</div>
     </div>
 
+    {% if r.ai_summary %}
+    <div style="border:1px solid #cdd9ea;background:#f4f7fb;border-radius:10px;padding:16px 18px;margin-bottom:30px;">
+      <span class="kicker" style="color:#0053b3;">Análise contextual pelo Devin</span>
+      <div style="margin-top:6px;font-size:14px;line-height:1.55;color:#3a3f46;">{{ r.ai_summary }}</div>
+      <div style="margin-top:12px;display:flex;gap:7px;flex-wrap:wrap;">
+        {% for item in r.ai_implementation_order %}
+        <span class="chip mono" style="color:#0053b3;background:#e6effa;">{{ item.position }} · {{ item.title }}</span>
+        {% endfor %}
+      </div>
+      <div style="margin-top:10px;font-size:11px;color:#7d8795;">A IA adiciona contexto, sequência e documentação; economia, dificuldade, confiança e prioridades permanecem determinísticas.</div>
+    </div>
+    {% endif %}
+
     <!-- 00 RECONCILIAÇÃO -->
     <div class="sec"><span class="n mono" style="color:#7b8498;">00</span><h2>Custo da conta — reconciliação</h2></div>
     <p class="lead">O Cost Explorer confere o <b>total</b> da conta e por serviço. A atribuição fina por ativo vem dos coletores de execução (Glue GetJobRuns, bytes Athena) — não do Cost Explorer.</p>
@@ -227,6 +240,18 @@
             <div style="margin-top:8px;display:flex;flex-direction:column;gap:5px;">
               {% for e in o.evidence %}<div style="display:flex;gap:8px;align-items:baseline;font-size:13px;color:#3a3f46;"><span style="color:#e8730c;font-weight:700;">›</span><span>{{ e }}</span></div>{% endfor %}
             </div>
+            {% if o.ai_diagnosis %}
+            <div class="kicker" style="margin-top:18px;color:#0053b3;">Contexto analisado pelo Devin</div>
+            <div style="margin-top:6px;font-size:13.5px;line-height:1.5;color:#3a3f46;">{{ o.ai_diagnosis }}</div>
+            <div style="margin-top:8px;font-size:13.5px;line-height:1.5;color:#12233f;"><b>Recomendação contextual:</b> {{ o.ai_recommendation }}</div>
+            {% if o.ai_implementation_steps %}
+            <div style="margin-top:10px;font-size:12.5px;color:#4b5159;"><b>Sequência sugerida:</b>
+              <ol style="margin:5px 0 0;padding-left:20px;">{% for step in o.ai_implementation_steps %}<li style="margin-top:3px;">{{ step }}</li>{% endfor %}</ol>
+            </div>
+            {% endif %}
+            {% if o.ai_conflicts %}<div style="margin-top:8px;font-size:12.5px;color:#b23b3b;"><b>Conflitos:</b> {{ o.ai_conflicts | join("; ") }}</div>{% endif %}
+            {% if o.ai_dependencies %}<div style="margin-top:8px;font-size:12.5px;color:#4b5159;"><b>Dependências:</b> {{ o.ai_dependencies | join("; ") }}</div>{% endif %}
+            {% endif %}
           </div>
           <div style="padding:20px 22px;background:#fbfcfa;">
             <div style="display:flex;gap:10px;margin-bottom:6px;">
@@ -242,6 +267,10 @@
             <div class="kicker" style="margin-top:13px;">Como aplicar</div><div style="margin-top:5px;font-size:13px;line-height:1.45;color:#3a3f46;">{{ o.how_to_apply }} {% if o.doc_url %}<a href="{{ o.doc_url }}" target="_blank" rel="noopener">doc AWS ↗</a>{% endif %}</div>
             <div class="kicker" style="margin-top:13px;">Como validar</div><div style="margin-top:5px;font-size:13px;line-height:1.45;color:#3a3f46;">{{ o.how_to_validate }}</div>
             <div class="kicker" style="margin-top:13px;">Responsável</div><div style="margin-top:4px;font-size:13px;font-weight:600;color:#12233f;">{{ o.owner }} <span class="mono" style="font-size:10px;font-weight:400;color:#5b6169;">fonte: {{ o.owner_source }}</span></div>
+            {% if o.ai_documentation %}
+            <div class="kicker" style="margin-top:13px;">Documentação validada pela IA</div>
+            {% for doc in o.ai_documentation %}<div style="margin-top:5px;font-size:12px;"><a href="{{ doc.url }}" target="_blank" rel="noopener">{{ doc.title }} ↗</a> — {{ doc.relevance }}</div>{% endfor %}
+            {% endif %}
             <div class="mono" style="margin-top:13px;padding-top:12px;border-top:1px dashed #dfe1d9;font-size:11px;color:#8a9082;line-height:1.5;">cobertura {{ o.coverage_pct }} · fontes: {{ o.sources }}</div>
           </div>
         </div>

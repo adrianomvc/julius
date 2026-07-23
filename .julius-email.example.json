@@ -3,9 +3,6 @@
   "transport": "ses",
   "aws_region": "sa-east-1",
   "sender": "julius@empresa.com",
-  "default_to": [
-    "squad@empresa.com"
-  ],
   "allowed_recipient_domains": [
     "empresa.com"
   ],

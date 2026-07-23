@@ -32,7 +32,7 @@ def is_gpu_instance(instance_type: str) -> bool:
     return any(f".{fam}" in instance_type for fam in ("g4dn", "g5", "p3", "p4", "p2", "g6"))
 
 # Versões usadas nas oportunidades (auditoria/calibração).
-JULIUS_VERSION = "0.5.0"
+JULIUS_VERSION = "0.6.0"
 KNOWLEDGE_VERSION = "aws-glue-guidance-2026-07"
 
 # DPU por worker type do Glue (Glue 2.0+).

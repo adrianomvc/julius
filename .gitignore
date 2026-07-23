@@ -11,3 +11,4 @@ venv/
 data/reports/
 data/outbox/
 data/state/
+data/agent/
