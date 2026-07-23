@@ -48,6 +48,18 @@
     </tr></table>
   </td></tr>
 
+  {% if r.ai_summary %}
+  <tr><td style="padding:18px 28px 4px;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f4f7fb;border:1px solid #cdd9ea;border-radius:8px;">
+      <tr><td style="padding:12px 16px;font-size:13px;color:#3a3f46;line-height:1.5;">
+        <span style="display:inline-block;font-size:11px;font-weight:700;color:#0053b3;letter-spacing:.04em;">ANÁLISE CONTEXTUAL PELO DEVIN</span><br>
+        {{ r.ai_summary }}
+        <div style="margin-top:6px;font-size:11px;color:#7d8795;">Contexto e sequência enriquecidos por IA; valores e prioridades continuam determinísticos.</div>
+      </td></tr>
+    </table>
+  </td></tr>
+  {% endif %}
+
   <!-- pareto callout -->
   <tr><td style="padding:18px 28px 4px;">
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#fef7ef;border:1px solid #f1e2ce;border-radius:8px;">
@@ -83,6 +95,15 @@
             <b style="color:#12233f;">Como aplicar:</b> {{ o.how_to_apply }}
             {% if o.doc_url %}<a href="{{ o.doc_url }}" style="color:#0053b3;text-decoration:none;">[doc AWS &#8599;]</a>{% endif %}
           </div>
+          {% if o.ai_diagnosis %}
+          <div style="margin-top:10px;padding-top:9px;border-top:1px dashed #d8deea;font-size:12.5px;color:#3a3f46;line-height:1.5;">
+            <b style="color:#0053b3;">Contexto Devin:</b> {{ o.ai_diagnosis }}<br>
+            <b style="color:#12233f;">Próxima ação:</b> {{ o.ai_recommendation }}
+            {% if o.ai_documentation %}
+            <br>{% for doc in o.ai_documentation %}<a href="{{ doc.url }}" style="color:#0053b3;text-decoration:none;">[{{ doc.title }} &#8599;]</a>{% if not loop.last %} {% endif %}{% endfor %}
+            {% endif %}
+          </div>
+          {% endif %}
         </td>
       </tr>
     </table>

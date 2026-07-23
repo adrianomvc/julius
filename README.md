@@ -1,9 +1,10 @@
-# Julius — MVP 3
+# Julius — MVP 4: IA no Devin
 
 Portfólio contínuo de oportunidades de otimização de custo AWS para contas
-Consumer (Data Mesh). O **MVP 3** fecha o ciclo: detectar, decidir, implementar,
-comparar execuções, validar o ganho realizado e calibrar estimativas futuras.
-Os MVPs 1B e 2 permanecem como base histórica e de contexto do processo.
+Consumer (Data Mesh), usado como ferramenta especializada pelo agente Devin.
+O **MVP 4** combina o motor determinístico com análise contextual por IA,
+relatórios acionáveis e entrega segura por conta. O MVP 3 permanece como base
+do ciclo fechado e os MVPs 1B e 2 como histórico, inventário e contexto.
 
 Ciclo do produto: **detectar → priorizar → recomendar → acompanhar → validar**.
 Ver o plano completo (fases 1A→4) em `../.claude/plans/quero-criar-uma-ia-compiled-manatee.md`.
@@ -39,6 +40,74 @@ Ver o plano completo (fases 1A→4) em `../.claude/plans/quero-criar-uma-ia-comp
 - Economia normalizada por volume para não confundir queda de demanda com ganho.
 - Calibração por regra após pelo menos três benefícios validados.
 - Eventos de lifecycle, diff e validações persistidos em DuckDB/Parquet.
+
+## Julius como IA no Devin (MVP 4)
+
+O usuário interage diretamente com o **Devin**, pelo CLI ou pela interface web.
+O Devin encontra a Skill versionada em
+`.agents/skills/julius-aws-analysis/SKILL.md` e usa o CLI Julius como sua
+ferramenta especializada. O Julius não chama a API do Devin.
+
+As responsabilidades são separadas:
+
+- **Julius determinístico:** coleta, inventário, grafo, evidências, economia,
+  dificuldade, confiança, prioridades, IDs e lifecycle;
+- **Devin/IA:** leitura contextual de scripts, SQL e dependências, explicação da
+  causa, sequência de implementação, conflitos, riscos e documentação oficial;
+- **validador Julius:** impede que a saída da IA altere campos determinísticos,
+  use IDs inexistentes ou referencie documentação fora de
+  `docs.aws.amazon.com`.
+
+Exemplo de interação no Devin:
+
+```text
+Use a Skill Julius AWS Analysis para analisar a conta Consumer.
+Não altere nenhum recurso AWS. Entregue as recomendações priorizadas,
+os passos de implementação e os links oficiais da AWS.
+```
+
+Dentro da sessão, o Devin executa:
+
+```bash
+julius agent prepare --input data/sample/consumer-avi.json --output data/agent
+# Devin lê context.json/instructions.md, analisa e grava result.json
+julius agent validate \
+  --context data/agent/context.json \
+  --result data/agent/result.json
+
+# O Devin gera os artefatos já enriquecidos pela análise validada
+julius report \
+  --input data/sample/consumer-avi.json \
+  --agent-context data/agent/context.json \
+  --agent-result data/agent/validated-result.json
+
+# Prévia local; nunca envia durante a análise
+julius notify --mode dry-run \
+  --input data/sample/consumer-avi.json \
+  --agent-context data/agent/context.json \
+  --agent-result data/agent/validated-result.json
+```
+
+Esse mesmo fluxo funciona no Devin CLI e na web do Devin, porque a inteligência
+e a conversa pertencem ao Devin; os comandos acima são ferramentas locais do
+workspace. Os artefatos de `data/agent/` não são versionados.
+
+### Uma ou várias contas AWS
+
+Na máquina de trabalho, o Devin usa a cadeia de credenciais já configurada no
+AWS CLI:
+
+- sem perfil informado, analisa somente a identidade AWS ativa;
+- com um perfil informado, analisa somente aquele perfil;
+- quando o usuário pedir explicitamente **todas as contas**, lista os perfis do
+  AWS CLI e processa cada um separadamente;
+- assume-role só é usado quando o ARN for fornecido explicitamente.
+
+Antes de coletar, o Devin executa `aws sts get-caller-identity` para cada
+perfil/role e confere a conta. Cada conta recebe arquivos separados em
+`data/collected/<conta>.json` e `data/agent/<conta>/`; evidências e IDs nunca
+são misturados entre contas. A existência de vários perfis não autoriza
+automaticamente analisar todos eles.
 
 ## Como rodar
 
@@ -91,20 +160,34 @@ mesmo tempo:
 
 - `--mode active` e configuração local com `"mode": "active"`;
 - remetente e domínios de destinatários autorizados;
+- cadastro habilitado para a conta exata analisada;
 - confirmação humana com `--confirm`, ou grupo previamente aprovado para uso
   não interativo;
 - log persistente que impede o reenvio do mesmo scan para o mesmo grupo;
 - scan sem erro crítico e relatório HTML gerado.
 
-Use [.julius-email.example.json](.julius-email.example.json) como base e salve a
-configuração local em `~/.julius-email.json`. O arquivo não aceita credenciais.
+Use [.julius-email.example.json](.julius-email.example.json) para transporte e
+allowlist, salvando a configuração local em `~/.julius-email.json`. Use
+[.julius-recipients.example.json](.julius-recipients.example.json) para mapear
+cada conta aos seus destinatários, salvando em
+`~/.julius-recipients.json`. Esses arquivos não aceitam credenciais.
+
+Cada cadastro de conta contém `to`, `cc`, `recipient_group` e `enabled`. O envio
+ativo exige correspondência exata com o `account_id` do relatório; não existe
+fallback para destinatários globais. Contas novas começam desabilitadas e
+precisam ser habilitadas conscientemente.
+
 SES usa a cadeia de credenciais AWS; SMTP lê somente
 `JULIUS_SMTP_USERNAME` e `JULIUS_SMTP_PASSWORD` do ambiente.
 
 ```bash
 # Apenas na máquina de trabalho, depois de revisar configuração e destinatários
-julius notify --mode active --confirm --to squad@empresa.com
+julius notify --mode active --confirm
 ```
+
+`--to` e `--recipient-group` são aceitos somente no `dry-run`. No envio ativo,
+o Julius sempre usa o cadastro da conta para evitar encaminhamento manual ao
+destinatário errado.
 
 O transporte pode ser selecionado com `--transport ses` ou
 `--transport smtp`. O envio real permanece parte das validações operacionais
@@ -121,6 +204,8 @@ Estas etapas dependem de contexto corporativo e não bloqueiam a validação loc
 - teste read-only em contas AWS reais;
 - configuração da tabela de toques, do job DataWarm e do CloudTrail.
 - validação de envio SES/SMTP com remetentes e destinatários corporativos.
+- conexão do repositório ao Devin e descoberta da Skill Julius;
+- execução da Skill com uma role AWS corporativa estritamente read-only.
 
 Até lá, testes e demonstrações usam somente os datasets de `data/sample/` e
 históricos temporários, sem acesso à AWS e sem avaliações humanas fictícias.
