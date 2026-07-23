@@ -1,0 +1,244 @@
+"""Testes dos coletores boto3 com botocore Stubber (sem AWS real)."""
+
+from __future__ import annotations
+
+from datetime import datetime, timezone
+
+import boto3
+import pytest
+from botocore.stub import Stubber
+
+from julius.aws import (
+    cloudwatch_collector,
+    cost_explorer,
+    datawarm_collector,
+    glue_collector,
+    schedules_collector,
+    stepfunctions_collector,
+    touches_collector,
+)
+from julius.inventory.model import Account, GlueJob, Table
+
+
+def _client(service: str):
+    return boto3.client(
+        service,
+        region_name="us-east-1",
+        aws_access_key_id="test",
+        aws_secret_access_key="test",
+    )
+
+
+def test_cost_explorer_maps_services():
+    ce = _client("ce")
+    stub = Stubber(ce)
+    stub.add_response(
+        "get_cost_and_usage",
+        {
+            "ResultsByTime": [
+                {
+                    "Groups": [
+                        {"Keys": ["AWS Glue"], "Metrics": {"UnblendedCost": {"Amount": "21400", "Unit": "USD"}}},
+                        {"Keys": ["Amazon Athena"], "Metrics": {"UnblendedCost": {"Amount": "6800", "Unit": "USD"}}},
+                        {"Keys": ["Amazon Elastic Compute Cloud"], "Metrics": {"UnblendedCost": {"Amount": "500", "Unit": "USD"}}},
+                    ]
+                }
+            ]
+        },
+    )
+    with stub:
+        services = cost_explorer.collect_services(ce)
+
+    by_name = {s.name: s.monthly_cost for s in services}
+    assert by_name["AWS Glue"] == 21400
+    assert by_name["Amazon Athena"] == 6800
+    assert by_name["Outros"] == 500  # serviço fora do escopo → agregado
+
+
+def test_glue_collector_jobs_and_failure_rate():
+    glue = _client("glue")
+    stub = Stubber(glue)
+    stub.add_response(
+        "get_jobs",
+        {
+            "Jobs": [
+                {
+                    "Name": "processa",
+                    "GlueVersion": "1.0",
+                    "WorkerType": "G.1X",
+                    "NumberOfWorkers": 20,
+                    "ExecutionClass": "STANDARD",
+                    "Timeout": 2880,
+                    "MaxRetries": 3,
+                    "DefaultArguments": {
+                        "--enable-auto-scaling": "false",
+                        "--job-bookmark-option": "job-bookmark-disable",
+                    },
+                    "Command": {"ScriptLocation": "s3://scripts/processa.py"},
+                }
+            ]
+        },
+    )
+    now = datetime.now(timezone.utc)
+    stub.add_response(
+        "get_job_runs",
+        {
+            "JobRuns": [
+                {"JobRunState": "SUCCEEDED", "ExecutionTime": 3600, "StartedOn": now},
+                {"JobRunState": "SUCCEEDED", "ExecutionTime": 3600, "StartedOn": now},
+                {"JobRunState": "FAILED", "ExecutionTime": 1200, "StartedOn": now},
+            ]
+        },
+    )
+    with stub:
+        jobs = glue_collector.collect_jobs(glue, lookback_days=90, now=now)
+
+    assert len(jobs) == 1
+    job = jobs[0]
+    assert job.glue_version == "1.0"
+    assert job.auto_scaling is False
+    assert job.job_bookmark is False
+    assert job.avg_execution_sec == 3600
+    assert job.failure_rate == pytest.approx(1 / 3, abs=0.01)
+    assert job.observed_runs == 3
+
+
+def test_cloudwatch_enriches_cpu():
+    cw = _client("cloudwatch")
+    stub = Stubber(cw)
+    now = datetime.now(timezone.utc)
+    stub.add_response(
+        "get_metric_statistics",
+        {
+            "Label": "glue.ALL.system.cpuSystemLoad",
+            "Datapoints": [
+                {"Timestamp": now, "Average": 0.20, "Unit": "None"},
+                {"Timestamp": now, "Average": 0.24, "Unit": "None"},
+            ],
+        },
+    )
+    jobs = [GlueJob(name="processa", worker_type="G.1X", number_of_workers=20)]
+    with stub:
+        cloudwatch_collector.enrich_glue_cpu(cw, jobs, now=now)
+
+    # média das duas leituras → destrava as regras de capacidade.
+    assert jobs[0].avg_cpu_load == pytest.approx(0.22, abs=0.001)
+
+
+def test_touches_collector_parses_rows():
+    athena = _client("athena")
+    stub = Stubber(athena)
+    stub.add_response("start_query_execution", {"QueryExecutionId": "q1"})
+    stub.add_response(
+        "get_query_execution",
+        {"QueryExecution": {"QueryExecutionId": "q1", "Status": {"State": "SUCCEEDED"}}},
+    )
+    stub.add_response(
+        "get_query_results",
+        {
+            "ResultSet": {
+                "Rows": [
+                    {"Data": [{"VarCharValue": "tabela"}, {"VarCharValue": "toques"}, {"VarCharValue": "contas"}, {"VarCharValue": "comunidades"}]},
+                    {"Data": [{"VarCharValue": "base_legado"}, {"VarCharValue": "0"}, {"VarCharValue": "0"}, {"VarCharValue": "0"}]},
+                    {"Data": [{"VarCharValue": "resumo_regional"}, {"VarCharValue": "11"}, {"VarCharValue": "1"}, {"VarCharValue": "1"}]},
+                ]
+            }
+        },
+    )
+    with stub:
+        stats = touches_collector.collect_touches(
+            athena, touches_table="governanca.toques", workgroup="julius"
+        )
+
+    assert stats["base_legado"].touches == 0
+    assert stats["resumo_regional"].touches == 11
+    assert stats["resumo_regional"].communities == 1
+
+
+class _Pages:
+    def __init__(self, pages):
+        self.pages = pages
+
+    def paginate(self, **_):
+        yield from self.pages
+
+
+class _StepFunctions:
+    def get_paginator(self, name):
+        if name == "list_state_machines":
+            return _Pages(
+                [[
+                    {
+                        "stateMachines": [
+                            {
+                                "name": "orquestra",
+                                "stateMachineArn": "arn:aws:states:x:1:stateMachine:orquestra",
+                            }
+                        ]
+                    }
+                ][0]]
+            )
+        if name == "list_executions":
+            return _Pages([{"executions": []}])
+        raise AssertionError(name)
+
+    def describe_state_machine(self, **_):
+        return {
+            "type": "STANDARD",
+            "definition": (
+                '{"StartAt":"Glue","States":{"Glue":{"Type":"Task",'
+                '"Resource":"arn:aws:states:::glue:startJobRun.sync",'
+                '"Parameters":{"JobName":"transforma"},"End":true}}}'
+            ),
+        }
+
+
+def test_stepfunctions_collector_extracts_glue_lineage():
+    machines = stepfunctions_collector.collect_state_machines(_StepFunctions())
+    assert len(machines) == 1
+    assert machines[0].name == "orquestra"
+    assert machines[0].glue_jobs == ["transforma"]
+
+
+class _Events:
+    def get_paginator(self, name):
+        assert name == "list_rules"
+        return _Pages(
+            [
+                {
+                    "Rules": [
+                        {
+                            "Name": "cron-diario",
+                            "ScheduleExpression": "cron(0 1 * * ? *)",
+                        }
+                    ]
+                }
+            ]
+        )
+
+    def list_targets_by_rule(self, **_):
+        return {
+            "Targets": [
+                {
+                    "Id": "sfn",
+                    "Arn": "arn:aws:states:sa-east-1:1:stateMachine:orquestra",
+                }
+            ]
+        }
+
+
+def test_schedule_collector_links_state_machine():
+    schedules = schedules_collector.collect_schedules(_Events())
+    assert schedules[0].name == "cron-diario"
+    assert schedules[0].target_name == "orquestra"
+
+
+def test_datawarm_marks_published_tables():
+    account = Account(
+        account_id="consumer",
+        glue_jobs=[GlueJob(name="publicador-datawarm", owner_tag="Squad Plataforma")],
+        tables=[Table(name="produto", written_by="publicador-datawarm")],
+    )
+    assert datawarm_collector.mark_publications(account, "datawarm") == 1
+    assert account.tables[0].datawarm_published is True
+    assert account.tables[0].datawarm_owner == "Squad Plataforma"

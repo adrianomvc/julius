@@ -1,0 +1,356 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Julius · {{ r.account_id }} · {{ r.period }}</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body { background: #eceee7; color: #1a1e24;
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+    -webkit-font-smoothing: antialiased; }
+  .mono { font-family: ui-monospace, "SF Mono", "Cascadia Code", Consolas, monospace; }
+  a { color: #0053b3; text-decoration: none; } a:hover { text-decoration: underline; }
+  .wrap { max-width: 1000px; margin: 40px auto; background: #fff; border: 1px solid #d9dcd3;
+    box-shadow: 0 1px 0 rgba(0,0,0,.02), 0 24px 60px -30px rgba(20,24,31,.35); }
+  h2 { margin: 0; font-size: 22px; font-weight: 700; letter-spacing: -.01em; color: #12233f; }
+  .sec { display: flex; align-items: baseline; gap: 12px; }
+  .sec .n { font-size: 12px; font-weight: 600; }
+  .lead { margin: 6px 0 0; font-size: 14px; line-height: 1.6; color: #4b5159; max-width: 780px; }
+  .chip { display: inline-block; font-size: 11px; font-weight: 600; border-radius: 5px; padding: 3px 8px; }
+  .kicker { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: #7c8374; font-weight: 600; }
+  .barwrap { height: 7px; border-radius: 4px; background: #eef0ea; position: relative; overflow: hidden; }
+
+  /* Impressão / exportação para PDF (equivale ao "-print" do design) */
+  @media print {
+    @page { margin: 0.45in; }
+    html, body { background: #fff; }
+    body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .wrap { max-width: none; margin: 0; border: 0; box-shadow: none; }
+    h2, .sec { break-after: avoid; }
+    /* Não quebrar cartões/linhas no meio da página */
+    .barwrap, [style*="border-radius:12px"] { break-inside: avoid; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <!-- HEADER BAND -->
+  <div style="background:#12233f;color:#f4f5f1;padding:34px 44px 26px;">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:32px;flex-wrap:wrap;">
+      <div style="max-width:560px;">
+        <div style="display:flex;align-items:center;gap:12px;">
+          {% if avatar %}<img src="{{ avatar }}" alt="Julius" style="width:44px;height:44px;border-radius:50%;object-fit:cover;border:2px solid #e8730c;box-shadow:0 2px 8px rgba(0,0,0,.3);">{% endif %}
+          <span style="font-weight:700;font-size:26px;letter-spacing:-.01em;">Julius</span>
+          <span class="mono" style="font-size:11px;color:#8792a8;border:1px solid #2f4468;border-radius:4px;padding:2px 7px;">v{{ manifest_version }}</span>
+        </div>
+        <div style="margin-top:14px;font-size:14px;line-height:1.55;color:#b6bece;">Portfólio contínuo de oportunidades de otimização — custos e governança sobre a plataforma Data&nbsp;Mesh. Detectar → priorizar → recomendar → acompanhar → validar o ganho.</div>
+        <div style="margin-top:12px;padding-left:12px;border-left:2px solid #e8730c;font-size:12.5px;font-style:italic;color:#e6b98d;">"Você sabe quanto esse job custa por mês? <span style="color:#f4a95c;font-style:normal;font-weight:600;">Eu sei — até o último centavo.</span>" — cada DPU conta.</div>
+      </div>
+      <div class="mono" style="display:grid;grid-template-columns:auto auto;gap:6px 20px;font-size:12px;">
+        <span style="color:#7b8498;">conta</span><span style="color:#e6e8e0;text-align:right;">{{ r.account_id }}</span>
+        <span style="color:#7b8498;">período</span><span style="color:#e6e8e0;text-align:right;">{{ r.period }}</span>
+        <span style="color:#7b8498;">janela</span><span style="color:#e6e8e0;text-align:right;">{{ r.lookback }}</span>
+        <span style="color:#7b8498;">scan_id</span><span style="color:#e6e8e0;text-align:right;">{{ r.scan_id }}</span>
+      </div>
+    </div>
+    <div style="margin-top:22px;padding-top:16px;border-top:1px solid #2a3c5c;display:flex;gap:10px;flex-wrap:wrap;">
+      {% for s in ["detected → validated", "método 80/20 (Pareto)", "scores determinísticos", "contexto: Devin"] %}
+      <span class="mono" style="font-size:11px;color:#96a0b4;background:#1a2c4a;border:1px solid #2a3c5c;border-radius:5px;padding:5px 10px;">{{ s }}</span>
+      {% endfor %}
+    </div>
+  </div>
+
+  <!-- KPI STRIP -->
+  <div style="display:grid;grid-template-columns:repeat(4,1fr);border-bottom:1px solid #e2e4dc;">
+    <div style="padding:22px 26px;border-right:1px solid #e2e4dc;">
+      <div class="kicker">Economia / mês</div>
+      <div style="margin-top:8px;font-size:30px;font-weight:700;color:#e8730c;letter-spacing:-.02em;">{{ r.identified_fmt }}</div>
+      <div style="margin-top:3px;font-size:12px;color:#8a9082;">soma das oportunidades quantificáveis</div>
+    </div>
+    <div style="padding:22px 26px;border-right:1px solid #e2e4dc;">
+      <div class="kicker">Acumulado até dez</div>
+      <div style="margin-top:8px;font-size:30px;font-weight:700;color:#12233f;letter-spacing:-.02em;">{{ r.realizable_year_fmt }}</div>
+      <div style="margin-top:3px;font-size:12px;color:#8a9082;">{{ r.months_remaining }} meses restantes no ano</div>
+    </div>
+    <div style="padding:22px 26px;border-right:1px solid #e2e4dc;">
+      <div class="kicker">Oportunidades</div>
+      <div style="margin-top:8px;font-size:30px;font-weight:700;color:#12233f;letter-spacing:-.02em;">{{ r.kpi_total }}</div>
+      <div style="margin-top:3px;font-size:12px;color:#8a9082;">{{ r.kpi_actionable }} acionáveis · {{ r.kpi_strategic }} estratégica(s)</div>
+    </div>
+    <div style="padding:22px 26px;">
+      <div class="kicker">Foco 80/20</div>
+      <div style="margin-top:8px;font-size:30px;font-weight:700;color:#12233f;letter-spacing:-.02em;">{{ r.pareto_pct }}%</div>
+      <div style="margin-top:3px;font-size:12px;color:#8a9082;">da economia em {{ r.pareto_count }} ações</div>
+    </div>
+  </div>
+
+  <div style="padding:34px 44px 44px;">
+
+    <!-- RECOMENDAÇÃO -->
+    <div style="border-left:3px solid #e8730c;background:#fef7ef;border-radius:0 8px 8px 0;padding:12px 16px;margin-bottom:30px;">
+      <span class="kicker" style="color:#a5581a;">Recomendação do Julius</span>
+      <div style="margin-top:4px;font-size:14px;line-height:1.55;color:#3a3f46;">{{ r.recommendation }}</div>
+    </div>
+
+    <!-- 00 RECONCILIAÇÃO -->
+    <div class="sec"><span class="n mono" style="color:#7b8498;">00</span><h2>Custo da conta — reconciliação</h2></div>
+    <p class="lead">O Cost Explorer confere o <b>total</b> da conta e por serviço. A atribuição fina por ativo vem dos coletores de execução (Glue GetJobRuns, bytes Athena) — não do Cost Explorer.</p>
+    <div style="margin-top:20px;display:grid;grid-template-columns:250px 1fr;border:1px solid #e2e4dc;border-radius:12px;overflow:hidden;">
+      <div style="background:#12233f;color:#f4f5f1;padding:22px 24px;display:flex;flex-direction:column;justify-content:center;">
+        <div class="kicker" style="color:#96a0b4;">Custo total / mês</div>
+        <div style="margin-top:6px;font-size:34px;font-weight:700;letter-spacing:-.02em;">{{ r.account_total_fmt }}</div>
+        <div class="mono" style="margin-top:2px;font-size:11px;color:#8792a8;">Cost Explorer · {{ r.region }} · {{ r.period }}</div>
+        <div style="margin-top:20px;padding-top:16px;border-top:1px solid #2a3c5c;">
+          <div style="display:flex;justify-content:space-between;align-items:baseline;">
+            <span class="kicker" style="color:#96a0b4;">Economia identificada</span>
+            <span style="font-weight:700;font-size:18px;color:#f4a95c;">{{ r.account_saving_pct }}</span>
+          </div>
+          <div style="margin-top:8px;height:8px;border-radius:4px;background:#1a2c4a;overflow:hidden;"><div style="height:100%;width:{{ r.account_bar_w }};background:#e8730c;"></div></div>
+          <div class="mono" style="margin-top:8px;font-size:12px;color:#e6b98d;">{{ r.account_saving_fmt }}/mês de potencial otimizável</div>
+        </div>
+      </div>
+      <div>
+        <div style="display:grid;grid-template-columns:1fr 96px 100px;padding:11px 20px;background:#f3f4ee;font-size:10.5px;text-transform:uppercase;letter-spacing:.07em;font-weight:600;color:#7c8374;">
+          <div>Serviço · custo × economia identificada</div><div style="text-align:right;">Custo/mês</div><div style="text-align:right;">Economia</div>
+        </div>
+        {% for s in r.services %}
+        <div style="display:grid;grid-template-columns:1fr 96px 100px;align-items:center;padding:12px 20px;border-top:1px solid #edeee8;">
+          <div style="padding-right:18px;">
+            <div style="display:flex;justify-content:space-between;align-items:baseline;">
+              <span style="font-size:13.5px;font-weight:600;color:#12233f;">{{ s.name }}</span>
+              <span class="mono" style="font-size:11px;color:#a07326;">{{ s.pct_opt }} otimizável</span>
+            </div>
+            <div class="mono" style="margin-top:2px;font-size:11px;color:#8a9082;">{{ s.sub }}</div>
+            <div class="barwrap" style="margin-top:7px;">
+              <div style="position:absolute;left:0;top:0;height:100%;width:{{ s.bar_base_w }};background:#c2c9d6;"></div>
+              <div style="position:absolute;left:0;top:0;height:100%;width:{{ s.bar_save_w }};background:#e8730c;"></div>
+            </div>
+          </div>
+          <div class="mono" style="text-align:right;font-size:13px;color:#3a3f46;">{{ s.cost_fmt }}</div>
+          <div class="mono" style="text-align:right;font-size:13px;font-weight:600;color:{{ s.saving_color }};">{{ s.saving_fmt }}</div>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+
+    <!-- 01 FOCO 80/20 -->
+    <div class="sec" style="margin-top:44px;"><span class="n mono" style="color:#e8730c;">01</span><h2>Foco 80/20 — faça primeiro</h2></div>
+    <p class="lead">{{ r.pareto_sentence }}</p>
+    <div style="margin-top:20px;border:1px solid #f1e2ce;border-radius:12px;background:#fef7ef;overflow:hidden;">
+      <div style="padding:16px 22px 6px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;font-size:12px;color:#4b5159;">
+          <span style="font-weight:600;">Economia acumulada das ações do foco</span>
+          <span class="mono" style="color:#e8730c;font-weight:600;">{{ r.pareto_pct }}% · {{ r.pareto_sum_fmt }}/mês</span>
+        </div>
+        <div style="margin-top:10px;height:12px;border-radius:6px;background:#f2e3d2;overflow:hidden;display:flex;">
+          {% for seg in r.pareto_bar %}<div title="{{ seg.title }}" style="height:100%;width:{{ seg.w }};background:{{ seg.color }};border-right:2px solid #fef7ef;"></div>{% endfor %}
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:1px;background:#efe3d6;margin-top:14px;">
+        {% for o in r.focus %}
+        <div style="background:#fff;padding:18px 22px;">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;">
+            <div><div style="font-size:15px;font-weight:600;color:#12233f;line-height:1.3;">{{ o.title }}</div>
+              <div class="mono" style="margin-top:5px;font-size:12px;color:#7c8374;">{{ o.asset }}</div></div>
+            <div style="text-align:right;white-space:nowrap;"><div style="font-weight:700;font-size:19px;color:#e8730c;">{{ o.monthly_fmt }}</div><div style="font-size:11px;color:#8a9082;">/mês</div></div>
+          </div>
+          <div style="margin-top:12px;display:flex;gap:7px;flex-wrap:wrap;">
+            <span class="chip" style="color:{{ o.diff_fg }};background:{{ o.diff_bg }};">Dif {{ o.difficulty }}/5</span>
+            <span class="chip" style="color:{{ o.conf_fg }};background:{{ o.conf_bg }};">Conf {{ o.confidence_label }}</span>
+            <span class="chip mono" style="color:#5b6169;background:#f1f2ec;border:1px solid #e2e4dc;">exec {{ o.exec_priority }}</span>
+            <span class="chip mono" style="color:#5b6169;background:#f1f2ec;border:1px solid #e2e4dc;">até dez {{ o.year_fmt }}</span>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+
+    <!-- 02 TABELA -->
+    <div class="sec" style="margin-top:44px;"><span class="n mono" style="color:#e8730c;">02</span><h2>Tabela priorizada</h2></div>
+    <p class="lead">Dois rankings: <b>Execução</b> (Ganho × Confiança × Urgência ÷ Esforço — o que fazer agora) e <b>Estratégico</b> (Ganho × Confiança × Risco de não agir — o que entra no planejamento).</p>
+    <div style="margin-top:18px;border:1px solid #e2e4dc;border-radius:12px;overflow:hidden;">
+      <div style="display:grid;grid-template-columns:54px 54px 1fr 82px 92px 96px 92px;background:#12233f;color:#c2c9d6;font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;font-weight:600;">
+        <div style="padding:11px 8px;text-align:center;">Exec</div><div style="padding:11px 8px;text-align:center;">Estrat</div>
+        <div style="padding:11px 14px;">Oportunidade · Ativo</div><div style="padding:11px 8px;text-align:center;">Dif·Conf</div>
+        <div style="padding:11px 10px;text-align:right;">Ganho/mês</div><div style="padding:11px 10px;text-align:right;">Até dez</div><div style="padding:11px 10px;">Aplicar</div>
+      </div>
+      {% for o in r.table %}
+      <div style="display:grid;grid-template-columns:54px 54px 1fr 82px 92px 96px 92px;border-top:1px solid #edeee8;align-items:center;">
+        <div style="padding:14px 8px;text-align:center;">
+          <div style="font-weight:700;font-size:16px;color:{{ o.exec_color }};">{{ o.exec_priority }}</div>
+          <div style="margin:4px auto 0;height:3px;width:34px;border-radius:2px;background:#ebede6;"><div style="height:100%;width:{{ o.exec_w }};border-radius:2px;background:{{ o.exec_color }};"></div></div>
+        </div>
+        <div style="padding:14px 8px;text-align:center;">
+          <div style="font-weight:700;font-size:16px;color:{{ o.strat_color }};">{{ o.strat_priority }}</div>
+          <div style="margin:4px auto 0;height:3px;width:34px;border-radius:2px;background:#ebede6;"><div style="height:100%;width:{{ o.strat_w }};border-radius:2px;background:{{ o.strat_color }};"></div></div>
+        </div>
+        <div style="padding:13px 14px;">
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+            <span style="font-size:14px;font-weight:600;color:#12233f;">{{ o.title }}</span>
+            <span class="chip" style="color:{{ o.category_fg }};background:{{ o.category_bg }};font-size:10px;">{{ o.category_label }}</span>
+          </div>
+          <div class="mono" style="margin-top:4px;font-size:11px;color:#7c8374;">{{ o.asset }} · {{ o.owner }} ({{ o.owner_source }}){% if o.source_process %} · <span style="color:#b23b3b;">gera: {{ o.source_process }}</span>{% endif %}</div>
+        </div>
+        <div style="padding:13px 6px;text-align:center;">
+          <span class="chip" style="color:{{ o.diff_fg }};background:{{ o.diff_bg }};">{{ o.difficulty }}/5</span>
+          <div style="margin-top:5px;font-size:11px;color:{{ o.conf_fg }};font-weight:600;">{{ o.confidence_label }}</div>
+        </div>
+        <div class="mono" style="padding:13px 10px;text-align:right;font-size:13px;font-weight:600;color:#e8730c;">{{ o.monthly_fmt }}</div>
+        <div class="mono" style="padding:13px 10px;text-align:right;font-size:12.5px;color:#5b6169;">{{ o.year_fmt }}</div>
+        <div style="padding:13px 10px;font-size:12px;">{% if o.doc_url %}<a href="{{ o.doc_url }}" target="_blank" rel="noopener">doc ↗</a>{% else %}—{% endif %}</div>
+      </div>
+      {% endfor %}
+    </div>
+
+    <!-- 03 DETALHE -->
+    <div class="sec" style="margin-top:44px;"><span class="n mono" style="color:#e8730c;">03</span><h2>Detalhe das ações (agrupadas por causa raiz)</h2></div>
+    <p class="lead">Cada cartão consolida as evidências num problema com uma ação principal — em linguagem que a squad executa.</p>
+    <div style="margin-top:20px;display:flex;flex-direction:column;gap:16px;">
+      {% for o in r.focus %}
+      <div style="border:1px solid #e2e4dc;border-radius:12px;overflow:hidden;">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:16px;padding:15px 22px;background:{{ o.bucket_bg }};border-bottom:1px solid #e8e9e3;flex-wrap:wrap;">
+          <div style="display:flex;align-items:center;gap:11px;flex-wrap:wrap;">
+            <span class="chip" style="color:{{ o.bucket_fg }};background:#ffffffaa;font-weight:700;">{{ o.bucket_label }}</span>
+            <span style="font-size:16px;font-weight:600;color:#12233f;">{{ o.title }}</span>
+          </div>
+          <span class="mono" style="font-size:11px;color:#8a9082;">{{ o.id }}</span>
+        </div>
+        <div style="display:grid;grid-template-columns:1.55fr 1fr;">
+          <div style="padding:20px 22px;border-right:1px solid #edeee8;">
+            <div class="kicker">Ação recomendada</div><div style="margin-top:6px;font-size:14.5px;line-height:1.5;color:#22262c;">{{ o.action }}</div>
+            <div class="kicker" style="margin-top:16px;">Por quê</div><div style="margin-top:6px;font-size:13.5px;line-height:1.5;color:#4b5159;">{{ o.why }}</div>
+            <div class="kicker" style="margin-top:16px;">Evidência</div>
+            <div style="margin-top:8px;display:flex;flex-direction:column;gap:5px;">
+              {% for e in o.evidence %}<div style="display:flex;gap:8px;align-items:baseline;font-size:13px;color:#3a3f46;"><span style="color:#e8730c;font-weight:700;">›</span><span>{{ e }}</span></div>{% endfor %}
+            </div>
+          </div>
+          <div style="padding:20px 22px;background:#fbfcfa;">
+            <div style="display:flex;gap:10px;margin-bottom:6px;">
+              <div style="flex:1;"><div class="kicker">Este mês</div><div style="font-weight:700;font-size:20px;color:#e8730c;margin-top:2px;">{{ o.monthly_fmt }}</div></div>
+              <div style="flex:1;"><div class="kicker">Até dez</div><div style="font-weight:700;font-size:20px;color:#12233f;margin-top:2px;">{{ o.year_fmt }}</div></div>
+            </div>
+            <div style="font-size:11px;color:#8a9082;margin-bottom:14px;">faixa provável {{ o.band_fmt }}</div>
+            <div style="display:flex;gap:7px;flex-wrap:wrap;margin-bottom:14px;">
+              <span class="chip" style="color:{{ o.diff_fg }};background:{{ o.diff_bg }};">Dif {{ o.difficulty }}/5</span>
+              <span class="chip" style="color:{{ o.conf_fg }};background:{{ o.conf_bg }};">Conf {{ o.confidence_label }}</span>
+            </div>
+            {% if o.source_process %}<div class="kicker">Processo gerador (pode ser desligado)</div><div style="margin-top:5px;font-size:13.5px;font-weight:600;color:#b23b3b;">{{ o.source_process }}</div>{% endif %}
+            <div class="kicker" style="margin-top:13px;">Como aplicar</div><div style="margin-top:5px;font-size:13px;line-height:1.45;color:#3a3f46;">{{ o.how_to_apply }} {% if o.doc_url %}<a href="{{ o.doc_url }}" target="_blank" rel="noopener">doc AWS ↗</a>{% endif %}</div>
+            <div class="kicker" style="margin-top:13px;">Como validar</div><div style="margin-top:5px;font-size:13px;line-height:1.45;color:#3a3f46;">{{ o.how_to_validate }}</div>
+            <div class="kicker" style="margin-top:13px;">Responsável</div><div style="margin-top:4px;font-size:13px;font-weight:600;color:#12233f;">{{ o.owner }} <span class="mono" style="font-size:10px;font-weight:400;color:#5b6169;">fonte: {{ o.owner_source }}</span></div>
+            <div class="mono" style="margin-top:13px;padding-top:12px;border-top:1px dashed #dfe1d9;font-size:11px;color:#8a9082;line-height:1.5;">cobertura {{ o.coverage_pct }} · fontes: {{ o.sources }}</div>
+          </div>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+
+    <!-- 04 / 05 -->
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:28px;margin-top:44px;">
+      <div>
+        <div class="sec"><span class="n mono" style="color:#e8730c;">04</span><h2 style="font-size:19px;">Quick wins</h2></div>
+        <p class="lead">Alta execução, baixo esforço — resolvíveis nesta semana.</p>
+        <div style="margin-top:14px;display:flex;flex-direction:column;gap:8px;">
+          {% for o in r.do_now %}
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;border:1px solid #e2e4dc;border-radius:9px;padding:12px 15px;">
+            <div><div style="font-size:13.5px;font-weight:600;color:#12233f;">{{ o.title }}</div><div class="mono" style="margin-top:3px;font-size:11px;color:#7c8374;">{{ o.asset }} · dif {{ o.difficulty }}/5</div></div>
+            <div style="text-align:right;white-space:nowrap;"><div style="font-weight:700;font-size:15px;color:#e8730c;">{{ o.monthly_fmt }}</div><div style="font-size:10px;color:#8a9082;">/mês</div></div>
+          </div>
+          {% else %}<p class="lead">—</p>{% endfor %}
+        </div>
+      </div>
+      <div>
+        <div class="sec"><span class="n mono" style="color:#b26a12;">05</span><h2 style="font-size:19px;">Investigações necessárias</h2></div>
+        <p class="lead">Evidência incompleta — reportadas separadamente, antes de recomendar ação técnica.</p>
+        <div style="margin-top:14px;display:flex;flex-direction:column;gap:8px;">
+          {% for o in r.investigate %}
+          <div style="border:1px solid #ecdcc4;background:#fdf8f0;border-radius:9px;padding:12px 15px;">
+            <div style="font-size:13.5px;font-weight:600;color:#12233f;">{{ o.title }}</div>
+            <div class="mono" style="margin-top:5px;font-size:11px;color:#a07326;">próxima ação: {{ o.next_action or 'coletar evidência' }}</div>
+          </div>
+          {% else %}<p class="lead">—</p>{% endfor %}
+        </div>
+      </div>
+    </div>
+
+    {% if r.producers %}
+    <!-- 06 PRODUCER -->
+    <div class="sec" style="margin-top:44px;"><span class="n mono" style="color:#0053b3;">06</span><h2>Candidatos à Producer</h2></div>
+    <p class="lead">Dois scores independentes: <b>Candidatura</b> (o processo assumiu perfil de produção?) × <b>Prontidão</b> (é viável migrar agora?). Nunca migramos a conta inteira — apontamos processo, tabela ou produto.</p>
+    <div style="margin-top:20px;display:grid;grid-template-columns:1.1fr .9fr;gap:24px;align-items:stretch;">
+      <div style="border:1px solid #e2e4dc;border-radius:12px;padding:20px 20px 14px;position:relative;">
+        <div style="position:relative;height:320px;margin:6px 0 0 34px;border-left:2px solid #cdd0c8;border-bottom:2px solid #cdd0c8;">
+          <div style="position:absolute;left:0;top:0;width:50%;height:50%;background:#f4f7fb;"></div>
+          <div style="position:absolute;right:0;top:0;width:50%;height:50%;background:#eef4fb;"></div>
+          <div style="position:absolute;left:0;bottom:0;width:50%;height:50%;background:#fbfbf8;"></div>
+          <div style="position:absolute;right:0;bottom:0;width:50%;height:50%;background:#fdf6ec;"></div>
+          <div style="position:absolute;left:50%;top:0;bottom:0;width:1px;background:#dfe1d9;"></div>
+          <div style="position:absolute;top:50%;left:0;right:0;height:1px;background:#dfe1d9;"></div>
+          <div style="position:absolute;right:8px;top:6px;font-size:10px;font-weight:700;color:#0053b3;text-align:right;line-height:1.3;">MIGRAR<br><span style="font-weight:500;color:#7d94b8;">alta+alta</span></div>
+          <div style="position:absolute;left:8px;top:6px;font-size:10px;font-weight:700;color:#8a6a2a;line-height:1.3;">PREPARAR<br><span style="font-weight:500;color:#b39a68;">plano</span></div>
+          <div style="position:absolute;right:8px;bottom:6px;font-size:10px;font-weight:700;color:#e8730c;text-align:right;line-height:1.3;">MONITORAR</div>
+          <div style="position:absolute;left:8px;bottom:6px;font-size:10px;font-weight:700;color:#9a9a90;line-height:1.3;">NÃO PRIORIZAR</div>
+          {% for p in r.producers %}
+          <div title="{{ p.name }}" style="position:absolute;left:{{ p.x }};bottom:{{ p.y }};transform:translate(-50%,50%);width:15px;height:15px;border-radius:50%;background:{{ p.color }};border:2.5px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.2);"></div>
+          {% endfor %}
+        </div>
+        <div class="mono" style="display:flex;justify-content:space-between;margin:8px 0 0 34px;font-size:10.5px;color:#8a9082;"><span>baixa prontidão →</span><span>alta prontidão</span></div>
+        <div class="mono" style="position:absolute;left:14px;top:50%;transform:rotate(-90deg);transform-origin:left;font-size:10.5px;color:#8a9082;white-space:nowrap;">candidatura →</div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:10px;">
+        {% for p in r.producers %}
+        <div style="border:1px solid #e2e4dc;border-radius:10px;padding:13px 16px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;">
+            <span style="font-size:13.5px;font-weight:600;color:#12233f;">{{ p.name }}</span>
+            <span style="width:10px;height:10px;border-radius:50%;background:{{ p.color }};flex-shrink:0;"></span>
+          </div>
+          <div style="margin-top:9px;display:flex;gap:16px;">
+            <div style="flex:1;"><div style="display:flex;justify-content:space-between;font-size:11px;color:#7c8374;"><span>candidatura</span><span class="mono" style="color:#0053b3;font-weight:600;">{{ p.cand }}</span></div>
+              <div style="margin-top:3px;height:4px;border-radius:2px;background:#eef0ea;"><div style="height:100%;width:{{ p.cand_w }};border-radius:2px;background:#0053b3;"></div></div></div>
+            <div style="flex:1;"><div style="display:flex;justify-content:space-between;font-size:11px;color:#7c8374;"><span>prontidão</span><span class="mono" style="color:#e8730c;font-weight:600;">{{ p.ready }}</span></div>
+              <div style="margin-top:3px;height:4px;border-radius:2px;background:#eef0ea;"><div style="height:100%;width:{{ p.ready_w }};border-radius:2px;background:#e8730c;"></div></div></div>
+          </div>
+          <div style="margin-top:9px;font-size:12px;color:#4b5159;"><b style="color:{{ p.color }};">{{ p.rec_label }}</b> — {{ p.note }}</div>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+
+    {% if r.previous_results %}
+    <!-- 07 RESULTADOS ANTERIORES -->
+    <div class="sec" style="margin-top:44px;"><span class="n mono" style="color:#e8730c;">07</span><h2>Resultado das recomendações anteriores</h2></div>
+    <p class="lead">Ganho realizado × previsto — não só o total, mas o custo por unidade. Estes valores calibram as regras de estimativa.</p>
+    <div style="margin-top:18px;border:1px solid #e2e4dc;border-radius:12px;overflow:hidden;">
+      <div style="display:grid;grid-template-columns:1.4fr 96px 96px 84px 1fr;background:#f3f4ee;font-size:10.5px;text-transform:uppercase;letter-spacing:.07em;font-weight:600;color:#7c8374;">
+        <div style="padding:11px 16px;">Recomendação implementada</div><div style="padding:11px 12px;text-align:right;">Prevista</div><div style="padding:11px 12px;text-align:right;">Realizada</div><div style="padding:11px 12px;text-align:center;">Precisão</div><div style="padding:11px 16px;">Custo por unidade</div>
+      </div>
+      {% for r2 in r.previous_results %}
+      <div style="display:grid;grid-template-columns:1.4fr 96px 96px 84px 1fr;border-top:1px solid #edeee8;align-items:center;">
+        <div style="padding:14px 16px;"><div style="font-size:13.5px;font-weight:600;color:#12233f;">{{ r2.title }}</div><div class="mono" style="margin-top:3px;font-size:11px;color:#7c8374;">{{ r2.asset }} · impl. {{ r2.date }}</div></div>
+        <div class="mono" style="padding:14px 12px;text-align:right;font-size:13px;color:#5b6169;">{{ r2.predicted_fmt }}</div>
+        <div class="mono" style="padding:14px 12px;text-align:right;font-size:13px;font-weight:600;color:#e8730c;">{{ r2.realized_fmt }}</div>
+        <div style="padding:14px 12px;text-align:center;"><span class="chip mono" style="color:{{ r2.prec_fg }};background:{{ r2.prec_bg }};">{{ r2.precision }}%</span></div>
+        <div style="padding:14px 16px;font-size:12.5px;color:#4b5159;line-height:1.4;">{{ r2.unit }}</div>
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+
+    <!-- RUN MANIFEST -->
+    <div style="margin-top:44px;border-top:1px solid #e2e4dc;padding-top:22px;">
+      <div class="kicker" style="margin-bottom:12px;">Run manifest — reprodutibilidade</div>
+      <div class="mono" style="display:grid;grid-template-columns:repeat(3,1fr);gap:14px 28px;font-size:11.5px;color:#5b6169;">
+        {% for m in r.manifest %}<div style="display:flex;justify-content:space-between;gap:10px;border-bottom:1px dotted #e2e4dc;padding-bottom:6px;"><span style="color:#96a0b4;">{{ m.k }}</span><span style="color:#22262c;text-align:right;">{{ m.v }}</span></div>{% endfor %}
+      </div>
+      <div style="margin-top:20px;font-size:11.5px;color:#96a0b4;line-height:1.6;">Fonte registrada no run manifest (MVP 1B). Scores, ganho, dificuldade, confiança e prioridade são determinísticos. As estimativas assumem mesmo volume e frequência e serão validadas após a mudança. S3 permanece infraestrutura imutável.</div>
+    </div>
+
+  </div>
+</div>
+</body>
+</html>

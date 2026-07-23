@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light">
+<title>{{ subject }}</title>
+</head>
+<body style="margin:0;padding:0;background:#eceee7;font-family:system-ui,-apple-system,'Segoe UI',Roboto,Arial,sans-serif;color:#1a1e24;-webkit-font-smoothing:antialiased;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#eceee7;padding:24px 12px;">
+<tr><td align="center">
+<table role="presentation" width="640" cellpadding="0" cellspacing="0" style="width:640px;max-width:640px;background:#ffffff;border:1px solid #d9dcd3;border-radius:2px;">
+
+  <!-- header -->
+  <tr><td style="background:#12233f;padding:24px 28px;">
+    <table role="presentation" cellpadding="0" cellspacing="0"><tr>
+      {% if avatar %}
+      <td valign="middle" style="padding-right:12px;"><img src="{{ avatar }}" width="42" height="42" alt="Julius" style="width:42px;height:42px;border-radius:50%;border:2px solid #e8730c;display:block;"></td>
+      {% endif %}
+      <td valign="middle">
+        <span style="font-size:23px;font-weight:700;color:#f4f5f1;letter-spacing:-.01em;">Julius</span>
+        <span style="font-size:10px;color:#8792a8;border:1px solid #2f4468;border-radius:4px;padding:2px 6px;margin-left:4px;">v{{ version }}</span>
+      </td>
+    </tr></table>
+    <div style="margin-top:14px;font-size:13.5px;line-height:1.55;color:#b6bece;">Portfólio contínuo de oportunidades de otimização — custos e governança sobre a plataforma Data&nbsp;Mesh. Detectar → priorizar → recomendar → acompanhar → validar o ganho.</div>
+    <div style="margin-top:12px;padding-left:12px;border-left:2px solid #e8730c;font-size:12.5px;font-style:italic;color:#e6b98d;">"Você sabe quanto esse job custa por mês? <span style="color:#f4a95c;font-style:normal;font-weight:600;">Eu sei — até o último centavo.</span>" — cada DPU conta.</div>
+    <div style="margin-top:14px;font-size:13px;color:#b6bece;">{{ r.account_masked }} &middot; {{ r.period }} &middot; janela {{ r.lookback }}</div>
+    <div style="margin-top:14px;font-size:17px;font-weight:700;color:#f4a95c;">Identificamos {{ r.identified_fmt }}/mês em oportunidades.</div>
+    <div style="margin-top:4px;font-size:12px;color:#8792a8;">alta confiança {{ r.high_conf_fmt }}/mês &middot; realizável no ano {{ r.realizable_year_fmt }}</div>
+  </td></tr>
+
+  <!-- KPI strip -->
+  <tr><td style="padding:0;border-bottom:1px solid #e2e4dc;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>
+      <td width="33%" style="padding:16px 18px;border-right:1px solid #e2e4dc;">
+        <div style="font-size:10px;text-transform:uppercase;letter-spacing:.07em;color:#7c8374;font-weight:600;">Economia / mês</div>
+        <div style="margin-top:4px;font-size:22px;font-weight:700;color:#e8730c;">{{ r.identified_fmt }}</div>
+      </td>
+      <td width="34%" style="padding:16px 18px;border-right:1px solid #e2e4dc;">
+        <div style="font-size:10px;text-transform:uppercase;letter-spacing:.07em;color:#7c8374;font-weight:600;">Realizável no ano</div>
+        <div style="margin-top:4px;font-size:22px;font-weight:700;color:#12233f;">{{ r.realizable_year_fmt }}</div>
+      </td>
+      <td width="33%" style="padding:16px 18px;">
+        <div style="font-size:10px;text-transform:uppercase;letter-spacing:.07em;color:#7c8374;font-weight:600;">Foco 80/20</div>
+        <div style="margin-top:4px;font-size:22px;font-weight:700;color:#12233f;">{{ r.pareto_pct }}%</div>
+      </td>
+    </tr></table>
+  </td></tr>
+
+  <!-- pareto callout -->
+  <tr><td style="padding:18px 28px 4px;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#fef7ef;border:1px solid #f1e2ce;border-radius:8px;">
+      <tr><td style="padding:12px 16px;font-size:13px;color:#4b5159;line-height:1.5;">
+        <span style="display:inline-block;font-size:11px;font-weight:700;color:#e8730c;letter-spacing:.04em;">FOCO 80/20</span><br>
+        Faça <b style="color:#12233f;">{{ r.pareto_count }} ações</b> para capturar ~{{ r.pareto_pct }}% da economia
+        &mdash; {{ r.executable_count }} já executáveis ({{ r.executable_pct }}%).
+      </td></tr>
+    </table>
+  </td></tr>
+
+  <!-- numbered actions -->
+  {% for o in r.focus %}
+  <tr><td style="padding:12px 28px 0;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #e2e4dc;border-radius:10px;">
+      <tr>
+        <td width="34" valign="top" style="padding:16px 0 16px 16px;">
+          <div style="width:26px;height:26px;line-height:26px;text-align:center;border-radius:50%;background:#12233f;color:#fff;font-size:13px;font-weight:700;">{{ loop.index }}</div>
+        </td>
+        <td valign="top" style="padding:14px 16px 14px 10px;">
+          <div style="font-size:15px;font-weight:600;color:#12233f;line-height:1.3;">{{ o.title }}</div>
+          <div style="margin-top:2px;font-size:12px;color:#7c8374;">{{ o.asset }}</div>
+          <div style="margin-top:10px;">
+            <span style="font-size:18px;font-weight:700;color:#e8730c;">{{ o.monthly_fmt }}</span>
+            <span style="font-size:12px;color:#8a9082;">/mês &middot; faixa {{ o.band_fmt }} &middot; até dez {{ o.year_fmt }}</span>
+          </div>
+          <div style="margin-top:10px;">
+            <span style="display:inline-block;font-size:11px;font-weight:600;color:{{ o.diff_fg }};background:{{ o.diff_bg }};border-radius:5px;padding:3px 8px;">Dificuldade: {{ o.difficulty_label }}</span>
+            <span style="display:inline-block;font-size:11px;font-weight:600;color:{{ o.conf_fg }};background:{{ o.conf_bg }};border-radius:5px;padding:3px 8px;">Confiança: {{ o.confidence_label }}</span>
+            <span style="display:inline-block;font-size:11px;color:#5b6169;background:#f1f2ec;border-radius:5px;padding:3px 8px;">Resp.: {{ o.owner }}</span>
+          </div>
+          <div style="margin-top:10px;font-size:13px;color:#3a3f46;line-height:1.5;">
+            <b style="color:#12233f;">Como aplicar:</b> {{ o.how_to_apply }}
+            {% if o.doc_url %}<a href="{{ o.doc_url }}" style="color:#0053b3;text-decoration:none;">[doc AWS &#8599;]</a>{% endif %}
+          </div>
+        </td>
+      </tr>
+    </table>
+  </td></tr>
+  {% endfor %}
+
+  <!-- CTA / anexo -->
+  <tr><td align="center" style="padding:22px 28px 26px;">
+    {% if report_url %}
+    <a href="{{ report_url }}" style="display:inline-block;background:#e8730c;color:#ffffff;font-weight:700;font-size:14px;text-decoration:none;padding:13px 30px;border-radius:6px;">ABRIR RELATÓRIO COMPLETO &#8599;</a>
+    {% else %}
+    <div style="display:inline-block;background:#f3f4ee;border:1px solid #e2e4dc;border-radius:8px;padding:12px 18px;font-size:13px;color:#3a3f46;">Relatório completo em anexo: <b style="color:#12233f;">report.html</b> — evidências, tabela priorizada e detalhes técnicos.</div>
+    {% endif %}
+    <div style="margin-top:12px;font-size:11px;color:#8a9082;line-height:1.5;">Estimativas assumem mesmo volume e frequência; serão validadas após a mudança.<br>Ganho, dificuldade, confiança e prioridade são determinísticos.</div>
+  </td></tr>
+
+</table>
+</td></tr>
+</table>
+</body>
+</html>

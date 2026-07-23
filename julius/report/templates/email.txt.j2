@@ -1,0 +1,19 @@
+Julius · {{ r.account_masked }} · {{ r.period }}
+Identificamos {{ r.identified_fmt }}/mês em oportunidades.
+
+== FOCO 80/20 =====================================
+ {{ r.pareto_count }} ações capturam ~{{ r.pareto_pct }}% da economia
+ ({{ r.executable_count }} já executáveis = {{ r.executable_pct }}%)
+===================================================
+
+{% for o in r.focus %}
+{{ loop.index }}. {{ o.title }} — {{ o.asset }}
+   Ganho: {{ o.monthly_fmt }}/mês (faixa {{ o.band_fmt }}) · até dez {{ o.year_fmt }}
+   Dificuldade: {{ o.difficulty_label }} · Responsável: {{ o.owner }}
+   Como aplicar: {{ o.how_to_apply }}
+{% if o.doc_url %}   Doc AWS: {{ o.doc_url }}{% endif %}
+
+{% endfor %}
+Abrir relatório completo: {{ report_url }}
+
+Estimativas assumem mesmo volume e frequência; serão validadas após a mudança.

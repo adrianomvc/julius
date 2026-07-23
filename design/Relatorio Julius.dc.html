@@ -1,0 +1,723 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&amp;family=IBM+Plex+Mono:wght@400;500;600&amp;family=Space+Grotesk:wght@500;600;700&amp;display=swap" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body { background: #eceee7; }
+  a { color: #0053b3; text-decoration: none; }
+  a:hover { color: #003a80; text-decoration: underline; }
+</style>
+</helmet>
+<div style="background:#eceee7; min-height:100vh; padding:40px 24px; font-family:'IBM Plex Sans',system-ui,sans-serif; color:#1a1e24; -webkit-font-smoothing:antialiased;">
+<div style="max-width:1000px; margin:0 auto; background:#ffffff; border:1px solid #d9dcd3; box-shadow:0 1px 0 rgba(0,0,0,.02),0 24px 60px -30px rgba(20,24,31,.35);">
+
+  <!-- HEADER BAND -->
+  <div style="background:#12233f; color:#f4f5f1; padding:34px 44px 30px;">
+    <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:32px; flex-wrap:wrap;">
+      <div style="max-width:520px;">
+        <div style="display:flex; align-items:center; gap:12px;">
+          <img src="assets/julius-avatar.png" alt="Julius" style="width:44px; height:44px; border-radius:50%; object-fit:cover; border:2px solid #e8730c; box-shadow:0 2px 8px rgba(0,0,0,.3);">
+
+          <span style="font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:26px; letter-spacing:-.01em;">Julius</span>
+          <span style="font-family:'IBM Plex Mono',monospace; font-size:11px; color:#8792a8; border:1px solid #2f4468; border-radius:4px; padding:2px 7px; margin-left:2px;">v0.3.0</span>
+        </div>
+        <div style="margin-top:14px; font-size:14px; line-height:1.55; color:#b6bece;">Portfólio contínuo de oportunidades de otimização — custos e governança sobre a plataforma Data&nbsp;Mesh. Detectar → priorizar → recomendar → acompanhar → validar o ganho.</div>
+        <div style="margin-top:12px; padding-left:12px; border-left:2px solid #e8730c; font-size:12.5px; font-style:italic; color:#e6b98d;">"Você sabe quanto esse job custa por mês? <span style="color:#f4a95c; font-style:normal; font-weight:600;">Eu sei — até o último centavo.</span>" — cada DPU conta.</div>
+      </div>
+      <div style="display:grid; grid-template-columns:auto auto; gap:6px 20px; font-size:12px; font-family:'IBM Plex Mono',monospace;">
+        <span style="color:#7b8498;">conta</span><span style="color:#e6e8e0; text-align:right;">{{ m.account }}</span>
+        <span style="color:#7b8498;">período</span><span style="color:#e6e8e0; text-align:right;">{{ m.period }}</span>
+        
+        <span style="color:#7b8498;">janela</span><span style="color:#e6e8e0; text-align:right;">{{ m.lookback }}</span>
+        <span style="color:#7b8498;">scan_id</span><span style="color:#e6e8e0; text-align:right;">{{ m.scanId }}</span>
+      </div>
+    </div>
+    <div style="margin-top:24px; padding-top:18px; border-top:1px solid #2a3c5c; display:flex; gap:10px; flex-wrap:wrap;">
+      <span style="font-size:11px; font-family:'IBM Plex Mono',monospace; color:#96a0b4; background:#1a2c4a; border:1px solid #2a3c5c; border-radius:5px; padding:5px 10px;">detected → validated</span>
+      <span style="font-size:11px; font-family:'IBM Plex Mono',monospace; color:#96a0b4; background:#1a2c4a; border:1px solid #2a3c5c; border-radius:5px; padding:5px 10px;">método 80/20 (Pareto)</span>
+      <span style="font-size:11px; font-family:'IBM Plex Mono',monospace; color:#96a0b4; background:#1a2c4a; border:1px solid #2a3c5c; border-radius:5px; padding:5px 10px;">scores determinísticos</span>
+      <span style="font-size:11px; font-family:'IBM Plex Mono',monospace; color:#96a0b4; background:#1a2c4a; border:1px solid #2a3c5c; border-radius:5px; padding:5px 10px;">contexto: Devin</span>
+    </div>
+  </div>
+
+  <!-- KPI STRIP -->
+  <div style="display:grid; grid-template-columns:repeat(4,1fr); border-bottom:1px solid #e2e4dc;">
+    <div style="padding:22px 26px; border-right:1px solid #e2e4dc;">
+      <div style="font-size:11px; text-transform:uppercase; letter-spacing:.09em; color:#7c8374; font-weight:600;">Economia / mês</div>
+      <div style="margin-top:8px; font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:30px; color:#e8730c; letter-spacing:-.02em;">{{ k.monthly }}</div>
+      <div style="margin-top:3px; font-size:12px; color:#8a9082;">soma das oportunidades quantificáveis</div>
+    </div>
+    <div style="padding:22px 26px; border-right:1px solid #e2e4dc;">
+      <div style="font-size:11px; text-transform:uppercase; letter-spacing:.09em; color:#7c8374; font-weight:600;">Acumulado até dez/2026</div>
+      <div style="margin-top:8px; font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:30px; color:#12233f; letter-spacing:-.02em;">{{ k.yearEnd }}</div>
+      <div style="margin-top:3px; font-size:12px; color:#8a9082;">{{ k.monthsRemaining }} meses restantes no ano</div>
+    </div>
+    <div style="padding:22px 26px; border-right:1px solid #e2e4dc;">
+      <div style="font-size:11px; text-transform:uppercase; letter-spacing:.09em; color:#7c8374; font-weight:600;">Oportunidades</div>
+      <div style="margin-top:8px; font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:30px; color:#12233f; letter-spacing:-.02em;">{{ k.total }}</div>
+      <div style="margin-top:3px; font-size:12px; color:#8a9082;">{{ k.actionable }} acionáveis · {{ k.strategic }} estratégica</div>
+    </div>
+    <div style="padding:22px 26px;">
+      <div style="font-size:11px; text-transform:uppercase; letter-spacing:.09em; color:#7c8374; font-weight:600;">Foco 80/20</div>
+      <div style="margin-top:8px; font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:30px; color:#12233f; letter-spacing:-.02em;">{{ k.paretoPct }}</div>
+      <div style="margin-top:3px; font-size:12px; color:#8a9082;">da economia em {{ k.paretoCount }} ações</div>
+    </div>
+  </div>
+
+  <!-- BODY -->
+  <div style="padding:38px 44px 44px;">
+
+    <!-- ACCOUNT COST RECONCILIATION -->
+    <div style="display:flex; align-items:baseline; gap:12px; margin-bottom:4px;">
+      <span style="font-family:'IBM Plex Mono',monospace; font-size:12px; color:#7b8498; font-weight:600;">00</span>
+      <h2 style="margin:0; font-family:'Space Grotesk',sans-serif; font-size:22px; font-weight:700; letter-spacing:-.01em; color:#12233f;">Custo da conta — reconciliação</h2>
+    </div>
+    <p style="margin:6px 0 0; font-size:14px; line-height:1.6; color:#4b5159; max-width:760px;">O Cost Explorer confere o <b>total</b> da conta e por serviço (reconciliação). A atribuição fina por job vem dos coletores de execução (Glue GetJobRuns, bytes Athena) — não do Cost Explorer.</p>
+
+    <div style="margin-top:20px; display:grid; grid-template-columns:250px 1fr; gap:0; border:1px solid #e2e4dc; border-radius:12px; overflow:hidden;">
+      <!-- total panel -->
+      <div style="background:#12233f; color:#f4f5f1; padding:22px 24px; display:flex; flex-direction:column; justify-content:center;">
+        <div style="font-size:11px; text-transform:uppercase; letter-spacing:.09em; color:#96a0b4; font-weight:600;">Custo total / mês</div>
+        <div style="margin-top:6px; font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:34px; letter-spacing:-.02em;">{{ account.totalFmt }}</div>
+        <div style="margin-top:2px; font-family:'IBM Plex Mono',monospace; font-size:11px; color:#8792a8;">Cost Explorer · sa-east-1 · jul/2026</div>
+        <div style="margin-top:20px; padding-top:16px; border-top:1px solid #2a3c5c;">
+          <div style="display:flex; justify-content:space-between; align-items:baseline;">
+            <span style="font-size:11px; text-transform:uppercase; letter-spacing:.06em; color:#96a0b4; font-weight:600;">Economia identificada</span>
+            <span style="font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:18px; color:#f4a95c;">{{ account.savingPct }}</span>
+          </div>
+          <div style="margin-top:8px; height:8px; border-radius:4px; background:#1a2c4a; overflow:hidden;"><div style="height:100%; width:{{ account.savingBarW }}; border-radius:4px; background:#e8730c;"></div></div>
+          <div style="margin-top:8px; font-family:'IBM Plex Mono',monospace; font-size:12px; color:#e6b98d;">{{ account.savingFmt }}/mês de potencial otimizável</div>
+        </div>
+      </div>
+      <!-- per-service breakdown -->
+      <div style="background:#ffffff;">
+        <div style="display:grid; grid-template-columns:1fr 96px 100px; padding:11px 20px 11px 20px; background:#f3f4ee; font-size:10.5px; text-transform:uppercase; letter-spacing:.07em; font-weight:600; color:#7c8374;">
+          <div>Serviço · custo atual × economia identificada</div>
+          <div style="text-align:right;">Custo/mês</div>
+          <div style="text-align:right;">Economia</div>
+        </div>
+        <sc-for list="{{ account.services }}" as="s" hint-placeholder-count="5">
+          <div style="display:grid; grid-template-columns:1fr 96px 100px; align-items:center; padding:12px 20px; border-top:1px solid #edeee8;">
+            <div style="padding-right:18px;">
+              <div style="display:flex; justify-content:space-between; align-items:baseline;">
+                <span style="font-size:13.5px; font-weight:600; color:#12233f;">{{ s.name }}</span>
+                <span style="font-family:'IBM Plex Mono',monospace; font-size:11px; color:#a07326;">{{ s.pctOpt }} otimizável</span>
+              </div>
+              <div style="margin-top:2px; font-family:'IBM Plex Mono',monospace; font-size:11px; color:#8a9082;">{{ s.sub }}</div>
+              <div style="margin-top:7px; position:relative; height:7px; border-radius:4px; background:#eef0ea; overflow:hidden;">
+                <div style="position:absolute; left:0; top:0; height:100%; width:{{ s.barBaseW }}; border-radius:4px; background:#c2c9d6;"></div>
+                <div style="position:absolute; left:0; top:0; height:100%; width:{{ s.barSaveW }}; border-radius:4px; background:#e8730c;"></div>
+              </div>
+            </div>
+            <div style="text-align:right; font-family:'IBM Plex Mono',monospace; font-size:13px; color:#3a3f46;">{{ s.costFmt }}</div>
+            <div style="text-align:right; font-family:'IBM Plex Mono',monospace; font-size:13px; font-weight:600; color:{{ s.savingColor }};">{{ s.savingFmt }}</div>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+
+    <!-- 80/20 FOCUS -->
+    <div style="display:flex; align-items:baseline; gap:12px; margin-bottom:4px;">
+      <span style="font-family:'IBM Plex Mono',monospace; font-size:12px; color:#e8730c; font-weight:600;">01</span>
+      <h2 style="margin:0; font-family:'Space Grotesk',sans-serif; font-size:22px; font-weight:700; letter-spacing:-.01em; color:#12233f;">Foco 80/20 — faça primeiro</h2>
+    </div>
+    <p style="margin:6px 0 0; font-size:14px; line-height:1.6; color:#4b5159; max-width:760px;">{{ k.paretoSentence }}</p>
+
+    <div style="margin-top:20px; border:1px solid #f1e2ce; border-radius:12px; background:#fef7ef; overflow:hidden;">
+      <div style="padding:16px 22px 6px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; font-size:12px; color:#4b5159;">
+          <span style="font-weight:600;">Economia acumulada das ações do foco</span>
+          <span style="font-family:'IBM Plex Mono',monospace; color:#e8730c; font-weight:600;">{{ k.paretoPct }} · {{ k.paretoSum }}/mês</span>
+        </div>
+        <div style="margin-top:10px; height:12px; border-radius:6px; background:#f2e3d2; overflow:hidden; display:flex;">
+          <sc-for list="{{ paretoBar }}" as="seg" hint-placeholder-count="4">
+            <div title="{{ seg.title }}" style="height:100%; width:{{ seg.w }}; background:{{ seg.color }}; border-right:2px solid #fef7ef;"></div>
+          </sc-for>
+        </div>
+      </div>
+      <div style="display:grid; grid-template-columns:repeat(2,1fr); gap:1px; background:#efe3d6; margin-top:14px;">
+        <sc-for list="{{ focus }}" as="o" hint-placeholder-count="4">
+          <div style="background:#ffffff; padding:18px 22px;">
+            <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:12px;">
+              <div>
+                <div style="font-size:15px; font-weight:600; color:#12233f; line-height:1.3;">{{ o.title }}</div>
+                <div style="margin-top:5px; font-family:'IBM Plex Mono',monospace; font-size:12px; color:#7c8374;">{{ o.asset }}</div>
+              </div>
+              <div style="text-align:right; white-space:nowrap;">
+                <div style="font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:19px; color:#e8730c;">{{ o.gainMonthFmt }}</div>
+                <div style="font-size:11px; color:#8a9082;">/mês</div>
+              </div>
+            </div>
+            <div style="margin-top:12px; display:flex; gap:7px; flex-wrap:wrap;">
+              <span style="{{ o.difChip }}">Dif {{ o.dif }}/5</span>
+              <span style="{{ o.confChip }}">Conf {{ o.conf }}</span>
+              <span style="font-size:11px; font-family:'IBM Plex Mono',monospace; color:#5b6169; background:#f1f2ec; border:1px solid #e2e4dc; border-radius:5px; padding:3px 8px;">exec {{ o.exec }}</span>
+              <span style="font-size:11px; font-family:'IBM Plex Mono',monospace; color:#5b6169; background:#f1f2ec; border:1px solid #e2e4dc; border-radius:5px; padding:3px 8px;">até dez {{ o.gainYearFmt }}</span>
+            </div>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+
+    <!-- PRIORITY TABLE -->
+    <div style="display:flex; align-items:baseline; gap:12px; margin:44px 0 4px;">
+      <span style="font-family:'IBM Plex Mono',monospace; font-size:12px; color:#e8730c; font-weight:600;">02</span>
+      <h2 style="margin:0; font-family:'Space Grotesk',sans-serif; font-size:22px; font-weight:700; letter-spacing:-.01em; color:#12233f;">Tabela priorizada</h2>
+    </div>
+    <p style="margin:6px 0 0; font-size:14px; line-height:1.6; color:#4b5159; max-width:760px;">Dois rankings independentes: <b>Execução</b> (Ganho × Confiança × Urgência ÷ Esforço — o que fazer agora) e <b>Estratégico</b> (Ganho × Confiança × Risco de não agir — o que entra no planejamento).</p>
+
+    <div style="margin-top:18px; border:1px solid #e2e4dc; border-radius:12px; overflow:hidden;">
+      <div style="display:grid; grid-template-columns:54px 54px 1fr 74px 92px 96px 100px; background:#12233f; color:#c2c9d6; font-size:10.5px; text-transform:uppercase; letter-spacing:.07em; font-weight:600;">
+        <div style="padding:11px 10px; text-align:center;">Exec</div>
+        <div style="padding:11px 10px; text-align:center;">Estrat</div>
+        <div style="padding:11px 14px;">Oportunidade · Ativo</div>
+        <div style="padding:11px 10px; text-align:center;">Dif · Conf</div>
+        <div style="padding:11px 12px; text-align:right;">Ganho/mês</div>
+        <div style="padding:11px 12px; text-align:right;">Até dez/26</div>
+        <div style="padding:11px 12px;">Como aplicar</div>
+      </div>
+      <sc-for list="{{ table }}" as="o" hint-placeholder-count="8">
+        <div style="display:grid; grid-template-columns:54px 54px 1fr 74px 92px 96px 100px; border-top:1px solid #edeee8; background:{{ o.rowBg }}; align-items:center;">
+          <div style="padding:14px 8px; text-align:center;">
+            <div style="font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:16px; color:{{ o.execColor }};">{{ o.exec }}</div>
+            <div style="margin:4px auto 0; height:3px; width:34px; border-radius:2px; background:#ebede6;"><div style="height:100%; width:{{ o.execW }}; border-radius:2px; background:{{ o.execColor }};"></div></div>
+          </div>
+          <div style="padding:14px 8px; text-align:center;">
+            <div style="font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:16px; color:{{ o.stratColor }};">{{ o.estrat }}</div>
+            <div style="margin:4px auto 0; height:3px; width:34px; border-radius:2px; background:#ebede6;"><div style="height:100%; width:{{ o.stratW }}; border-radius:2px; background:{{ o.stratColor }};"></div></div>
+          </div>
+          <div style="padding:13px 14px;">
+            <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+              <span style="font-size:14px; font-weight:600; color:#12233f;">{{ o.title }}</span>
+              <span style="{{ o.catChip }}">{{ o.catLabel }}</span>
+            </div>
+            <div style="margin-top:4px; font-family:'IBM Plex Mono',monospace; font-size:11.5px; color:#7c8374;">{{ o.asset }} · {{ o.owner }} · resp. {{ o.resp }}</div>
+          </div>
+          <div style="padding:13px 8px; text-align:center;">
+            <span style="{{ o.difChip }}">{{ o.dif }}/5</span>
+            <div style="margin-top:5px;"><span style="{{ o.confChipSm }}">{{ o.conf }}</span></div>
+          </div>
+          <div style="padding:13px 12px; text-align:right; font-family:'IBM Plex Mono',monospace; font-size:13.5px; font-weight:600; color:{{ o.gainColor }};">{{ o.gainMonthFmt }}</div>
+          <div style="padding:13px 12px; text-align:right; font-family:'IBM Plex Mono',monospace; font-size:13px; color:#5b6169;">{{ o.gainYearFmt }}</div>
+          <div style="padding:13px 12px; font-size:12.5px; line-height:1.4;"><a href="{{ o.docUrl }}" target="_blank" rel="noopener">{{ o.how }} ↗</a></div>
+        </div>
+      </sc-for>
+    </div>
+
+    <!-- DETAIL CARDS: two-lens deep dive -->
+    <div style="display:flex; align-items:baseline; gap:12px; margin:44px 0 4px;">
+      <span style="font-family:'IBM Plex Mono',monospace; font-size:12px; color:#e8730c; font-weight:600;">03</span>
+      <h2 style="margin:0; font-family:'Space Grotesk',sans-serif; font-size:22px; font-weight:700; letter-spacing:-.01em; color:#12233f;">Detalhe das ações (agrupadas por causa raiz)</h2>
+    </div>
+    <p style="margin:6px 0 0; font-size:14px; line-height:1.6; color:#4b5159; max-width:760px;">Cada cartão consolida as evidências num único problema com uma ação principal. Evidência, ganho, dificuldade, como aplicar e como validar — em linguagem que a Squad executa.</p>
+
+    <div style="margin-top:20px; display:flex; flex-direction:column; gap:16px;">
+      <sc-for list="{{ details }}" as="o" hint-placeholder-count="4">
+        <div style="border:1px solid #e2e4dc; border-radius:12px; overflow:hidden;">
+          <div style="display:flex; justify-content:space-between; align-items:center; gap:16px; padding:15px 22px; background:{{ o.headBg }}; border-bottom:1px solid #e8e9e3; flex-wrap:wrap;">
+            <div style="display:flex; align-items:center; gap:11px; flex-wrap:wrap;">
+              <span style="{{ o.bucketChip }}">{{ o.bucketLabel }}</span>
+              <span style="font-size:16px; font-weight:600; color:#12233f;">{{ o.title }}</span>
+            </div>
+            <span style="font-family:'IBM Plex Mono',monospace; font-size:11px; color:#8a9082;">{{ o.id }}</span>
+          </div>
+          <div style="display:grid; grid-template-columns:1.55fr 1fr; gap:0;">
+            <div style="padding:20px 22px; border-right:1px solid #edeee8;">
+              <div style="font-size:11px; text-transform:uppercase; letter-spacing:.08em; color:#7c8374; font-weight:600;">Ação recomendada</div>
+              <div style="margin-top:6px; font-size:14.5px; line-height:1.5; color:#22262c;">{{ o.action }}</div>
+              <div style="margin-top:16px; font-size:11px; text-transform:uppercase; letter-spacing:.08em; color:#7c8374; font-weight:600;">Por quê</div>
+              <div style="margin-top:6px; font-size:13.5px; line-height:1.5; color:#4b5159;">{{ o.why }}</div>
+              <div style="margin-top:16px; font-size:11px; text-transform:uppercase; letter-spacing:.08em; color:#7c8374; font-weight:600;">Evidência</div>
+              <div style="margin-top:8px; display:flex; flex-direction:column; gap:5px;">
+                <sc-for list="{{ o.evidence }}" as="e" hint-placeholder-count="3">
+                  <div style="display:flex; gap:8px; align-items:baseline; font-size:13px; color:#3a3f46;"><span style="color:#e8730c; font-weight:700;">›</span><span>{{ e }}</span></div>
+                </sc-for>
+              </div>
+              <sc-if value="{{ o.devinNote }}" hint-placeholder-val="{{ true }}">
+                <div style="margin-top:16px; border-left:3px solid #7a5cc0; background:#f6f3fc; border-radius:0 8px 8px 0; padding:11px 14px;">
+                  <div style="font-size:10.5px; text-transform:uppercase; letter-spacing:.08em; color:#6a4fb0; font-weight:700; display:flex; align-items:center; gap:6px;"><span style="width:6px; height:6px; border-radius:50%; background:#7a5cc0; display:inline-block;"></span>Contexto do Devin</div>
+                  <div style="margin-top:6px; font-size:13px; line-height:1.5; color:#4a4360;">{{ o.devinNote }}</div>
+                </div>
+              </sc-if>
+            </div>
+            <div style="padding:20px 22px; background:#fbfcfa;">
+              <div style="display:flex; gap:10px; margin-bottom:16px;">
+                <div style="flex:1;">
+                  <div style="font-size:10.5px; text-transform:uppercase; letter-spacing:.06em; color:#7c8374; font-weight:600;">Este mês</div>
+                  <div style="font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:20px; color:#e8730c; margin-top:2px;">{{ o.gainMonthFmt }}</div>
+                </div>
+                <div style="flex:1;">
+                  <div style="font-size:10.5px; text-transform:uppercase; letter-spacing:.06em; color:#7c8374; font-weight:600;">Até dez/26</div>
+                  <div style="font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:20px; color:#12233f; margin-top:2px;">{{ o.gainYearFmt }}</div>
+                </div>
+              </div>
+              <div style="display:flex; gap:7px; flex-wrap:wrap; margin-bottom:16px;">
+                <span style="{{ o.difChip }}">Dif {{ o.dif }}/5</span>
+                <span style="{{ o.confChip }}">Conf {{ o.conf }}</span>
+              </div>
+              <div style="font-size:10.5px; text-transform:uppercase; letter-spacing:.06em; color:#7c8374; font-weight:600;">Como aplicar</div>
+              <div style="margin-top:5px; font-size:13px; line-height:1.45; color:#3a3f46;">{{ o.howTo }} <a href="{{ o.docUrl }}" target="_blank" rel="noopener">doc AWS ↗</a></div>
+              <div style="margin-top:13px; font-size:10.5px; text-transform:uppercase; letter-spacing:.06em; color:#7c8374; font-weight:600;">Como validar</div>
+              <div style="margin-top:5px; font-size:13px; line-height:1.45; color:#3a3f46;">{{ o.howValidate }}</div>
+              <div style="margin-top:13px; font-size:10.5px; text-transform:uppercase; letter-spacing:.06em; color:#7c8374; font-weight:600;">Responsável</div>
+              <div style="margin-top:4px; display:flex; align-items:center; gap:8px; flex-wrap:wrap;"><span style="font-size:13px; font-weight:600; color:#12233f;">{{ o.resp }}</span><span style="font-size:10px; font-family:'IBM Plex Mono',monospace; color:#5b6169; background:#eef0ea; border:1px solid #e2e4dc; border-radius:4px; padding:2px 7px;">fonte: {{ o.ownerSrc }}</span></div>
+              <div style="margin-top:13px; padding-top:12px; border-top:1px dashed #dfe1d9; font-family:'IBM Plex Mono',monospace; font-size:11px; color:#8a9082; line-height:1.5;">cobertura {{ o.coverage }} · fontes: {{ o.sources }}</div>
+            </div>
+          </div>
+        </div>
+      </sc-for>
+    </div>
+
+    <!-- TWO COLUMN: Quick wins + Low confidence -->
+    <div style="display:grid; grid-template-columns:1fr 1fr; gap:28px; margin-top:44px;">
+      <div>
+        <div style="display:flex; align-items:baseline; gap:12px; margin-bottom:4px;">
+          <span style="font-family:'IBM Plex Mono',monospace; font-size:12px; color:#e8730c; font-weight:600;">04</span>
+          <h2 style="margin:0; font-family:'Space Grotesk',sans-serif; font-size:19px; font-weight:700; letter-spacing:-.01em; color:#12233f;">Quick wins</h2>
+        </div>
+        <p style="margin:5px 0 14px; font-size:13px; line-height:1.55; color:#4b5159;">Alta execução, baixo esforço — resolvíveis nesta semana.</p>
+        <div style="display:flex; flex-direction:column; gap:8px;">
+          <sc-for list="{{ quickWins }}" as="o" hint-placeholder-count="3">
+            <div style="display:flex; justify-content:space-between; align-items:center; gap:12px; border:1px solid #e2e4dc; border-radius:9px; padding:12px 15px;">
+              <div>
+                <div style="font-size:13.5px; font-weight:600; color:#12233f;">{{ o.title }}</div>
+                <div style="margin-top:3px; font-family:'IBM Plex Mono',monospace; font-size:11px; color:#7c8374;">{{ o.asset }} · dif {{ o.dif }}/5</div>
+              </div>
+              <div style="text-align:right; white-space:nowrap;">
+                <div style="font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:15px; color:#e8730c;">{{ o.gainMonthFmt }}</div>
+                <div style="font-size:10.5px; color:#8a9082;">/mês</div>
+              </div>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+      <div>
+        <div style="display:flex; align-items:baseline; gap:12px; margin-bottom:4px;">
+          <span style="font-family:'IBM Plex Mono',monospace; font-size:12px; color:#b26a12; font-weight:600;">05</span>
+          <h2 style="margin:0; font-family:'Space Grotesk',sans-serif; font-size:19px; font-weight:700; letter-spacing:-.01em; color:#12233f;">Baixa confiança</h2>
+        </div>
+        <p style="margin:5px 0 14px; font-size:13px; line-height:1.55; color:#4b5159;">Evidência incompleta — reportadas separadamente, aguardando mais dados antes de agir.</p>
+        <div style="display:flex; flex-direction:column; gap:8px;">
+          <sc-for list="{{ lowConf }}" as="o" hint-placeholder-count="2">
+            <div style="border:1px solid #ecdcc4; background:#fdf8f0; border-radius:9px; padding:12px 15px;">
+              <div style="display:flex; justify-content:space-between; align-items:center; gap:10px;">
+                <div style="font-size:13.5px; font-weight:600; color:#12233f;">{{ o.title }}</div>
+                <span style="{{ o.confChipSm }}">{{ o.conf }}</span>
+              </div>
+              <div style="margin-top:5px; font-family:'IBM Plex Mono',monospace; font-size:11px; color:#a07326;">falta: {{ o.missing }}</div>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+    </div>
+
+    <!-- PRODUCER MATRIX -->
+    <div style="display:flex; align-items:baseline; gap:12px; margin:44px 0 4px;">
+      <span style="font-family:'IBM Plex Mono',monospace; font-size:12px; color:#0053b3; font-weight:600;">06</span>
+      <h2 style="margin:0; font-family:'Space Grotesk',sans-serif; font-size:22px; font-weight:700; letter-spacing:-.01em; color:#12233f;">Candidatos à Producer</h2>
+    </div>
+    <p style="margin:6px 0 0; font-size:14px; line-height:1.6; color:#4b5159; max-width:760px;">Dois scores independentes: <b>Candidatura</b> (o processo assumiu perfil de produção?) × <b>Prontidão</b> (é viável migrar agora?). Nunca migramos a conta inteira — apontamos processo, tabela ou produto.</p>
+
+    <div style="margin-top:20px; display:grid; grid-template-columns:1.1fr .9fr; gap:24px; align-items:stretch;">
+      <!-- 2x2 matrix -->
+      <div style="border:1px solid #e2e4dc; border-radius:12px; padding:20px 20px 14px; position:relative;">
+        <div style="position:relative; height:320px; margin:6px 0 0 34px; border-left:2px solid #cdd0c8; border-bottom:2px solid #cdd0c8;">
+          <!-- quadrant backgrounds -->
+          <div style="position:absolute; left:0; top:0; width:50%; height:50%; background:#f4f7fb;"></div>
+          <div style="position:absolute; right:0; top:0; width:50%; height:50%; background:#eef4fb;"></div>
+          <div style="position:absolute; left:0; bottom:0; width:50%; height:50%; background:#fbfbf8;"></div>
+          <div style="position:absolute; right:0; bottom:0; width:50%; height:50%; background:#fdf6ec;"></div>
+          <div style="position:absolute; left:50%; top:0; bottom:0; width:1px; background:#dfe1d9;"></div>
+          <div style="position:absolute; top:50%; left:0; right:0; height:1px; background:#dfe1d9;"></div>
+          <!-- quadrant labels -->
+          <div style="position:absolute; right:8px; top:6px; font-size:10px; font-weight:700; color:#0053b3; text-align:right; line-height:1.3;">MIGRAR<br><span style="font-weight:500; color:#7d94b8;">alta+alta</span></div>
+          <div style="position:absolute; left:8px; top:6px; font-size:10px; font-weight:700; color:#8a6a2a; line-height:1.3;">PREPARAR<br><span style="font-weight:500; color:#b39a68;">plano</span></div>
+          <div style="position:absolute; right:8px; bottom:6px; font-size:10px; font-weight:700; color:#e8730c; text-align:right; line-height:1.3;">MONITORAR<br><span style="font-weight:500; color:#e6b98d;">manter</span></div>
+          <div style="position:absolute; left:8px; bottom:6px; font-size:10px; font-weight:700; color:#9a9a90; line-height:1.3;">NÃO PRIORIZAR</div>
+          <!-- points -->
+          <sc-for list="{{ producers }}" as="p" hint-placeholder-count="4">
+            <div title="{{ p.name }}" style="position:absolute; left:{{ p.x }}; bottom:{{ p.y }}; transform:translate(-50%,50%); width:15px; height:15px; border-radius:50%; background:{{ p.color }}; border:2.5px solid #fff; box-shadow:0 1px 4px rgba(0,0,0,.2);"></div>
+          </sc-for>
+        </div>
+        <div style="display:flex; justify-content:space-between; margin:8px 0 0 34px; font-size:10.5px; color:#8a9082; font-family:'IBM Plex Mono',monospace;">
+          <span>baixa prontidão →</span><span>alta prontidão</span>
+        </div>
+        <div style="position:absolute; left:14px; top:50%; transform:rotate(-90deg); transform-origin:left; font-size:10.5px; color:#8a9082; font-family:'IBM Plex Mono',monospace; white-space:nowrap;">candidatura →</div>
+      </div>
+      <!-- producer list -->
+      <div style="display:flex; flex-direction:column; gap:10px;">
+        <sc-for list="{{ producers }}" as="p" hint-placeholder-count="4">
+          <div style="border:1px solid #e2e4dc; border-radius:10px; padding:13px 16px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; gap:10px;">
+              <span style="font-size:13.5px; font-weight:600; color:#12233f;">{{ p.name }}</span>
+              <span style="width:10px; height:10px; border-radius:50%; background:{{ p.color }}; flex-shrink:0;"></span>
+            </div>
+            <div style="margin-top:9px; display:flex; gap:16px;">
+              <div style="flex:1;">
+                <div style="display:flex; justify-content:space-between; font-size:11px; color:#7c8374;"><span>candidatura</span><span style="font-family:'IBM Plex Mono',monospace; color:#0053b3; font-weight:600;">{{ p.cand }}</span></div>
+                <div style="margin-top:3px; height:4px; border-radius:2px; background:#eef0ea;"><div style="height:100%; width:{{ p.candW }}; border-radius:2px; background:#0053b3;"></div></div>
+              </div>
+              <div style="flex:1;">
+                <div style="display:flex; justify-content:space-between; font-size:11px; color:#7c8374;"><span>prontidão</span><span style="font-family:'IBM Plex Mono',monospace; color:#e8730c; font-weight:600;">{{ p.ready }}</span></div>
+                <div style="margin-top:3px; height:4px; border-radius:2px; background:#eef0ea;"><div style="height:100%; width:{{ p.readyW }}; border-radius:2px; background:#e8730c;"></div></div>
+              </div>
+            </div>
+            <div style="margin-top:9px; font-size:12px; color:#4b5159;"><b style="color:{{ p.recColor }};">{{ p.rec }}</b> — {{ p.note }}</div>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+
+    <!-- PREVIOUS RESULTS -->
+    <div style="display:flex; align-items:baseline; gap:12px; margin:44px 0 4px;">
+      <span style="font-family:'IBM Plex Mono',monospace; font-size:12px; color:#e8730c; font-weight:600;">07</span>
+      <h2 style="margin:0; font-family:'Space Grotesk',sans-serif; font-size:22px; font-weight:700; letter-spacing:-.01em; color:#12233f;">Resultado das recomendações anteriores</h2>
+    </div>
+    <p style="margin:6px 0 0; font-size:14px; line-height:1.6; color:#4b5159; max-width:760px;">Ganho realizado × previsto — não só o total, mas o custo por unidade. Estes valores calibram as regras de estimativa.</p>
+
+    <div style="margin-top:18px; border:1px solid #e2e4dc; border-radius:12px; overflow:hidden;">
+      <div style="display:grid; grid-template-columns:1.4fr 96px 96px 84px 1fr; background:#f3f4ee; font-size:10.5px; text-transform:uppercase; letter-spacing:.07em; font-weight:600; color:#7c8374;">
+        <div style="padding:11px 16px;">Recomendação implementada</div>
+        <div style="padding:11px 12px; text-align:right;">Prevista</div>
+        <div style="padding:11px 12px; text-align:right;">Realizada</div>
+        <div style="padding:11px 12px; text-align:center;">Precisão</div>
+        <div style="padding:11px 16px;">Custo por unidade</div>
+      </div>
+      <sc-for list="{{ prevResults }}" as="r" hint-placeholder-count="3">
+        <div style="display:grid; grid-template-columns:1.4fr 96px 96px 84px 1fr; border-top:1px solid #edeee8; align-items:center;">
+          <div style="padding:14px 16px;">
+            <div style="font-size:13.5px; font-weight:600; color:#12233f;">{{ r.title }}</div>
+            <div style="margin-top:3px; font-family:'IBM Plex Mono',monospace; font-size:11px; color:#7c8374;">{{ r.asset }} · impl. {{ r.date }}</div>
+          </div>
+          <div style="padding:14px 12px; text-align:right; font-family:'IBM Plex Mono',monospace; font-size:13px; color:#5b6169;">{{ r.predicted }}</div>
+          <div style="padding:14px 12px; text-align:right; font-family:'IBM Plex Mono',monospace; font-size:13px; font-weight:600; color:#e8730c;">{{ r.realized }}</div>
+          <div style="padding:14px 12px; text-align:center;"><span style="{{ r.precChip }}">{{ r.precision }}</span></div>
+          <div style="padding:14px 16px; font-size:12.5px; color:#4b5159; line-height:1.4;">{{ r.unit }}</div>
+        </div>
+      </sc-for>
+    </div>
+
+    <!-- GOVERNANCE RANKINGS -->
+    <div style="display:flex; align-items:baseline; gap:12px; margin:44px 0 4px;">
+      
+      
+    </div>
+    
+
+    
+
+    <!-- RUN MANIFEST FOOTER -->
+    <div style="margin-top:44px; border-top:1px solid #e2e4dc; padding-top:22px;">
+      <div style="font-size:11px; text-transform:uppercase; letter-spacing:.08em; color:#7c8374; font-weight:600; margin-bottom:12px;">Run manifest — reprodutibilidade</div>
+      <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:14px 28px; font-family:'IBM Plex Mono',monospace; font-size:11.5px; color:#5b6169;">
+        <sc-for list="{{ manifest }}" as="mf" hint-placeholder-count="6">
+          <div style="display:flex; justify-content:space-between; gap:10px; border-bottom:1px dotted #e2e4dc; padding-bottom:6px;"><span style="color:#96a0b4;">{{ mf.k }}</span><span style="color:#22262c; text-align:right;">{{ mf.v }}</span></div>
+        </sc-for>
+      </div>
+      <div style="margin-top:20px; font-size:11.5px; color:#96a0b4; line-height:1.6;">Fonte multi-conta via assume-role read-only + ingestão de datasets. Scores, ganho, dificuldade, confiança e prioridade são determinísticos. O Devin adiciona apenas contexto e nunca eleva confiança sem evidência nova. S3 tratado como infra imutável — só consolidação de small files e arquivos sem uso (reporta, nunca apaga).</div>
+    </div>
+
+  </div>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1080,&quot;height&quot;:900}}">
+class Component extends DCLogic {
+  fmt(n) {
+    if (n == null) return "—";
+    return "R$\u00a0" + n.toLocaleString("pt-BR");
+  }
+  difChip(d, big) {
+    const c = d <= 2 ? ["#0053b3", "#e6effa"] : d === 3 ? ["#b26a12", "#faf0dd"] : ["#b23b3b", "#f7e4e4"];
+    const pad = big ? "4px 9px" : "2px 7px";
+    const fs = big ? "11.5px" : "10.5px";
+    return `display:inline-block; font-size:${fs}; font-weight:600; color:${c[0]}; background:${c[1]}; border-radius:5px; padding:${pad};`;
+  }
+  confChip(conf, sm) {
+    const map = { "Alta": ["#0053b3", "#e6effa"], "Média": ["#b26a12", "#faf0dd"], "Baixa": ["#8a5a5a", "#f0e6e6"] };
+    const c = map[conf] || map["Média"];
+    const pad = sm ? "2px 7px" : "4px 9px";
+    const fs = sm ? "10px" : "11.5px";
+    return `display:inline-block; font-size:${fs}; font-weight:600; color:${c[0]}; background:${c[1]}; border-radius:5px; padding:${pad};`;
+  }
+  catChip(cat) {
+    const map = {
+      glue: ["#7a4bc4", "#f1ebfb", "Glue"],
+      athena: ["#e8730c", "#fdefdd", "Athena"],
+      session: ["#0053b3", "#e6effa", "Session"],
+      s3: ["#b26a12", "#faf0dd", "S3"],
+      gov: ["#b23b3b", "#f7e4e4", "Governança"]
+    };
+    const c = map[cat];
+    return { style: `display:inline-block; font-size:10px; font-weight:600; color:${c[0]}; background:${c[1]}; border-radius:4px; padding:2px 7px; letter-spacing:.02em;`, label: c[2] };
+  }
+  bucketChip(b) {
+    const map = {
+      fazer_agora: ["#e8730c", "#fdefdd", "Fazer agora"],
+      planejar: ["#0053b3", "#e6effa", "Planejar no trimestre"],
+      preparar: ["#8a6a2a", "#faf0dd", "Preparar migração"],
+      monitorar: ["#5b6169", "#eef0ea", "Monitorar"]
+    };
+    const c = map[b];
+    return { style: `display:inline-block; font-size:10.5px; font-weight:700; color:${c[0]}; background:${c[1]}; border-radius:5px; padding:4px 10px; letter-spacing:.02em;`, label: c[2] };
+  }
+  scoreColor(v) {
+    return v >= 75 ? "#e8730c" : v >= 50 ? "#b26a12" : "#8a9082";
+  }
+  stratColor(v) {
+    return v >= 75 ? "#0053b3" : v >= 50 ? "#4f7bc0" : "#96a0b4";
+  }
+
+  renderVals() {
+    const D = "https://docs.aws.amazon.com";
+    // ---- source opportunities ----
+    const src = [
+      { id: "GLUE-AUTOSCALING-123", exec: 92, estrat: 40, title: "Habilitar Auto Scaling", asset: "glue_job: processa_interacoes", owner: "Squad AVI", cat: "glue", dif: 1, conf: "Alta", gain: 1300, bucket: "fazer_agora",
+        how: "Ativar autoscaling", howTo: "No job: ativar --enable-auto-scaling e definir máx. ~12 workers; testar 1 execução.", how_validate: "Comparar DPU-h e duração média por execução após a mudança.",
+        action: "Habilitar Auto Scaling e revisar o teto de workers do job para ~12, com um teste controlado numa execução.",
+        why: "Carga de CPU média em 22% com 20 workers fixos e sem --enable-auto-scaling — capacidade superdimensionada.",
+        evidence: ["CPU load média 22% em 30 execuções", "workers=20 fixos (G.1X)", "sem --enable-auto-scaling", "DPUSeconds coletados via GetJobRuns"],
+        docUrl: D + "/glue/latest/dg/auto-scaling.html", coverage: "82%", sources: "Glue GetJobRuns, CloudWatch",
+        devinNote: "Executar após corrigir o particionamento do estágio único — reduzir workers antes pode mascarar o skew de partição. Sequência sugerida: 1) particionar, 2) reavaliar capacidade." },
+      { id: "ATHENA-PARTITION-207", exec: 84, estrat: 55, title: "Query com scan elevado", asset: "athena: relatorio_diario", owner: "Squad AVI", cat: "athena", dif: 2, conf: "Alta", gain: 800, bucket: "fazer_agora",
+        how: "Filtrar partição", howTo: "Adicionar filtro de partição (WHERE dt=) e projetar só as colunas usadas.", how_validate: "Comparar DataScannedInBytes antes × depois na mesma janela.",
+        action: "Adicionar filtro de partição e eliminar o SELECT * — projetar apenas as colunas efetivamente lidas pelo relatório.",
+        why: "Query recorrente varre a tabela inteira (1,8 TB/execução) sem predicado de partição; 22 execuções/mês.",
+        evidence: ["DataScannedInBytes 1,8 TB por execução", "sem filtro de partição (dt)", "SELECT * em 40+ colunas", "22 execuções/mês no histórico"],
+        docUrl: D + "/athena/latest/ug/partitions.html", coverage: "88%", sources: "Athena get_query_execution, workgroup history",
+        devinNote: null },
+      { id: "GLUE-IS-IDLE-088", exec: 88, estrat: 25, title: "Sessão interativa ociosa", asset: "glue_session: etl-explore", owner: "Squad AVI", cat: "session", dif: 1, conf: "Alta", gain: 700, bucket: "fazer_agora",
+        how: "Reduzir idle timeout", howTo: "Ajustar --idle-timeout para 60 min (default 2880) e revisar DPU (5→2).", how_validate: "Medir tempo READY ocioso e DPU-h por sessão na próxima semana.",
+        action: "Reduzir idle_timeout do default de 2880 min para 60 min e baixar a DPU da sessão de 5 para 2.",
+        why: "Sessões ficam READY ociosas por horas; idle_timeout no default de 2880 min e DPU acima do necessário.",
+        evidence: ["idle_timeout=2880 min (default)", "média 3h20 READY ocioso/dia", "DPU=5 (mín. útil observado 2)"],
+        docUrl: D + "/glue/latest/dg/interactive-sessions.html", coverage: "76%", sources: "Glue GetSession, CloudWatch",
+        devinNote: null },
+      { id: "GLUE-OVERPROV-341", exec: 76, estrat: 42, title: "Capacidade superdimensionada", asset: "glue_job: agrega_vendas", owner: "Squad AVI", cat: "glue", dif: 2, conf: "Média", gain: 600, bucket: "planejar",
+        how: "Reduzir workers 20→12", howTo: "Reduzir number_of_workers para 12 com teste controlado.", how_validate: "Comparar duração e DPU-h por execução em 3 execuções pós-mudança.",
+        action: "Reduzir de 20 para 12 workers após validar que o gargalo não é I/O — teste controlado em 3 execuções.",
+        why: "Utilização média de executores em 28% com 20 workers; sem sinal de contenção de memória.",
+        evidence: ["util. executores 28%", "workers=20 (G.1X)", "sem spill de memória nos logs", "Spark UI indisponível em parte da janela"],
+        docUrl: D + "/glue/latest/dg/monitor-spark-ui.html", coverage: "64%", sources: "Glue GetJobRuns, CloudWatch",
+        devinNote: "Confiança média: Spark UI ausente em 40% das execuções. Confirmar shuffle spill antes de reduzir — pode haver skew em agrega_vendas." },
+      { id: "GLUE-VERSION-118", exec: 70, estrat: 30, title: "Glue 1.0 → 4.0", asset: "glue_job: carga_cadastro", owner: "Squad AVI", cat: "glue", dif: 2, conf: "Alta", gain: 430, bucket: "planejar",
+        how: "Atualizar GlueVersion", howTo: "Migrar para Glue 4.0 (billing 1 min, AQE); rodar suíte de regressão.", how_validate: "Comparar custo/execução e duração; validar saídas com testes.",
+        action: "Atualizar GlueVersion de 1.0 para 4.0 — faturamento por 1 min (vs. 10 min) e AQE habilitado por padrão.",
+        why: "Job em Glue 1.0 fatura em blocos de 10 min; execuções curtas (~4 min) pagam por 10.",
+        evidence: ["GlueVersion=1.0", "duração média 4m12s", "billing mínimo 10 min", "sem AQE"],
+        docUrl: D + "/glue/latest/dg/release-notes.html", coverage: "84%", sources: "Glue GetJob, GetJobRuns",
+        devinNote: null },
+      { id: "S3-SMALLFILES-455", exec: 48, estrat: 35, title: "Arquivos pequenos", asset: "table: eventos_raw", owner: "Squad AVI", cat: "s3", dif: 3, conf: "Média", gain: 250, bucket: "planejar",
+        how: "Consolidar small files", howTo: "Aplicar groupFiles/coalesce na origem para gerar objetos ~128 MB.", how_validate: "Contar objetos por partição e medir latência de leitura no Athena.",
+        action: "Consolidar small files na origem (groupFiles / coalesce) — o processo grava milhares de objetos ≪128 MB.",
+        why: "Prefixo eventos_raw/dt= com ~14 mil objetos de 3 MB; penaliza leitura no Glue e no Athena.",
+        evidence: ["~14.000 objetos/partição", "tamanho médio 3,1 MB (alvo 128 MB)", "overhead de listagem no Athena"],
+        docUrl: D + "/glue/latest/dg/grouping-input-files.html", coverage: "58%", sources: "S3 Inventory, Glue Catalog",
+        devinNote: "S3 é infra imutável: sem lifecycle/storage class. A consolidação é na origem do processo, ligada ao job que grava eventos_raw." },
+      { id: "GOV-PRODUCER-902", exec: 30, estrat: 95, title: "Produto produzido na Consumer", asset: "fluxo: produto_recomendacoes", owner: "Squad AVI", cat: "gov", dif: 5, conf: "Alta", gain: null, bucket: "preparar",
+        how: "Preparar migração", howTo: "Iniciar plano de migração a Producer: mapear I/O, testes e dependências.", how_validate: "Governança: ownership definido, SLA formal, dependências mapeadas.",
+        action: "Preparar a migração do fluxo para a camada Producer — não migrar a conta, apenas este processo/produto.",
+        why: "Processo com perfil de produção fora da Producer: execução diária, 5 comunidades consumindo, publicação recorrente via DataWarm.",
+        evidence: ["execução diária há 8 meses", "5 comunidades consomem a tabela publicada", "DataWarm publica dataset recorrente", "criticidade derivada alta"],
+        docUrl: D + "/glue/latest/dg/catalog-and-crawler.html", coverage: "80%", sources: "Toques (Glue Catalog), DataWarm, lineage",
+        devinNote: "Alta prioridade estratégica apesar da dificuldade 5 — o ranking estratégico impede que a migração caia abaixo de quick wins. Sequenciar depois de resolver ownership." },
+      { id: "ATHENA-SELECTSTAR-611", exec: 55, estrat: 20, title: "SELECT * em dashboard ad-hoc", asset: "athena: dashboard_adhoc", owner: "Squad AVI", cat: "athena", dif: 1, conf: "Baixa", gain: 180, bucket: "monitorar",
+        how: "Evitar SELECT *", howTo: "Projetar colunas e ativar result reuse no workgroup.", how_validate: "Comparar bytes escaneados e cache hits no workgroup.",
+        action: "Projetar apenas as colunas necessárias e habilitar result reuse — impacto pequeno, evidência ainda parcial.",
+        why: "Padrão de SELECT * observado, mas poucas execuções na janela; sem BytesScannedCutoffPerQuery.",
+        evidence: ["SELECT * detectado", "apenas 4 execuções na janela (mín. 5)", "workgroup sem result reuse"],
+        docUrl: D + "/athena/latest/ug/reusing-query-results.html", coverage: "41%", sources: "Athena workgroup history",
+        missing: "execuções < mínimo (5), custo por query", devinNote: null }
+    ];
+
+    // ownership determinístico: responsável + fonte de captura (precedência)
+    const ownership = {
+      "GLUE-AUTOSCALING-123": { resp: "Marcos Tavares", src: "tag oficial" },
+      "ATHENA-PARTITION-207": { resp: "Marcos Tavares", src: "tag oficial" },
+      "GLUE-IS-IDLE-088": { resp: "Renata Lopes", src: "tabela corporativa" },
+      "GLUE-OVERPROV-341": { resp: "Renata Lopes", src: "Squad do job" },
+      "GLUE-VERSION-118": { resp: "Bruno Sales", src: "Squad do job" },
+      "S3-SMALLFILES-455": { resp: "Bruno Sales", src: "config DataWarm" },
+      "GOV-PRODUCER-902": { resp: "Ana Beltrão", src: "tabela corporativa" },
+      "ATHENA-SELECTSTAR-611": { resp: "não identificado", src: "desconhecido" }
+    };
+    const withDisplay = (o) => {
+      const cc = this.catChip(o.cat);
+      const bc = this.bucketChip(o.bucket);
+      const ow = ownership[o.id] || { resp: "não identificado", src: "desconhecido" };
+      return Object.assign({}, o, {
+        gainMonthFmt: this.fmt(o.gain),
+        gainYearFmt: o.gain == null ? "Estratégico" : this.fmt(o.gain * 6),
+        gainColor: o.gain == null ? "#0053b3" : "#e8730c",
+        difChip: this.difChip(o.dif, true),
+        confChip: this.confChip(o.conf, false),
+        confChipSm: this.confChip(o.conf, true),
+        catChip: cc.style, catLabel: cc.label,
+        bucketChip: bc.style, bucketLabel: bc.label,
+        execColor: this.scoreColor(o.exec), stratColor: this.stratColor(o.estrat),
+        execW: o.exec + "%", stratW: o.estrat + "%",
+        howValidate: o.how_validate,
+        headBg: o.bucket === "fazer_agora" ? "#fef7ef" : o.bucket === "preparar" ? "#f4f7fb" : "#fafbf8",
+        rowBg: "#ffffff",
+        resp: ow.resp, ownerSrc: ow.src,
+        respKnown: ow.src !== "desconhecido"
+      });
+    };
+
+    const all = src.map(withDisplay);
+
+    // ---- pareto / 80/20 ----
+    const quant = all.filter(o => o.gain != null);
+    const monthlyTotal = quant.reduce((s, o) => s + o.gain, 0);
+    const sorted = [...quant].sort((a, b) => b.gain - a.gain);
+    let cum = 0; const focus = [];
+    for (const o of sorted) { focus.push(o); cum += o.gain; if (cum / monthlyTotal >= 0.78) break; }
+    const paretoSum = focus.reduce((s, o) => s + o.gain, 0);
+    const paretoPct = Math.round(paretoSum / monthlyTotal * 100) + "%";
+    const barColors = ["#e8730c", "#f0902f", "#f4a95c", "#f8c793"];
+    const paretoBar = focus.map((o, i) => ({ w: (o.gain / monthlyTotal * 100) + "%", color: barColors[i % barColors.length], title: o.title + " · " + o.gainMonthFmt }));
+    // remainder segment
+    const rem = monthlyTotal - paretoSum;
+    if (rem > 0) paretoBar.push({ w: (rem / monthlyTotal * 100) + "%", color: "#e6dccf", title: "Demais oportunidades · " + this.fmt(rem) });
+
+    // ---- table (sorted by exec desc) ----
+    const table = [...all].sort((a, b) => b.exec - a.exec);
+
+    // ---- details: the focus + strategic ----
+    const detailIds = ["GLUE-AUTOSCALING-123", "ATHENA-PARTITION-207", "GLUE-IS-IDLE-088", "GLUE-OVERPROV-341", "GOV-PRODUCER-902", "S3-SMALLFILES-455"];
+    const details = detailIds.map(id => all.find(o => o.id === id));
+
+    // ---- quick wins: dif<=2 & exec>=70 & gain ----
+    const quickWins = all.filter(o => o.dif <= 2 && o.exec >= 70 && o.gain != null).sort((a, b) => b.exec - a.exec);
+    // ---- low confidence ----
+    const lowConf = all.filter(o => o.conf === "Baixa");
+
+    // ---- producer matrix ----
+    const prodRec = (cand, ready) => {
+      if (cand >= 60 && ready >= 55) return { rec: "Migrar", color: "#0053b3", note: "alta candidatura e prontidão — priorizar a migração do processo." };
+      if (cand >= 60 && ready < 55) return { rec: "Preparar", color: "#8a6a2a", note: "perfil de produção sem prontidão — montar plano de preparação." };
+      if (cand < 60 && ready >= 55) return { rec: "Monitorar", color: "#e8730c", note: "viável mas ainda não é produção — manter e observar evolução." };
+      return { rec: "Não priorizar", color: "#9a9a90", note: "sem perfil de produção nem prontidão." };
+    };
+    const prodSrc = [
+      { name: "produto_recomendacoes", cand: 92, ready: 70 },
+      { name: "fluxo_scoring_leads", cand: 80, ready: 35 },
+      { name: "pipeline_relatorios", cand: 45, ready: 62 },
+      { name: "export_adhoc_planilha", cand: 28, ready: 24 }
+    ];
+    const producers = prodSrc.map(p => {
+      const r = prodRec(p.cand, p.ready);
+      return Object.assign({}, p, {
+        candW: p.cand + "%", readyW: p.ready + "%",
+        x: p.ready + "%", y: p.cand + "%",
+        color: r.color, rec: r.rec, recColor: r.color, note: r.note
+      });
+    });
+
+    // ---- previous results ----
+    const precChip = (p) => {
+      const c = p >= 85 ? ["#e8730c", "#fdefdd"] : p >= 70 ? ["#b26a12", "#faf0dd"] : ["#b23b3b", "#f7e4e4"];
+      return `display:inline-block; font-family:'IBM Plex Mono',monospace; font-size:12px; font-weight:600; color:${c[0]}; background:${c[1]}; border-radius:5px; padding:3px 9px;`;
+    };
+    const prevSrc = [
+      { title: "Redução de workers", asset: "glue_job: normaliza_clientes", date: "abr/2026", pred: 1100, real: 1240, prec: 89, unit: "R$ 620 → R$ 470 por execução" },
+      { title: "Result reuse no workgroup", asset: "athena: wg-avi-analytics", date: "mai/2026", pred: 540, real: 500, prec: 92, unit: "R$ 38 → R$ 21 por query" },
+      { title: "Desligar sessões ociosas", asset: "glue_session: adhoc-ds", date: "mai/2026", pred: 380, real: 300, prec: 79, unit: "R$ 12,8 → R$ 5,1 por hora-sessão" }
+    ];
+    const prevResults = prevSrc.map(r => ({
+      title: r.title, asset: r.asset, date: r.date,
+      predicted: this.fmt(r.pred) + "/mês", realized: this.fmt(r.real) + "/mês",
+      precision: r.prec + "%", precChip: precChip(r.prec), unit: r.unit
+    }));
+
+    // ---- governance rankings ----
+    const diagChip = (d) => {
+      const map = {
+        "Conforme": ["#0053b3", "#e6effa"], "Monitorar": ["#5b6169", "#eef0ea"],
+        "Avaliar evolução": ["#b26a12", "#faf0dd"], "Avaliar migração": ["#0053b3", "#e6effa"],
+        "Revisão prioritária": ["#b23b3b", "#f7e4e4"]
+      };
+      const c = map[d];
+      return `display:inline-block; font-size:11px; font-weight:600; color:${c[0]}; background:${c[1]}; border-radius:5px; padding:3px 9px;`;
+    };
+    const govSrc = [
+      { account: "consumer-avi", complex: 88, crit: 82, share: 74, diag: "Avaliar migração", cur: true },
+      { account: "consumer-atlas", complex: 71, crit: 64, share: 58, diag: "Avaliar evolução", cur: false },
+      { account: "consumer-orion", complex: 55, crit: 48, share: 40, diag: "Monitorar", cur: false },
+      { account: "consumer-nova", complex: 43, crit: 90, share: 33, diag: "Revisão prioritária", cur: false },
+      { account: "consumer-vega", complex: 24, crit: 19, share: 15, diag: "Conforme", cur: false }
+    ];
+    const governance = govSrc.map(g => ({
+      account: g.account, complex: g.complex, crit: g.crit, share: g.share, diag: g.diag,
+      complexW: g.complex + "%", critW: g.crit + "%", shareW: g.share + "%",
+      diagChip: diagChip(g.diag), isCurrent: g.cur, weight: g.cur ? "700" : "500",
+      rowBg: g.cur ? "#fef7ef" : "#ffffff"
+    }));
+
+    // ---- meta / kpis / manifest ----
+    const m = { account: "consumer-avi", period: "jul/2026", region: "sa-east-1", lookback: "90 dias", scanId: "scan-20260722-001" };
+    const k = {
+      monthly: this.fmt(monthlyTotal) + "/mês", yearEnd: this.fmt(monthlyTotal * 6),
+      monthsRemaining: 6, total: all.length, actionable: quant.length, strategic: all.length - quant.length,
+      paretoPct, paretoCount: focus.length, paretoSum: this.fmt(paretoSum),
+      paretoSentence: `A distribuição do ganho é concentrada: ${focus.length} ações capturam ${paretoPct} da economia mensal (${this.fmt(paretoSum)} de ${this.fmt(monthlyTotal)}). Comece por elas; as demais entram como backlog secundário.`
+    };
+    const manifest = [
+      { k: "julius_version", v: "0.3.0" },
+      { k: "scan_id", v: "scan-20260722-001" },
+      { k: "contas", v: "5 (avi em foco)" },
+      { k: "período", v: "23/abr–22/jul/2026" },
+      { k: "regiões", v: "sa-east-1" },
+      { k: "acesso", v: "assume-role read-only" },
+      { k: "detectores", v: "glue, athena, session, s3, gov" },
+      { k: "pesos", v: "balanced (35/20/25/10/10)" },
+      { k: "regras", v: "GLUE 1.2, ATHENA 1.1, GOV 1.0" },
+      { k: "knowledge", v: "glue-guidance-2026-07" },
+      { k: "fontes ausentes", v: "Spark UI (parcial)" },
+      { k: "gerado", v: "2026-07-22 06:14 -03" }
+    ];
+
+    // ---- account cost reconciliation (Cost Explorer) ----
+    const svcSrc = [
+      { name: "AWS Glue", sub: "Jobs + Interactive Sessions", cost: 21400, saving: 3030 },
+      { name: "Amazon Athena", sub: "queries + workgroups", cost: 6800, saving: 980 },
+      { name: "Amazon S3", sub: "armazenamento + requests", cost: 4200, saving: 250 },
+      { name: "Step Functions", sub: "Standard / Express", cost: 2100, saving: 0 },
+      { name: "Outros", sub: "CloudWatch, KMS, transfer", cost: 4000, saving: 0 }
+    ];
+    const accTotal = svcSrc.reduce((s, x) => s + x.cost, 0);
+    const accSaving = svcSrc.reduce((s, x) => s + x.saving, 0);
+    const services = svcSrc.map(x => ({
+      name: x.name, sub: x.sub,
+      costFmt: this.fmt(x.cost),
+      savingFmt: x.saving > 0 ? this.fmt(x.saving) : "—",
+      savingColor: x.saving > 0 ? "#e8730c" : "#b6bcae",
+      barBaseW: (x.cost / accTotal * 100) + "%",
+      barSaveW: (x.saving / accTotal * 100) + "%",
+      pctOpt: x.saving > 0 ? Math.round(x.saving / x.cost * 100) + "%" : "—"
+    }));
+    const account = {
+      totalFmt: this.fmt(accTotal),
+      savingFmt: this.fmt(accSaving),
+      savingPct: Math.round(accSaving / accTotal * 100) + "%",
+      savingBarW: (accSaving / accTotal * 100) + "%",
+      services
+    };
+
+    return { m, k, account, focus, paretoBar, table, details, quickWins, lowConf, producers, prevResults, governance, manifest };
+  }
+}
+</script>
+</body>
+</html>

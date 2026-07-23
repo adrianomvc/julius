@@ -1,0 +1,249 @@
+{
+  "account": "consumer-avi",
+  "region": "sa-east-1",
+  "period": "jul/2026",
+  "lookback_days": 90,
+  "generated_at": "2026-07-23",
+  "cost_explorer": {
+    "services": [
+      { "name": "AWS Glue", "subtitle": "Jobs + Interactive Sessions", "monthly_cost": 21400 },
+      { "name": "Amazon Athena", "subtitle": "queries + workgroups", "monthly_cost": 6800 },
+      { "name": "Amazon S3", "subtitle": "armazenamento + requests", "monthly_cost": 4200 },
+      { "name": "Step Functions", "subtitle": "Standard / Express", "monthly_cost": 2100 },
+      { "name": "Outros", "subtitle": "CloudWatch, KMS, transfer", "monthly_cost": 4000 }
+    ]
+  },
+  "glue_jobs": [
+    {
+      "name": "processa_interacoes",
+      "glue_version": "1.0",
+      "worker_type": "G.1X",
+      "number_of_workers": 20,
+      "auto_scaling": false,
+      "execution_class": "STANDARD",
+      "job_bookmark": false,
+      "time_sensitive": false,
+      "runs_per_month": 40,
+      "avg_execution_sec": 3600,
+      "avg_cpu_load": 0.22,
+      "observed_runs": 30,
+      "coverage_days": 90,
+      "owner_tag": "Squad AVI"
+    },
+    {
+      "name": "agrega_vendas",
+      "glue_version": "3.0",
+      "worker_type": "G.1X",
+      "number_of_workers": 20,
+      "auto_scaling": true,
+      "execution_class": "STANDARD",
+      "job_bookmark": true,
+      "time_sensitive": true,
+      "runs_per_month": 25,
+      "avg_execution_sec": 3000,
+      "avg_cpu_load": 0.28,
+      "observed_runs": 26,
+      "coverage_days": 90,
+      "owner_tag": "Squad AVI",
+      "writes_tables": ["resumo_regional"]
+    },
+    {
+      "name": "sync_parceiros",
+      "glue_version": "3.0",
+      "worker_type": "G.2X",
+      "number_of_workers": 10,
+      "auto_scaling": true,
+      "execution_class": "STANDARD",
+      "job_bookmark": true,
+      "time_sensitive": true,
+      "runs_per_month": 60,
+      "avg_execution_sec": 1800,
+      "avg_failed_execution_sec": 1200,
+      "avg_cpu_load": 0.62,
+      "failure_rate": 0.25,
+      "max_retries": 3,
+      "observed_runs": 60,
+      "coverage_days": 90,
+      "owner_tag": "Squad AVI"
+    },
+    {
+      "name": "treina_features",
+      "glue_version": "3.0",
+      "worker_type": "G.4X",
+      "number_of_workers": 6,
+      "auto_scaling": false,
+      "execution_class": "STANDARD",
+      "job_bookmark": true,
+      "time_sensitive": true,
+      "timeout_min": 2880,
+      "runs_per_month": 20,
+      "avg_execution_sec": 1200,
+      "avg_cpu_load": 0.2,
+      "observed_runs": 20,
+      "coverage_days": 90,
+      "owner_tag": "Squad AVI"
+    },
+    {
+      "name": "gera_base_legado",
+      "glue_version": "3.0",
+      "worker_type": "G.1X",
+      "number_of_workers": 8,
+      "auto_scaling": true,
+      "execution_class": "STANDARD",
+      "job_bookmark": true,
+      "time_sensitive": true,
+      "runs_per_month": 30,
+      "avg_execution_sec": 1800,
+      "avg_cpu_load": 0.68,
+      "observed_runs": 30,
+      "coverage_days": 90,
+      "owner_tag": "Squad AVI",
+      "writes_tables": ["base_legado_diaria"]
+    }
+  ],
+  "state_machines": [
+    {
+      "name": "orquestra_ingestao",
+      "type": "STANDARD",
+      "executions_per_month": 45000,
+      "avg_state_transitions": 12,
+      "avg_duration_sec": 90,
+      "idempotent": true,
+      "has_polling_loop": true,
+      "poll_extra_transitions": 40,
+      "max_retry_attempts": 3,
+      "observed_runs": 45000,
+      "coverage_days": 90,
+      "owner_tag": "Squad AVI",
+      "glue_jobs": ["processa_interacoes", "agrega_vendas"],
+      "schedule_names": ["cron-ingestao-diaria"]
+    }
+  ],
+  "schedules": [
+    {
+      "name": "cron-ingestao-diaria",
+      "target_type": "state_machine",
+      "target_name": "orquestra_ingestao",
+      "owner_tag": "Squad AVI"
+    }
+  ],
+  "sagemaker_apps": [
+    {
+      "name": "jupyter-avi-ds",
+      "app_type": "JupyterLab",
+      "instance_type": "ml.g4dn.xlarge",
+      "status": "InService",
+      "idle_hours_per_day": 14,
+      "idle_shutdown_min": 0,
+      "active_days_per_month": 22,
+      "coverage_days": 90,
+      "owner_tag": "Squad AVI"
+    }
+  ],
+  "sagemaker_endpoints": [
+    {
+      "name": "modelo-churn-dev",
+      "instance_type": "ml.m5.xlarge",
+      "instance_count": 1,
+      "invocations_per_month": 8,
+      "auto_scaling": false,
+      "min_capacity": 1,
+      "coverage_days": 90,
+      "owner_tag": "Squad AVI"
+    }
+  ],
+  "tables": [
+    {
+      "name": "base_legado_diaria",
+      "written_by": "gera_base_legado",
+      "touches_90d": 0,
+      "consuming_accounts": 0,
+      "consuming_communities": 0,
+      "storage_bytes": 214748364800,
+      "coverage_days": 90,
+      "owner_tag": "Squad AVI"
+    },
+    {
+      "name": "resumo_regional",
+      "written_by": "agrega_vendas",
+      "touches_90d": 11,
+      "consuming_accounts": 1,
+      "consuming_communities": 1,
+      "used_by_accounts": ["consumer-nova"],
+      "storage_bytes": 42949672960,
+      "coverage_days": 90,
+      "owner_tag": "Squad AVI",
+      "datawarm_published": true
+    }
+  ],
+  "interactive_sessions": [
+    {
+      "session_id": "etl-explore",
+      "dpu": 5,
+      "idle_timeout_min": 2880,
+      "status": "READY",
+      "idle_hours_per_day": 3.3,
+      "active_days_per_month": 22,
+      "observed_runs": 22,
+      "coverage_days": 90,
+      "owner_tag": "Squad AVI"
+    }
+  ],
+  "athena_queries": [
+    {
+      "query_id": "relatorio_diario",
+      "workgroup": "wg-avi-analytics",
+      "statement": "SELECT * FROM eventos WHERE cliente = 'x'",
+      "data_scanned_bytes": 1979120929894,
+      "executions_per_month": 20,
+      "has_partition_filter": false,
+      "table_is_partitioned": true,
+      "selects_star": true,
+      "result_reuse_enabled": false,
+      "observed_runs": 20,
+      "coverage_days": 90,
+      "owner_tag": "Squad AVI"
+    },
+    {
+      "query_id": "dashboard_adhoc",
+      "workgroup": "wg-avi-analytics",
+      "statement": "SELECT * FROM vendas",
+      "data_scanned_bytes": 322122547200,
+      "executions_per_month": 4,
+      "has_partition_filter": true,
+      "table_is_partitioned": true,
+      "selects_star": true,
+      "result_reuse_enabled": false,
+      "observed_runs": 4,
+      "coverage_days": 30,
+      "owner_tag": null
+    },
+    {
+      "query_id": "kpi_horario",
+      "workgroup": "wg-avi-analytics",
+      "statement": "SELECT hora, count(1) FROM eventos WHERE dt = ? GROUP BY hora",
+      "data_scanned_bytes": 96636764160,
+      "executions_per_month": 30,
+      "has_partition_filter": true,
+      "table_is_partitioned": true,
+      "selects_star": false,
+      "result_reuse_enabled": false,
+      "observed_runs": 30,
+      "coverage_days": 90,
+      "owner_tag": "Squad AVI"
+    }
+  ],
+  "governance": {
+    "producer_candidates": [
+      { "name": "produto_recomendacoes", "candidate_score": 92, "readiness_score": 70 },
+      { "name": "fluxo_scoring_leads", "candidate_score": 80, "readiness_score": 35 },
+      { "name": "pipeline_relatorios", "candidate_score": 45, "readiness_score": 62 },
+      { "name": "export_adhoc_planilha", "candidate_score": 28, "readiness_score": 24 }
+    ],
+    "previous_results": [
+      { "title": "Redução de workers", "asset": "glue_job: normaliza_clientes", "date": "abr/2026", "predicted_monthly": 1100, "realized_monthly": 1240, "unit": "R$ 620 → R$ 470 por execução" },
+      { "title": "Result reuse no workgroup", "asset": "athena: wg-avi-analytics", "date": "mai/2026", "predicted_monthly": 540, "realized_monthly": 500, "unit": "R$ 38 → R$ 21 por query" },
+      { "title": "Desligar sessões ociosas", "asset": "glue_session: adhoc-ds", "date": "mai/2026", "predicted_monthly": 380, "realized_monthly": 300, "unit": "R$ 12,8 → R$ 5,1 por hora-sessão" }
+    ]
+  }
+}

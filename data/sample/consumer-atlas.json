@@ -1,0 +1,56 @@
+{
+  "account": "consumer-atlas",
+  "region": "sa-east-1",
+  "period": "jul/2026",
+  "lookback_days": 90,
+  "generated_at": "2026-07-23",
+  "cost_explorer": {
+    "services": [
+      { "name": "AWS Glue", "subtitle": "Jobs + Interactive Sessions", "monthly_cost": 12800 },
+      { "name": "Amazon Athena", "subtitle": "queries + workgroups", "monthly_cost": 3100 },
+      { "name": "Amazon S3", "subtitle": "armazenamento + requests", "monthly_cost": 2600 },
+      { "name": "Outros", "subtitle": "CloudWatch, KMS, transfer", "monthly_cost": 1800 }
+    ]
+  },
+  "glue_jobs": [
+    {
+      "name": "consolida_pedidos",
+      "glue_version": "3.0",
+      "worker_type": "G.2X",
+      "number_of_workers": 10,
+      "auto_scaling": false,
+      "execution_class": "STANDARD",
+      "job_bookmark": true,
+      "time_sensitive": true,
+      "runs_per_month": 30,
+      "avg_execution_sec": 2400,
+      "avg_cpu_load": 0.31,
+      "observed_runs": 28,
+      "coverage_days": 90,
+      "owner_tag": "Squad Atlas"
+    }
+  ],
+  "interactive_sessions": [],
+  "athena_queries": [
+    {
+      "query_id": "extrato_mensal",
+      "workgroup": "wg-atlas",
+      "statement": "SELECT * FROM pedidos",
+      "data_scanned_bytes": 858993459200,
+      "executions_per_month": 12,
+      "has_partition_filter": false,
+      "table_is_partitioned": true,
+      "selects_star": true,
+      "result_reuse_enabled": false,
+      "observed_runs": 12,
+      "coverage_days": 90,
+      "owner_tag": "Squad Atlas"
+    }
+  ],
+  "governance": {
+    "producer_candidates": [
+      { "name": "base_pedidos_consolidada", "candidate_score": 71, "readiness_score": 58 }
+    ],
+    "previous_results": []
+  }
+}

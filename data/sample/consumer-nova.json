@@ -1,0 +1,56 @@
+{
+  "account": "consumer-nova",
+  "region": "sa-east-1",
+  "period": "jul/2026",
+  "lookback_days": 90,
+  "generated_at": "2026-07-23",
+  "cost_explorer": {
+    "services": [
+      { "name": "AWS Glue", "subtitle": "Jobs + Interactive Sessions", "monthly_cost": 3400 },
+      { "name": "Amazon Athena", "subtitle": "queries + workgroups", "monthly_cost": 1200 },
+      { "name": "Amazon S3", "subtitle": "armazenamento + requests", "monthly_cost": 900 }
+    ]
+  },
+  "glue_jobs": [],
+  "interactive_sessions": [
+    {
+      "session_id": "explora-nova",
+      "dpu": 5,
+      "idle_timeout_min": 2880,
+      "status": "READY",
+      "idle_hours_per_day": 2.1,
+      "active_days_per_month": 18,
+      "observed_runs": 18,
+      "coverage_days": 90,
+      "owner_tag": "Squad Nova"
+    }
+  ],
+  "athena_queries": [
+    {
+      "query_id": "amostra_diaria",
+      "workgroup": "wg-nova",
+      "statement": "SELECT col_a, col_b FROM eventos WHERE dt = ?",
+      "data_scanned_bytes": 53687091200,
+      "executions_per_month": 20,
+      "has_partition_filter": true,
+      "table_is_partitioned": true,
+      "selects_star": false,
+      "result_reuse_enabled": false,
+      "observed_runs": 20,
+      "coverage_days": 90,
+      "owner_tag": "Squad Nova"
+    }
+  ],
+  "tables": [
+    {
+      "name": "recomendacoes_regionais",
+      "written_by": "gera_recos",
+      "touches_90d": 900,
+      "consuming_accounts": 5,
+      "consuming_communities": 3,
+      "datawarm_published": true,
+      "coverage_days": 90,
+      "owner_tag": "Squad Nova"
+    }
+  ]
+}
