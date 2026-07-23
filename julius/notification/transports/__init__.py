@@ -1,6 +1,8 @@
-"""Transportes de e-mail (MVP 1B: somente dry-run)."""
+"""Transportes de e-mail; dry-run é sempre o padrão seguro."""
 
 from julius.notification.transports.base import EmailTransport
 from julius.notification.transports.dry_run import DryRunTransport
+from julius.notification.transports.ses import SesTransport
+from julius.notification.transports.smtp import SmtpTransport
 
-__all__ = ["DryRunTransport", "EmailTransport"]
+__all__ = ["DryRunTransport", "EmailTransport", "SesTransport", "SmtpTransport"]

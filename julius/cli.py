@@ -3,14 +3,21 @@
 from __future__ import annotations
 
 import json
+import os
 import webbrowser
 from dataclasses import asdict
 from pathlib import Path
 
 import typer
 
-from julius.notification import NotificationService
-from julius.notification.transports import DryRunTransport
+from julius.aws.session import make_session
+from julius.notification import (
+    NotificationPolicy,
+    NotificationService,
+    SendLog,
+    load_settings,
+)
+from julius.notification.transports import DryRunTransport, SesTransport, SmtpTransport
 from julius.metrics import compute_kpis
 from julius.opportunities.lifecycle import can_transition
 from julius.pipeline import analyze
@@ -99,33 +106,101 @@ def report(
 @app.command()
 def notify(
     input: str = typer.Option(_DEFAULT_INPUT, "--input", "-i"),
-    mode: str = typer.Option("dry-run", "--mode", help="dry-run (envio ativo entra no MVP 4)."),
+    mode: str = typer.Option("dry-run", "--mode", help="dry-run | active"),
     outbox: str = typer.Option("data/outbox", "--outbox"),
-    to: str = typer.Option("squad@empresa.com", "--to"),
+    to: str = typer.Option(
+        "", "--to", help="Destinatários separados por vírgula; no active usa default_to se vazio."
+    ),
     report_url: str = typer.Option(
         "", "--report-url", help="URL hospedada do relatório; vazio = anexo (report.html)."
     ),
     open_preview: bool = typer.Option(False, "--open-preview"),
+    email_config: str = typer.Option("~/.julius-email.json", "--email-config"),
+    transport: str = typer.Option("", "--transport", help="ses | smtp; vazio usa a configuração."),
+    send_log: str = typer.Option("data/state/send_log.json", "--send-log"),
+    profile: str = typer.Option("", "--profile", help="Perfil AWS CLI para SES."),
+    region: str = typer.Option("", "--region", help="Região do SES."),
+    recipient_group: str = typer.Option("account-owners", "--recipient-group"),
+    confirm: bool = typer.Option(
+        False, "--confirm", help="Confirmação humana obrigatória para envio ativo manual."
+    ),
+    non_interactive: bool = typer.Option(
+        False,
+        "--non-interactive",
+        help="Somente para grupos previamente aprovados na configuração.",
+    ),
 ) -> None:
-    """Compõe o e-mail e grava a outbox (dry-run por default)."""
-    if mode != "dry-run":
-        raise typer.BadParameter("Somente --mode dry-run é suportado antes do MVP 4.")
+    """Compõe em outbox por padrão; envio ativo exige configuração e guardrails."""
+    if mode not in {"dry-run", "active"}:
+        raise typer.BadParameter("--mode deve ser dry-run ou active.")
     a = analyze(input)
-    # Sem URL hospedada, o relatório completo vai como anexo (delivery_mode=attachment).
-    html, text = renderer.render_email(a.vm, report_url=report_url or None)
-    report_html = renderer.render_html(a.vm)
-    service = NotificationService(DryRunTransport(outbox, a.scan_id))
+    settings = None
+    if mode == "active":
+        try:
+            settings = load_settings(email_config)
+        except (FileNotFoundError, json.JSONDecodeError, TypeError, ValueError) as exc:
+            raise typer.BadParameter(str(exc)) from exc
+
+    effective_url = report_url or (settings.report_base_url if settings else "")
+    html, text = renderer.render_email(a.vm, report_url=effective_url or None)
+    attach_report = settings.attach_full_html if settings else True
+    report_html = renderer.render_html(a.vm) if attach_report or not effective_url else None
+    recipients = [
+        address.strip()
+        for address in to.split(",")
+        if address.strip()
+    ]
+
+    if mode == "dry-run":
+        recipients = recipients or ["squad@empresa.com"]
+        sender = "julius@empresa.com"
+        service = NotificationService(DryRunTransport(outbox, a.scan_id))
+    else:
+        assert settings is not None
+        recipients = recipients or settings.default_to
+        sender = settings.sender
+        selected_transport = transport or settings.transport
+        if selected_transport == "ses":
+            active_transport = SesTransport(
+                client_factory=lambda: make_session(
+                    profile or None, region or settings.aws_region
+                ).client("sesv2"),
+                configuration_set=settings.configuration_set,
+            )
+        elif selected_transport == "smtp":
+            active_transport = SmtpTransport(
+                settings.smtp_host,
+                port=settings.smtp_port,
+                username=os.getenv("JULIUS_SMTP_USERNAME", ""),
+                password=os.getenv("JULIUS_SMTP_PASSWORD", ""),
+                starttls=settings.smtp_starttls,
+            )
+        else:
+            raise typer.BadParameter("--transport deve ser ses ou smtp.")
+        service = NotificationService(
+            active_transport,
+            policy=NotificationPolicy(settings),
+            send_log=SendLog(send_log),
+        )
+
     result = service.send_report(
         subject=renderer.subject(a.vm),
-        sender="julius@empresa.com",
-        recipients=[to],
+        sender=sender,
+        recipients=recipients,
         html_body=html,
         text_body=text,
         scan_id=a.scan_id,
         report_html=report_html,
+        recipient_group=recipient_group,
+        mode=mode,
+        confirmed=confirm,
+        non_interactive=non_interactive,
     )
-    typer.echo(f"{result.status} -> {result.outbox_dir}")
+    destination = result.outbox_dir or result.provider_message_id or result.reason or "-"
+    typer.echo(f"{result.status} -> {destination}")
     typer.echo(f"Assunto: {renderer.subject(a.vm)}")
+    if result.status == "blocked":
+        raise typer.Exit(code=2)
     if open_preview and result.outbox_dir:
         webbrowser.open((Path(result.outbox_dir) / "email.html").resolve().as_uri())
 
