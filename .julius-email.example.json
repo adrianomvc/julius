@@ -1,0 +1,22 @@
+{
+  "mode": "dry-run",
+  "transport": "ses",
+  "aws_region": "sa-east-1",
+  "sender": "julius@empresa.com",
+  "default_to": [
+    "squad@empresa.com"
+  ],
+  "allowed_recipient_domains": [
+    "empresa.com"
+  ],
+  "approved_recipient_groups": [
+    "account-owners"
+  ],
+  "max_recipients": 10,
+  "attach_full_html": true,
+  "report_base_url": "",
+  "configuration_set": "",
+  "smtp_host": "",
+  "smtp_port": 587,
+  "smtp_starttls": true
+}

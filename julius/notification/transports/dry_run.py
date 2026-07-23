@@ -27,7 +27,10 @@ class DryRunTransport:
             "subject": message.subject,
             "sender": message.sender,
             "recipients": message.recipients,
+            "cc": message.cc,
             "scan_id": self.scan_id,
+            "idempotency_key": message.idempotency_key,
+            "tags": message.tags,
             "created_at": datetime.now().astimezone().isoformat(),
             "status": "composed_not_sent",
         }

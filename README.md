@@ -17,8 +17,8 @@ Ver o plano completo (fases 1A→4) em `../.claude/plans/quero-criar-uma-ia-comp
 - Backlog operacional em JSON e snapshots analíticos em DuckDB/Parquet.
 - Run manifest com versões, preços, fonte e configuração da execução.
 - Revisão humana do Top 10, Precision@10 e taxa de falsos positivos.
-- `report.html`, `report.json`, `email.html` e `email.txt`; envio permanece
-  em dry-run até o MVP 4.
+- `report.html`, `report.json`, `email.html` e `email.txt`; composição de e-mail
+  em `dry-run` por padrão.
 
 ## O que o MVP 2 acrescenta
 
@@ -80,6 +80,36 @@ julius review --opportunity-id <ID> --verdict false-positive --reviewer <nome>
 julius notify --open-preview
 ```
 
+## Notificações seguras (MVP 4)
+
+O comando `julius notify` continua sempre em `dry-run` quando nenhum modo é
+informado. Nesse modo ele apenas grava a mensagem, o relatório e um manifesto
+idempotente em `data/outbox/`; SES e SMTP não são acessados.
+
+O envio ativo existe para uso posterior na máquina de trabalho e exige, ao
+mesmo tempo:
+
+- `--mode active` e configuração local com `"mode": "active"`;
+- remetente e domínios de destinatários autorizados;
+- confirmação humana com `--confirm`, ou grupo previamente aprovado para uso
+  não interativo;
+- log persistente que impede o reenvio do mesmo scan para o mesmo grupo;
+- scan sem erro crítico e relatório HTML gerado.
+
+Use [.julius-email.example.json](.julius-email.example.json) como base e salve a
+configuração local em `~/.julius-email.json`. O arquivo não aceita credenciais.
+SES usa a cadeia de credenciais AWS; SMTP lê somente
+`JULIUS_SMTP_USERNAME` e `JULIUS_SMTP_PASSWORD` do ambiente.
+
+```bash
+# Apenas na máquina de trabalho, depois de revisar configuração e destinatários
+julius notify --mode active --confirm --to squad@empresa.com
+```
+
+O transporte pode ser selecionado com `--transport ses` ou
+`--transport smtp`. O envio real permanece parte das validações operacionais
+adiadas; os testes locais usam clientes simulados.
+
 Na coleta ao vivo, use `--cloudtrail` para atribuição de ator e
 `--datawarm-job <identificador>` para reconhecer o publicador DataWarm.
 
@@ -90,6 +120,7 @@ Estas etapas dependem de contexto corporativo e não bloqueiam a validação loc
 - revisão humana real do Top 10;
 - teste read-only em contas AWS reais;
 - configuração da tabela de toques, do job DataWarm e do CloudTrail.
+- validação de envio SES/SMTP com remetentes e destinatários corporativos.
 
 Até lá, testes e demonstrações usam somente os datasets de `data/sample/` e
 históricos temporários, sem acesso à AWS e sem avaliações humanas fictícias.
