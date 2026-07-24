@@ -340,6 +340,9 @@ def test_result_reuse_saving_uses_only_exact_nearby_duplicates():
     assert estimate.baseline_cost == 3
     assert estimate.estimated_saving == 2
     assert estimate.projected_cost == 1
+    assert estimate.baseline_quality == "allocated"
+    assert estimate.saving_quality == "measured"
+    assert estimate.avoidable_bytes == 20 * MB
 
     account = Account(
         account_id="123",
@@ -351,6 +354,8 @@ def test_result_reuse_saving_uses_only_exact_nearby_duplicates():
     report_html = renderer.render_html(analyze_account(account, scan_id="reuse").vm)
     assert "2 repetições exatas elegíveis" in report_html
     assert "US$ 2 evitável" in report_html
+    assert "SAVE Medido" in report_html
+    assert "US$ 3 (Alocado)" in report_html
 
 
 def test_new_athena_patterns_do_not_invent_cost_when_reconciliation_is_partial():
@@ -364,7 +369,31 @@ def test_new_athena_patterns_do_not_invent_cost_when_reconciliation_is_partial()
     estimate = athena_estimation.projection_saving(query, DEFAULT_CONFIG)
     assert estimate.baseline_cost == 0
     assert estimate.estimated_saving == 0
+    assert estimate.baseline_quality == "unavailable"
+    assert estimate.saving_quality == "unavailable"
+    assert estimate.projected_bytes is None
     assert "não reconciliado" in estimate.assumptions[-1]
+
+
+def test_partition_and_projection_require_a_measured_counterfactual():
+    query = AthenaQuery(
+        query_id="pattern",
+        structural_fingerprint="pattern",
+        executions_per_month=4,
+        billed_bytes=400 * MB,
+        allocated_cost=8,
+        cost_quality="reconciled",
+    )
+    partition = athena_estimation.partition_pruning_saving(query, DEFAULT_CONFIG)
+    projection = athena_estimation.projection_saving(query, DEFAULT_CONFIG)
+    for estimate in (partition, projection):
+        assert estimate.baseline_cost == 8
+        assert estimate.estimated_saving == 0
+        assert estimate.projected_cost == 8
+        assert estimate.baseline_quality == "allocated"
+        assert estimate.saving_quality == "unavailable"
+        assert estimate.baseline_bytes == 400 * MB
+        assert estimate.projected_bytes is None
 
 
 def test_history_persists_only_approved_athena_aggregates(tmp_path):
