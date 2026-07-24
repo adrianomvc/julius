@@ -119,6 +119,18 @@ class AthenaQuery:
     small_files_confirmed: bool = False
     small_file_count: int = 0
     average_file_bytes: int = 0
+    total_table_bytes: int = 0
+    max_table_columns: int = 0
+    wide_tables: list[str] = field(default_factory=list)
+    unpartitioned_tables: list[str] = field(default_factory=list)
+    full_scan_confirmed: bool = False
+    row_format_uncompressed: list[str] = field(default_factory=list)
+    columnar_uncompressed: list[str] = field(default_factory=list)
+    compression_codecs: list[str] = field(default_factory=list)
+    partition_projection_enabled: bool = False
+    partition_projection_candidates: list[str] = field(default_factory=list)
+    partition_count: int = 0
+    p95_planning_ms: int = 0
     parse_succeeded: bool = True
     evidence: list[str] = field(default_factory=list)
     opportunity_refs: list[str] = field(default_factory=list)
@@ -146,6 +158,10 @@ class AthenaActorUsage:
     bursts: int = 0
     selects_star: int = 0
     missing_partition_filters: int = 0
+    full_scans: int = 0
+    unpartitioned_tables: int = 0
+    compression_findings: int = 0
+    partition_projection_candidates: int = 0
     failures: int = 0
     automated: bool = False
     opportunity_refs: list[str] = field(default_factory=list)

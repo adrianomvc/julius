@@ -13,7 +13,9 @@ from julius.aws.athena_collector import (
     resolve_actor,
 )
 from julius.ingest.dump import account_to_dataset
+from julius.config import DEFAULT_CONFIG
 from julius.inventory.model import Account
+from julius.opportunities.detectors import athena as athena_detector
 from julius.pipeline import analyze_account
 from julius.report import renderer
 from julius.state.history import HistoryStore
@@ -324,3 +326,133 @@ def test_history_persists_only_approved_athena_aggregates(tmp_path):
         )
         assert missing["estimated_saving"] is None
         assert missing["status"] == "not_observed"
+
+
+class _RichGlue:
+    def get_table(self, DatabaseName, Name):
+        if Name == "wide_csv":
+            return {
+                "Table": {
+                    "Parameters": {"classification": "csv"},
+                    "PartitionKeys": [],
+                    "StorageDescriptor": {
+                        "Columns": [{"Name": f"c{i}", "Type": "string"} for i in range(60)],
+                        "Location": "s3://bucket/wide/",
+                        "InputFormat": "org.apache.hadoop.mapred.TextInputFormat",
+                        "SerdeInfo": {
+                            "SerializationLibrary": "org.apache.hadoop.hive.serde2.OpenCSVSerde"
+                        },
+                    },
+                }
+            }
+        return {
+            "Table": {
+                "Parameters": {
+                    "classification": "parquet",
+                    "projection.enabled": "false",
+                    "parquet.compression": "UNCOMPRESSED",
+                },
+                "PartitionKeys": [{"Name": "dt", "Type": "date"}],
+                "StorageDescriptor": {
+                    "Columns": [{"Name": "id", "Type": "bigint"}],
+                    "Location": "s3://bucket/partitioned/",
+                    "InputFormat": "org.apache.hadoop.hive.ql.io.parquet.MapredParquetInputFormat",
+                    "Compressed": False,
+                },
+            }
+        }
+
+    def get_paginator(self, name):
+        assert name == "get_partitions"
+        return _Paginator(
+            lambda **_: [{"Partitions": [{"Values": [str(i)]} for i in range(1000)]}]
+        )
+
+
+class _RichS3:
+    def get_paginator(self, name):
+        assert name == "list_objects_v2"
+        return _Paginator(
+            lambda Prefix, **_: [
+                {
+                    "Contents": [
+                        {
+                            "Key": f"{Prefix}part-{index}.csv",
+                            "Size": 20 * MB,
+                        }
+                        for index in range(100)
+                    ]
+                }
+            ]
+        )
+
+
+def test_requested_rules_are_grouped_by_pattern_and_actor():
+    now = datetime(2026, 7, 24, 15, tzinfo=timezone.utc)
+    sql = (
+        "SELECT * FROM db.wide_csv w "
+        "JOIN db.partitioned p ON p.id = w.c1"
+    )
+    executions = [
+        {
+            "QueryExecutionId": f"rich-{index}",
+            "WorkGroup": "one",
+            "Query": sql,
+            "StatementType": "DML",
+            "Status": {
+                "State": "SUCCEEDED",
+                "SubmissionDateTime": now - timedelta(days=index + 1),
+            },
+            "Statistics": {
+                "DataScannedInBytes": 300 * 1024**3,
+                "QueryPlanningTimeInMillis": 1500,
+            },
+        }
+        for index in range(3)
+    ]
+    collected = collect_analysis(
+        _Athena(executions),
+        cloudtrail_client=_CloudTrail(executions),
+        glue_client=_RichGlue(),
+        s3_client=_RichS3(),
+        now=now,
+    )
+    query = collected.queries[0]
+    assert query.recurring is True
+    assert query.actors == ["maria"]
+    assert query.max_table_columns == 60
+    assert query.full_scan_confirmed is True
+    assert query.unpartitioned_tables == ["db.wide_csv"]
+    assert query.row_format_uncompressed == ["db.wide_csv"]
+    assert query.columnar_uncompressed == ["db.partitioned"]
+    assert query.partition_projection_candidates == ["db.partitioned"]
+
+    account = Account(
+        account_id="123",
+        athena_queries=collected.queries,
+        athena_actor_usage=collected.actors,
+        athena_coverage=collected.coverage,
+    )
+    rule_ids = {
+        opportunity.rule_id
+        for opportunity in athena_detector.detect(account, DEFAULT_CONFIG, "rules-test")
+    }
+    assert {
+        "ATHENA-SELECT-STAR-WIDE",
+        "ATHENA-FULL-TABLE-SCAN",
+        "ATHENA-TABLE-NOT-PARTITIONED",
+        "ATHENA-UNCOMPRESSED-ROW-FORMAT",
+        "ATHENA-COLUMNAR-COMPRESSION",
+        "ATHENA-PARTITION-PROJECTION",
+    } <= rule_ids
+
+    analyzed = analyze_account(account, scan_id="grouping-test")
+    athena_opportunities = [
+        opportunity
+        for opportunity in analyzed.opportunities
+        if opportunity.asset_type == "athena_query"
+    ]
+    assert len(athena_opportunities) == 1
+    assert account.athena_actor_usage[0].opportunity_refs == [
+        athena_opportunities[0].opportunity_id
+    ]

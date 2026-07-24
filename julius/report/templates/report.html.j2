@@ -118,6 +118,16 @@
       <div style="padding:11px 14px;border-top:1px solid #edeee8;font-size:12px;">
         <b class="mono">{{ q.fingerprint }}</b> · {{ q.workgroup }} · {{ q.executions }} execuções / {{ q.active_days }} dias · {{ q.recurrence }} · {{ q.billed_gb }} GB faturáveis · {{ q.cost_fmt }}{% if q.failures %} · {{ q.failures }} falhas/cancelamentos{% endif %} · reuse {{ q.reuse }}
         <div class="mono" style="margin-top:4px;color:#7c8374;overflow-wrap:anywhere;">{{ q.sql }}</div>
+        {% if q.wide_tables or q.full_scan or q.unpartitioned or q.uncompressed or q.projection_candidates %}
+        <div style="margin-top:4px;color:#a5581a;">
+          {% if q.wide_tables %}wide: {{ q.wide_tables|join(", ") }} · {% endif %}
+          {% if q.full_scan %}full scan · {% endif %}
+          {% if q.unpartitioned %}sem partição: {{ q.unpartitioned|join(", ") }} · {% endif %}
+          {% if q.uncompressed %}sem compressão: {{ q.uncompressed|join(", ") }} · {% endif %}
+          {% if q.codecs %}codecs: {{ q.codecs|join(", ") }} · {% endif %}
+          {% if q.projection_candidates %}projection candidata: {{ q.projection_candidates|join(", ") }}{% endif %}
+        </div>
+        {% endif %}
       </div>
       {% else %}<div style="padding:12px 14px;color:#7c8374;">Nenhum padrão coletado na janela.</div>{% endfor %}
     </div>
@@ -128,7 +138,7 @@
       <div style="border:1px solid #e2e4dc;border-radius:8px;padding:10px 12px;font-size:12px;">
         <b>{{ a.actor }}</b> <span class="chip" style="background:#eef0ea;color:#5b6169;">{{ a.type }}</span>
         <div style="margin-top:5px;color:#4b5159;">{{ a.queries }} queries · {{ a.active_days }} dias · {{ a.cost_fmt }} · {{ a.recurring }} padrões recorrentes · {{ a.bursts }} bursts</div>
-        {% if a.guidance %}<div style="margin-top:5px;color:#a5581a;">Orientação: revisar {{ a.selects_star }} SELECT *, {{ a.missing_partition }} filtros de partição ausentes e {{ a.failures }} falhas.</div>{% endif %}
+        {% if a.guidance %}<div style="margin-top:5px;color:#a5581a;">Orientação: revisar {{ a.selects_star }} SELECT *, {{ a.full_scans }} full scans, {{ a.unpartitioned }} usos sem partição, {{ a.compression }} achados de compressão, {{ a.projection }} candidatos a projection e {{ a.failures }} falhas.</div>{% endif %}
       </div>
       {% endfor %}
     </div>

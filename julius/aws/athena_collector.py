@@ -26,8 +26,15 @@ except ImportError:  # pragma: no cover - instalação incompleta tem fallback s
     exp = None
 
 _MB = 1024**2
+_GB = 1024**3
 _MIN_BILLED = 10 * _MB
 _COLUMNAR = {"PARQUET", "ORC"}
+_ROW_FORMATS = {"CSV", "JSON", "TSV", "TEXT"}
+_COMPRESSED_SUFFIXES = (
+    ".gz", ".gzip", ".bz2", ".bzip2", ".snappy", ".zst", ".zstd", ".lz4"
+)
+_WIDE_TABLE_COLUMNS = 50
+_PARTITION_PROJECTION_MIN_PARTITIONS = 1000
 _DDL = {"DDL", "CREATE", "DROP", "ALTER", "MSCK", "SHOW", "DESCRIBE", "EXPLAIN"}
 _AUTOMATION = re.compile(r"(service|automation|pipeline|scheduler|airflow|lambda|glue|states)", re.I)
 _LITERAL_FALLBACK = re.compile(
@@ -69,6 +76,18 @@ class AthenaExecutionEvidence:
     small_files_confirmed: bool = False
     small_file_count: int = 0
     average_file_bytes: int = 0
+    total_table_bytes: int = 0
+    max_table_columns: int = 0
+    wide_tables: list[str] = field(default_factory=list)
+    unpartitioned_tables: list[str] = field(default_factory=list)
+    has_where: bool = False
+    row_format_uncompressed: list[str] = field(default_factory=list)
+    columnar_uncompressed: list[str] = field(default_factory=list)
+    compression_codecs: list[str] = field(default_factory=list)
+    partition_projection_enabled: bool = False
+    partition_projection_candidates: list[str] = field(default_factory=list)
+    partition_count: int = 0
+    planning_ms: int = 0
     allocated_cost: float | None = None
 
 
@@ -327,6 +346,7 @@ def _execution(qe: dict, workgroup: dict) -> AthenaExecutionEvidence | None:
         billed_bytes=billable_bytes(scanned, state=state, statement_type=statement_type, reused=reuse)
         if modality == "on_demand" else 0,
         duration_ms=int(stats.get("EngineExecutionTimeInMillis") or stats.get("TotalExecutionTimeInMillis") or 0),
+        planning_ms=int(stats.get("QueryPlanningTimeInMillis") or 0),
         reused=reuse,
         modality=modality,
         **_ast_facts(str(qe.get("Query") or "")),
@@ -359,11 +379,19 @@ def _modality(qe: dict, workgroup: dict) -> str:
 
 def _ast_facts(sql: str) -> dict[str, Any]:
     if sqlglot is None:
-        return {"reads_tables": [], "selects_star": bool(re.search(r"\bselect\s+\*", sql, re.I))}
+        return {
+            "reads_tables": [],
+            "selects_star": bool(re.search(r"\bselect\s+\*", sql, re.I)),
+            "has_where": bool(re.search(r"\bwhere\b", sql, re.I)),
+        }
     try:
         tree = sqlglot.parse_one(sql, read="athena")
     except Exception:
-        return {"reads_tables": [], "selects_star": bool(re.search(r"\bselect\s+\*", sql, re.I))}
+        return {
+            "reads_tables": [],
+            "selects_star": bool(re.search(r"\bselect\s+\*", sql, re.I)),
+            "has_where": bool(re.search(r"\bwhere\b", sql, re.I)),
+        }
     ctes = {cte.alias_or_name.lower() for cte in tree.find_all(exp.CTE)}
     tables = []
     for table in tree.find_all(exp.Table):
@@ -381,13 +409,14 @@ def _ast_facts(sql: str) -> dict[str, Any]:
             for select in tree.find_all(exp.Select)
             for projection in select.expressions
         ),
+        "has_where": any(True for _ in tree.find_all(exp.Where)),
     }
 
 
 def _enrich_catalog(items: list[AthenaExecutionEvidence], glue, s3, gaps: list[str]) -> None:
     if glue is None:
         return
-    cache: dict[str, tuple[list[str], str, tuple[int, int, bool]]] = {}
+    cache: dict[str, dict[str, Any]] = {}
     for item in items:
         for name in item.reads_tables:
             if name not in cache:
@@ -398,25 +427,80 @@ def _enrich_catalog(items: list[AthenaExecutionEvidence], glue, s3, gaps: list[s
                     table = glue.get_table(DatabaseName=parts[-2], Name=parts[-1])["Table"]
                     keys = [key["Name"] for key in table.get("PartitionKeys", [])]
                     descriptor = table.get("StorageDescriptor") or {}
-                    fmt = _storage_format(descriptor)
-                    file_evidence = _small_file_evidence(s3, descriptor.get("Location"))
-                    cache[name] = (keys, fmt, file_evidence)
+                    parameters = table.get("Parameters") or {}
+                    fmt = _storage_format(descriptor, parameters)
+                    objects = _object_evidence(s3, descriptor.get("Location"))
+                    projection = str(parameters.get("projection.enabled") or "").lower() == "true"
+                    partition_count = (
+                        0 if projection else _partition_count(glue, parts[-2], parts[-1])
+                    )
+                    codecs, explicitly_uncompressed = _compression_evidence(
+                        descriptor, parameters
+                    )
+                    cache[name] = {
+                        "keys": keys,
+                        "format": fmt,
+                        "objects": objects,
+                        "columns": len(descriptor.get("Columns") or []),
+                        "projection": projection,
+                        "partition_count": partition_count,
+                        "codecs": codecs,
+                        "columnar_uncompressed": (
+                            fmt in _COLUMNAR and explicitly_uncompressed
+                        ),
+                        "row_uncompressed": (
+                            fmt in _ROW_FORMATS
+                            and objects["count"] > 0
+                            and objects["compressed_count"] == 0
+                        ),
+                    }
                 except Exception as exc:
                     gaps.append(f"Glue {name}: {type(exc).__name__}")
                     continue
-            keys, fmt, file_evidence = cache[name]
+            evidence = cache[name]
+            keys = evidence["keys"]
+            fmt = evidence["format"]
+            objects = evidence["objects"]
             item.partition_keys.extend(key for key in keys if key not in item.partition_keys)
             if fmt and fmt not in item.storage_formats:
                 item.storage_formats.append(fmt)
-            count, average, confirmed = file_evidence
-            if confirmed:
+            if objects["small_files"]:
                 item.small_files_confirmed = True
-                item.small_file_count = max(item.small_file_count, count)
-                item.average_file_bytes = average
+                item.small_file_count = max(item.small_file_count, objects["count"])
+                item.average_file_bytes = objects["average"]
+            item.total_table_bytes += objects["total"]
+            item.max_table_columns = max(item.max_table_columns, evidence["columns"])
+            if evidence["columns"] >= _WIDE_TABLE_COLUMNS:
+                item.wide_tables.append(name)
+            if not keys:
+                item.unpartitioned_tables.append(name)
+            if evidence["row_uncompressed"]:
+                item.row_format_uncompressed.append(name)
+            if evidence["columnar_uncompressed"]:
+                item.columnar_uncompressed.append(name)
+            item.compression_codecs.extend(evidence["codecs"])
+            item.partition_projection_enabled = (
+                item.partition_projection_enabled or evidence["projection"]
+            )
+            item.partition_count = max(item.partition_count, evidence["partition_count"])
+            if (
+                keys
+                and not evidence["projection"]
+                and evidence["partition_count"] >= _PARTITION_PROJECTION_MIN_PARTITIONS
+            ):
+                item.partition_projection_candidates.append(name)
             for key in keys:
                 if not _has_partition_predicate(item.raw_sql, name, key):
                     item.missing_partition_filters.append(key)
         item.missing_partition_filters = sorted(set(item.missing_partition_filters))
+        item.wide_tables = sorted(set(item.wide_tables))
+        item.unpartitioned_tables = sorted(set(item.unpartitioned_tables))
+        item.row_format_uncompressed = sorted(set(item.row_format_uncompressed))
+        item.columnar_uncompressed = sorted(set(item.columnar_uncompressed))
+        item.compression_codecs = sorted(set(item.compression_codecs))
+        item.partition_projection_candidates = sorted(
+            set(item.partition_projection_candidates)
+        )
 
 
 def _missing_partition_predicates(sql: str, keys: list[str]) -> list[str]:
@@ -460,34 +544,108 @@ def _has_partition_predicate(sql: str, table_name: str, key: str) -> bool:
     return False
 
 
-def _storage_format(descriptor: dict) -> str:
+def _storage_format(descriptor: dict, parameters: dict | None = None) -> str:
     value = " ".join(
         str(descriptor.get(key) or "") for key in ("InputFormat", "OutputFormat")
-    ).upper()
-    return next((fmt for fmt in _COLUMNAR if fmt in value), "")
+    )
+    serde = descriptor.get("SerdeInfo") or {}
+    value += " " + str(serde.get("SerializationLibrary") or "")
+    classification = str((parameters or {}).get("classification") or "")
+    value = (value + " " + classification).upper()
+    aliases = {
+        "PARQUET": ("PARQUET",),
+        "ORC": ("ORC",),
+        "JSON": ("JSON",),
+        "CSV": ("CSV", "OPENCSV"),
+        "TSV": ("TSV",),
+        "TEXT": ("TEXTINPUT", "LAZYSIMPLE"),
+    }
+    return next(
+        (fmt for fmt, markers in aliases.items() if any(marker in value for marker in markers)),
+        "",
+    )
 
 
 def _small_file_evidence(s3, location: str | None) -> tuple[int, int, bool]:
-    """Agrega somente tamanhos; nunca persiste chaves ou conteúdo S3."""
+    evidence = _object_evidence(s3, location)
+    return evidence["count"], evidence["average"], evidence["small_files"]
+
+
+def _object_evidence(s3, location: str | None) -> dict[str, Any]:
+    """Agrega tamanhos/extensões; nunca persiste chaves ou conteúdo S3."""
+    empty = {
+        "count": 0,
+        "average": 0,
+        "total": 0,
+        "small_files": False,
+        "compressed_count": 0,
+    }
     if s3 is None or not location or not location.startswith("s3://"):
-        return 0, 0, False
+        return empty
     bucket, _, prefix = location[5:].partition("/")
     sizes: list[int] = []
+    compressed_count = 0
     try:
         paginator = s3.get_paginator("list_objects_v2")
         for page in paginator.paginate(Bucket=bucket, Prefix=prefix):
-            sizes.extend(
-                int(obj.get("Size") or 0)
-                for obj in page.get("Contents", [])
-                if int(obj.get("Size") or 0) > 0
-            )
+            for obj in page.get("Contents", []):
+                size = int(obj.get("Size") or 0)
+                if size <= 0:
+                    continue
+                sizes.append(size)
+                key = str(obj.get("Key") or "").lower()
+                compressed_count += key.endswith(_COMPRESSED_SUFFIXES)
     except Exception:
-        return 0, 0, False
+        return empty
     if not sizes:
-        return 0, 0, False
+        return empty
     average = round(sum(sizes) / len(sizes))
-    # Evidência conservadora: volume relevante e média abaixo de 64 MiB.
-    return len(sizes), average, len(sizes) >= 100 and average < 64 * _MB
+    return {
+        "count": len(sizes),
+        "average": average,
+        "total": sum(sizes),
+        "small_files": len(sizes) >= 100 and average < 64 * _MB,
+        "compressed_count": compressed_count,
+    }
+
+
+def _compression_evidence(
+    descriptor: dict, parameters: dict
+) -> tuple[list[str], bool]:
+    serde_parameters = (descriptor.get("SerdeInfo") or {}).get("Parameters") or {}
+    combined = {**parameters, **serde_parameters}
+    values = [
+        str(value).upper()
+        for key, value in combined.items()
+        if "compress" in str(key).lower()
+    ]
+    codecs = sorted(
+        {
+            codec
+            for codec in ("GZIP", "SNAPPY", "ZSTD", "ZLIB", "BZIP2", "LZ4")
+            if any(codec in value for value in values)
+        }
+    )
+    explicitly_uncompressed = (
+        descriptor.get("Compressed") is False
+        and any(value in {"NONE", "UNCOMPRESSED"} for value in values)
+    )
+    return codecs, explicitly_uncompressed
+
+
+def _partition_count(glue, database: str, table: str) -> int:
+    try:
+        paginator = glue.get_paginator("get_partitions")
+        return sum(
+            len(page.get("Partitions", []))
+            for page in paginator.paginate(
+                DatabaseName=database,
+                TableName=table,
+                ExcludeColumnSchema=True,
+            )
+        )
+    except Exception:
+        return 0
 
 
 def _enrich_actors(items, cloudtrail, identitystore, start, end, gaps):
@@ -662,12 +820,41 @@ def _aggregate_queries(items, coverage):
         partition_keys = sorted({key for item in group for key in item.partition_keys})
         missing = sorted({key for item in group for key in item.missing_partition_filters})
         formats = sorted({fmt for item in group for fmt in item.storage_formats})
+        wide_tables = sorted({name for item in group for name in item.wide_tables})
+        unpartitioned = sorted(
+            {name for item in group for name in item.unpartitioned_tables}
+        )
+        row_uncompressed = sorted(
+            {name for item in group for name in item.row_format_uncompressed}
+        )
+        columnar_uncompressed = sorted(
+            {name for item in group for name in item.columnar_uncompressed}
+        )
+        codecs = sorted(
+            {codec for item in group for codec in item.compression_codecs}
+        )
+        projection_candidates = sorted(
+            {
+                name
+                for item in group
+                for name in item.partition_projection_candidates
+            }
+        )
+        planning = sorted(item.planning_ms for item in group)
+        average_scanned = round(sum(i.scanned_bytes for i in group) / len(group))
+        full_scan = (
+            average_scanned >= _GB
+            and all(
+                not item.has_where or bool(item.missing_partition_filters)
+                for item in group
+            )
+        )
         output.append(
             AthenaQuery(
                 query_id=first.structural_fingerprint,
                 workgroup=first.workgroup,
                 statement=first.sanitized_sql,
-                data_scanned_bytes=round(sum(i.scanned_bytes for i in group) / len(group)),
+                data_scanned_bytes=average_scanned,
                 executions_per_month=len(group),
                 has_partition_filter=not missing,
                 table_is_partitioned=bool(partition_keys),
@@ -702,6 +889,20 @@ def _aggregate_queries(items, coverage):
                 small_files_confirmed=any(i.small_files_confirmed for i in group),
                 small_file_count=max((i.small_file_count for i in group), default=0),
                 average_file_bytes=max((i.average_file_bytes for i in group), default=0),
+                total_table_bytes=max((i.total_table_bytes for i in group), default=0),
+                max_table_columns=max((i.max_table_columns for i in group), default=0),
+                wide_tables=wide_tables,
+                unpartitioned_tables=unpartitioned,
+                full_scan_confirmed=full_scan,
+                row_format_uncompressed=row_uncompressed,
+                columnar_uncompressed=columnar_uncompressed,
+                compression_codecs=codecs,
+                partition_projection_enabled=any(
+                    i.partition_projection_enabled for i in group
+                ),
+                partition_projection_candidates=projection_candidates,
+                partition_count=max((i.partition_count for i in group), default=0),
+                p95_planning_ms=_percentile(planning, 0.95),
                 parse_succeeded=all(i.parse_succeeded for i in group),
                 evidence=_query_evidence(group, missing),
             )
@@ -745,6 +946,19 @@ def _aggregate_actors(items, queries, coverage):
                 bursts=bursts,
                 selects_star=sum(item.selects_star for item in group),
                 missing_partition_filters=sum(bool(item.missing_partition_filters) for item in group),
+                full_scans=sum(
+                    item.scanned_bytes >= _GB
+                    and (not item.has_where or bool(item.missing_partition_filters))
+                    for item in group
+                ),
+                unpartitioned_tables=sum(bool(item.unpartitioned_tables) for item in group),
+                compression_findings=sum(
+                    bool(item.row_format_uncompressed or item.columnar_uncompressed)
+                    for item in group
+                ),
+                partition_projection_candidates=sum(
+                    bool(item.partition_projection_candidates) for item in group
+                ),
                 failures=sum(item.state == "FAILED" for item in group),
                 automated=group[0].actor_type == "automation",
                 opportunity_refs=sorted(set(refs[actor])),
@@ -756,8 +970,11 @@ def _aggregate_actors(items, queries, coverage):
 def _query_evidence(group, missing):
     evidence = [
         f"{len(group)} execuções em {len({item.submitted_at.date() for item in group})} dias",
+        f"{len({item.actor for item in group})} atores no padrão",
         f"{sum(item.billed_bytes for item in group)} bytes faturáveis",
     ]
+    if recurrence(item.submitted_at for item in group)[0]:
+        evidence.append("padrão recorrente confirmado")
     if missing:
         evidence.append("sem filtro comprovado: " + ", ".join(missing))
     if any(item.reused for item in group):
