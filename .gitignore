@@ -12,3 +12,5 @@ data/reports/
 data/outbox/
 data/state/
 data/agent/
+data/artifacts/
+data/collected/

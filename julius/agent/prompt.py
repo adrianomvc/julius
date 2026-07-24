@@ -35,6 +35,7 @@ Conta: {context.account["id"]}
 Scan: {context.scan_id}
 Contexto: {context_file}
 Schema de saída: {schema_file}
+Artefatos técnicos read-only referenciados no contexto: {len(context.technical_artifacts)}
 
 Depois de produzir `{result_file}`, execute:
 

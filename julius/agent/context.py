@@ -31,12 +31,18 @@ class AgentContext:
     constraints: dict
     opportunities: list[dict]
     graph_edges: list[dict] = field(default_factory=list)
+    technical_artifacts: list[dict] = field(default_factory=list)
 
     def to_dict(self) -> dict:
         return asdict(self)
 
 
-def build_agent_context(analysis: Analysis, *, top: int = 10) -> AgentContext:
+def build_agent_context(
+    analysis: Analysis,
+    *,
+    top: int = 10,
+    technical_artifacts: list[dict] | None = None,
+) -> AgentContext:
     if top < 1 or top > 25:
         raise ValueError("top deve estar entre 1 e 25")
     opportunities = [
@@ -83,6 +89,7 @@ def build_agent_context(analysis: Analysis, *, top: int = 10) -> AgentContext:
         },
         opportunities=opportunities,
         graph_edges=edges,
+        technical_artifacts=technical_artifacts or [],
     )
 
 
