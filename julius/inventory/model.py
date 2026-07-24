@@ -111,6 +111,9 @@ class AthenaQuery:
     failed_runs: int = 0
     cancelled_runs: int = 0
     reused_runs: int = 0
+    reuse_eligible_runs: int = 0
+    reuse_avoidable_billed_bytes: int = 0
+    reuse_avoidable_cost: float | None = None
     billed_bytes: int = 0
     avg_billed_bytes: int = 0
     partition_keys: list[str] = field(default_factory=list)

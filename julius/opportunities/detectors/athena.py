@@ -62,7 +62,7 @@ def detect(account: Account, config: Config, scan_id: str) -> list[Opportunity]:
             out.append(_excessive_scan(account, q, config, scan_id))
         # Regra 6 — query recorrente sem result reuse (query "saudável", mas repetida).
         if (
-            (q.recurring and q.exact_fingerprint and q.reused_runs == 0)
+            (q.reuse_eligible_runs > 0 and q.reuse_avoidable_billed_bytes > 0)
             or (legacy and not q.result_reuse_enabled and q.executions_per_month >= 8)
         ):
             out.append(_result_reuse(account, q, config, scan_id))
@@ -275,12 +275,21 @@ def _result_reuse(account: Account, q: AthenaQuery, config: Config, scan_id: str
     return build(
         account=account.account_id, asset_type="athena_query", asset_name=q.query_id,
         rule_id="ATHENA-RESULT-REUSE", rule_version="1.0.0", difficulty=1, estimation=est,
-        finding="Query recorrente sem query result reuse",
-        why=f"Query idêntica roda {q.executions_per_month}×/mês sem reutilização confirmada.",
-        recommended_action="Habilitar query result reuse no workgroup",
-        how_to_apply="Ativar result reuse no workgroup (ou por query) com janela de reuso adequada.",
-        how_to_validate="Comparar bytes escaneados e cache hits no workgroup.",
-        evidence=q.evidence + ["nenhuma reutilização confirmada"],
+        finding="Repetições exatas elegíveis sem query result reuse",
+        why=(
+            f"{q.reuse_eligible_runs} repetições exatas em até 60 minutos processaram "
+            f"{q.reuse_avoidable_billed_bytes / _GB:.2f} GB faturáveis novamente."
+            if q.structural_fingerprint
+            else f"Query roda {q.executions_per_month}×/mês sem reutilização confirmada."
+        ),
+        recommended_action="Configurar result reuse no cliente que submete a query",
+        how_to_apply="Definir ResultReuseByAgeConfiguration com janela compatível com a atualização da origem.",
+        how_to_validate="Comparar bytes faturáveis, custo líquido alocado e ReusedPreviousResult.",
+        evidence=q.evidence + [
+            f"custo evitável reconciliado: {q.reuse_avoidable_cost:.6f} {q.currency}"
+            if q.reuse_avoidable_cost is not None
+            else "custo evitável indisponível sem reconciliação completa"
+        ],
         risks=["resultado defasado se a janela de reuso for longa demais"],
         doc_links=[_DOC_REUSE], data_sources=["Athena workgroup history"],
         observed_runs=q.observed_runs, coverage_days=q.coverage_days,

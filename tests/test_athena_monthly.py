@@ -5,6 +5,7 @@ from datetime import datetime, timedelta, timezone
 
 from julius.aws.athena_collector import (
     _has_partition_predicate,
+    _result_reuse_eligible,
     _small_file_evidence,
     billable_bytes,
     collect_analysis,
@@ -16,6 +17,8 @@ from julius.ingest.dump import account_to_dataset
 from julius.config import DEFAULT_CONFIG
 from julius.inventory.model import Account
 from julius.opportunities.detectors import athena as athena_detector
+from julius.estimation import athena as athena_estimation
+from julius.inventory.model import AthenaQuery
 from julius.pipeline import analyze_account
 from julius.report import renderer
 from julius.state.history import HistoryStore
@@ -94,6 +97,18 @@ def test_identity_precedence_and_automation_classification():
     assert resolve_actor(automation)[1] == "automation"
 
 
+def test_result_reuse_gate_rejects_nondeterministic_queries():
+    assert _result_reuse_eligible(
+        "SELECT customer_id FROM db.sales", "DML", "on_demand"
+    )
+    assert not _result_reuse_eligible(
+        "SELECT random() FROM db.sales", "DML", "on_demand"
+    )
+    assert not _result_reuse_eligible(
+        "SELECT customer_id FROM db.sales", "DML", "federated"
+    )
+
+
 class _Paginator:
     def __init__(self, fn):
         self.fn = fn
@@ -162,6 +177,24 @@ class _CostExplorer:
                 }
             )
         return {"ResultsByTime": days}
+
+
+class _SingleDayCostExplorer:
+    def get_cost_and_usage(self, **kwargs):
+        metric = kwargs["Metrics"][0]
+        return {
+            "ResultsByTime": [
+                {
+                    "TimePeriod": {"Start": "2026-07-23"},
+                    "Groups": [
+                        {
+                            "Keys": ["DataScanned-Bytes"],
+                            "Metrics": {metric: {"Amount": "3", "Unit": "USD"}},
+                        }
+                    ],
+                }
+            ]
+        }
 
 
 class _CloudTrail:
@@ -271,6 +304,67 @@ def test_collection_reconciles_all_workgroups_and_never_serializes_raw_execution
     assert "Athena integrado" in email_text
     assert integrated.account.athena_actor_usage[0].opportunity_refs
     assert "athena-report" not in report_html + report_json + email_html + email_text
+
+
+def test_result_reuse_saving_uses_only_exact_nearby_duplicates():
+    now = datetime(2026, 7, 24, 15, tzinfo=timezone.utc)
+    submitted = datetime(2026, 7, 23, 10, tzinfo=timezone.utc)
+    executions = [
+        {
+            "QueryExecutionId": f"repeat-{index}",
+            "WorkGroup": "one",
+            "Query": "SELECT customer_id FROM db.sales WHERE dt = DATE '2026-07-23'",
+            "StatementType": "DML",
+            "Status": {
+                "State": "SUCCEEDED",
+                "SubmissionDateTime": submitted + timedelta(minutes=20 * index),
+            },
+            "Statistics": {"DataScannedInBytes": 10 * MB},
+        }
+        for index in range(3)
+    ]
+    analysis = collect_analysis(
+        _Athena(executions),
+        cloudwatch_client=_CloudWatch({"one": 30 * MB, "two": 0}),
+        glue_client=_Glue(),
+        ce_client=_SingleDayCostExplorer(),
+        now=now,
+    )
+    query = analysis.queries[0]
+    assert analysis.coverage.cost_quality == "reconciled"
+    assert query.reuse_eligible_runs == 2
+    assert query.reuse_avoidable_billed_bytes == 20 * MB
+    assert query.reuse_avoidable_cost == 2
+
+    estimate = athena_estimation.result_reuse_saving(query, DEFAULT_CONFIG)
+    assert estimate.baseline_cost == 3
+    assert estimate.estimated_saving == 2
+    assert estimate.projected_cost == 1
+
+    account = Account(
+        account_id="123",
+        currency="USD",
+        athena_queries=analysis.queries,
+        athena_actor_usage=analysis.actors,
+        athena_coverage=analysis.coverage,
+    )
+    report_html = renderer.render_html(analyze_account(account, scan_id="reuse").vm)
+    assert "2 repetições exatas elegíveis" in report_html
+    assert "US$ 2 evitável" in report_html
+
+
+def test_new_athena_patterns_do_not_invent_cost_when_reconciliation_is_partial():
+    query = AthenaQuery(
+        query_id="pattern",
+        structural_fingerprint="pattern",
+        executions_per_month=10,
+        billed_bytes=1024**4,
+        cost_quality="partial",
+    )
+    estimate = athena_estimation.projection_saving(query, DEFAULT_CONFIG)
+    assert estimate.baseline_cost == 0
+    assert estimate.estimated_saving == 0
+    assert "não reconciliado" in estimate.assumptions[-1]
 
 
 def test_history_persists_only_approved_athena_aggregates(tmp_path):
