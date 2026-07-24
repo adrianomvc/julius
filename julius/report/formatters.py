@@ -37,7 +37,10 @@ def money(value: float | None, currency: str = "BRL") -> str:
         return "—"
     symbols = {"BRL": "R$", "USD": "US$", "EUR": "€", "GBP": "£"}
     prefix = symbols.get(currency.upper(), currency.upper())
-    return f"{prefix} " + f"{value:,.0f}".replace(",", ".")
+    decimals = 2 if round(value, 2) != round(value) or 0 < abs(value) < 1 else 0
+    formatted = f"{value:,.{decimals}f}"
+    formatted = formatted.replace(",", "\0").replace(".", ",").replace("\0", ".")
+    return f"{prefix} {formatted}"
 
 
 def difficulty_color(difficulty: int) -> tuple[str, str]:

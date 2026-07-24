@@ -52,9 +52,20 @@ def build(
     confidence, conf_label = conf_mod.score_and_label(
         observed_runs, coverage_days, has_optional_metrics, config
     )
+    if estimation.saving_quality == "modeled_rule":
+        confidence, conf_label = min(confidence, 0.50), "Baixa"
+    elif estimation.saving_quality == "modeled_evidence":
+        confidence = min(confidence, 0.70)
+        conf_label = "Média" if confidence >= 0.55 else "Baixa"
     coverage = conf_mod.coverage_ratio(observed_runs, coverage_days, config)
     gain = build_gain(
-        estimation.estimated_saving, difficulty, config, today=today, is_strategic=is_strategic
+        estimation.estimated_saving,
+        difficulty,
+        config,
+        monthly_low=estimation.estimated_saving_low,
+        monthly_high=estimation.estimated_saving_high,
+        today=today,
+        is_strategic=is_strategic,
     )
     gain_score = impact.gain_score(estimation.estimated_saving, config, is_strategic=is_strategic)
     owner, owner_source, owner_conf = resolve_owner(owner_tag)

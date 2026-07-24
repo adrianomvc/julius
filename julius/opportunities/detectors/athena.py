@@ -5,7 +5,7 @@ from __future__ import annotations
 from julius.config import Config
 from julius.estimation import athena as athena_est
 from julius.inventory.model import Account, AthenaQuery
-from julius.opportunities.base import Estimation, Opportunity
+from julius.opportunities.base import Opportunity
 from julius.opportunities.detectors._build import build
 
 _DOC_PARTITION = "https://docs.aws.amazon.com/athena/latest/ug/partitions.html"
@@ -79,7 +79,7 @@ def _select_star_wide(
         rule_id="ATHENA-SELECT-STAR-WIDE",
         rule_version="1.0.0",
         difficulty=2,
-        estimation=athena_est.projection_saving(q, config),
+        estimation=athena_est.projection_saving(q, config, "select_star"),
         finding="SELECT * em tabela wide",
         why=(
             f"O padrão usa SELECT * em tabela com até {q.max_table_columns} colunas; "
@@ -114,7 +114,7 @@ def _full_table_scan(
         rule_id="ATHENA-FULL-TABLE-SCAN",
         rule_version="1.0.0",
         difficulty=2,
-        estimation=athena_est.projection_saving(q, config),
+        estimation=athena_est.projection_saving(q, config, "full_scan"),
         finding="Full table scan recorrente ou relevante",
         why=(
             f"O AST não comprova restrição do conjunto lido e o padrão varre "
@@ -146,7 +146,9 @@ def _table_not_partitioned(
         rule_id="ATHENA-TABLE-NOT-PARTITIONED",
         rule_version="1.0.0",
         difficulty=3,
-        estimation=athena_est.partition_pruning_saving(q, config),
+        estimation=athena_est.partition_pruning_saving(
+            q, config, "table_not_partitioned"
+        ),
         finding="Tabela relevante sem particionamento",
         why=(
             f"Tabela sem partition keys soma {q.total_table_bytes / _GB:.1f} GB "
@@ -244,13 +246,14 @@ def _non_financial(
         rule_id=rule_id,
         rule_version="1.0.0",
         difficulty=3,
-        estimation=Estimation(
-            method=f"{rule_id.lower().replace('-', '_')}_evidence_v1",
-            baseline_cost=0,
-            projected_cost=0,
-            estimated_saving=0,
-            assumptions=["sem economia até benchmark controlado"],
-            saving_quality="unavailable",
+        estimation=athena_est.modeled_saving(
+            q,
+            config,
+            {
+                "ATHENA-UNCOMPRESSED-ROW-FORMAT": "row_format_compression",
+                "ATHENA-COLUMNAR-COMPRESSION": "columnar_compression",
+                "ATHENA-PARTITION-PROJECTION": "partition_projection",
+            }[rule_id],
         ),
         finding=finding,
         why=why,
@@ -267,7 +270,7 @@ def _non_financial(
         owner_tag=q.owner_tag,
         config=config,
         scan_id=scan_id,
-        is_strategic=True,
+        is_strategic=False,
     )
 
 
@@ -336,7 +339,12 @@ def _no_partition(account: Account, q: AthenaQuery, config: Config, scan_id: str
 
 
 def _excessive_scan(account: Account, q: AthenaQuery, config: Config, scan_id: str) -> Opportunity:
-    est = athena_est.projection_saving(q, config)
+    profile = (
+        "select_star"
+        if q.selects_star and bool(set(q.storage_formats) & {"PARQUET", "ORC"})
+        else "full_scan"
+    )
+    est = athena_est.projection_saving(q, config, profile)
     return build(
         account=account.account_id,
         asset_type="athena_query",
@@ -379,13 +387,8 @@ def _failures(account: Account, q: AthenaQuery, config: Config, scan_id: str) ->
         rule_id="ATHENA-RECURRENT-FAILURES",
         rule_version="1.0.0",
         difficulty=2,
-        estimation=Estimation(
-            method="athena_reliability_investigation_v1",
-            baseline_cost=0,
-            projected_cost=0,
-            estimated_saving=0,
-            assumptions=["falhas não recebem economia estimada"],
-            saving_quality="unavailable",
+        estimation=athena_est.modeled_saving(
+            q, config, "recurrent_failures"
         ),
         finding="Falhas ou cancelamentos recorrentes no Athena",
         why=f"{q.failed_runs} falhas e {q.cancelled_runs} cancelamentos no período.",
@@ -415,14 +418,7 @@ def _small_files(account: Account, q: AthenaQuery, config: Config, scan_id: str)
         rule_id="ATHENA-SMALL-FILES",
         rule_version="1.0.0",
         difficulty=3,
-        estimation=Estimation(
-            method="athena_small_files_evidence_v1",
-            baseline_cost=0,
-            projected_cost=0,
-            estimated_saving=0,
-            assumptions=["sem economia financeira sem benchmark posterior"],
-            saving_quality="unavailable",
-        ),
+        estimation=athena_est.modeled_saving(q, config, "small_files"),
         finding="Muitos arquivos pequenos nas tabelas consultadas",
         why=(
             f"Evidência S3 confirma {q.small_file_count} objetos com média de "

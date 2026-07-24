@@ -34,6 +34,31 @@ def is_gpu_instance(instance_type: str) -> bool:
 # Versões usadas nas oportunidades (auditoria/calibração).
 JULIUS_VERSION = "0.6.0"
 KNOWLEDGE_VERSION = "aws-glue-guidance-2026-07"
+ATHENA_RECOVERY_VERSION = "athena-recovery-1.0"
+
+
+@dataclass(frozen=True)
+class RecoveryBand:
+    """Faixa conservadora/esperada/máxima aplicada ao custo baseline."""
+
+    low: float
+    expected: float
+    high: float
+
+
+ATHENA_RECOVERY_RATES: dict[str, RecoveryBand] = {
+    "select_star": RecoveryBand(0.15, 0.30, 0.50),
+    "full_scan": RecoveryBand(0.20, 0.40, 0.60),
+    "missing_partition_filter": RecoveryBand(0.30, 0.50, 0.70),
+    "table_not_partitioned": RecoveryBand(0.20, 0.40, 0.60),
+    "row_format_compression": RecoveryBand(0.20, 0.40, 0.60),
+    "columnar_compression": RecoveryBand(0.10, 0.25, 0.40),
+    "legacy_result_reuse": RecoveryBand(0.10, 0.20, 0.30),
+    # Não reduzem diretamente bytes cobrados no modo on-demand.
+    "partition_projection": RecoveryBand(0.0, 0.0, 0.0),
+    "small_files": RecoveryBand(0.0, 0.0, 0.0),
+    "recurrent_failures": RecoveryBand(0.0, 0.0, 0.0),
+}
 
 # DPU por worker type do Glue (Glue 2.0+).
 DPU_PER_WORKER: dict[str, int] = {
@@ -56,6 +81,7 @@ class Pricing:
     glue_dpu_hour: float = 2.85
     # R$/TB escaneado no Athena. ~USD 5/TB * câmbio.
     athena_per_tb: float = 32.5
+    athena_per_tb_usd: float = 5.0
     # Step Functions: R$/state transition (Standard) e R$/request (Express).
     sfn_standard_per_transition: float = 0.00016   # ~USD 0,025/1k * câmbio
     sfn_express_per_request: float = 0.0000065     # ~USD 1/milhão * câmbio

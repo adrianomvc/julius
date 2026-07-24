@@ -33,6 +33,8 @@ class Estimation:
     baseline_cost: float
     projected_cost: float
     estimated_saving: float
+    estimated_saving_low: float | None = None
+    estimated_saving_high: float | None = None
     assumptions: list[str] = field(default_factory=list)
     pricing_region: str = "sa-east-1"
     estimation_version: str = "1.0"

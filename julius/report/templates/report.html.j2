@@ -211,7 +211,7 @@
           <div style="margin-top:12px;display:flex;gap:7px;flex-wrap:wrap;">
             <span class="chip" style="color:{{ o.diff_fg }};background:{{ o.diff_bg }};">Dif {{ o.difficulty }}/5</span>
             <span class="chip" style="color:{{ o.conf_fg }};background:{{ o.conf_bg }};">Conf {{ o.confidence_label }}</span>
-            <span class="chip mono" style="color:#5b6169;background:#f1f2ec;border:1px solid #e2e4dc;">SAVE {{ o.saving_quality_label }}</span>
+            <span class="chip mono" style="color:#5b6169;background:#f1f2ec;border:1px solid #e2e4dc;">Economia estimada (SAVE): {{ o.saving_quality_label }}</span>
             <span class="chip mono" style="color:#5b6169;background:#f1f2ec;border:1px solid #e2e4dc;">exec {{ o.exec_priority }}</span>
             <span class="chip mono" style="color:#5b6169;background:#f1f2ec;border:1px solid #e2e4dc;">até dez {{ o.year_fmt }}</span>
           </div>
@@ -245,7 +245,7 @@
             <span class="chip" style="color:{{ o.category_fg }};background:{{ o.category_bg }};font-size:10px;">{{ o.category_label }}</span>
           </div>
           <div class="mono" style="margin-top:4px;font-size:11px;color:#7c8374;">{{ o.asset }} · {{ o.owner }} ({{ o.owner_source }}){% if o.source_process %} · <span style="color:#b23b3b;">gera: {{ o.source_process }}</span>{% endif %}</div>
-          {% if o.baseline_fmt != "—" %}<div class="mono" style="margin-top:3px;font-size:10.5px;color:#7c8374;">custo baseline {{ o.baseline_fmt }} ({{ o.baseline_quality_label }}) · SAVE {{ o.saving_quality_label }}</div>{% endif %}
+          {% if o.baseline_fmt != "—" %}<div class="mono" style="margin-top:3px;font-size:10.5px;color:#7c8374;">custo baseline {{ o.baseline_fmt }} ({{ o.baseline_quality_label }}) · economia estimada (SAVE) {{ o.saving_quality_label }}</div>{% endif %}
         </div>
         <div style="padding:13px 6px;text-align:center;">
           <span class="chip" style="color:{{ o.diff_fg }};background:{{ o.diff_bg }};">{{ o.difficulty }}/5</span>
@@ -298,7 +298,7 @@
               <div style="flex:1;"><div class="kicker">Até dez</div><div style="font-weight:700;font-size:20px;color:#12233f;margin-top:2px;">{{ o.year_fmt }}</div></div>
             </div>
             <div style="font-size:11px;color:#8a9082;margin-bottom:14px;">faixa provável {{ o.band_fmt }}</div>
-            <div style="font-size:11px;color:#8a9082;margin-bottom:14px;">custo baseline {{ o.baseline_fmt }} ({{ o.baseline_quality_label }}) · qualidade do SAVE: {{ o.saving_quality_label }}</div>
+            <div style="font-size:11px;color:#8a9082;margin-bottom:14px;">custo baseline {{ o.baseline_fmt }} ({{ o.baseline_quality_label }}) · qualidade da economia estimada (SAVE): {{ o.saving_quality_label }}</div>
             <div style="display:flex;gap:7px;flex-wrap:wrap;margin-bottom:14px;">
               <span class="chip" style="color:{{ o.diff_fg }};background:{{ o.diff_bg }};">Dif {{ o.difficulty }}/5</span>
               <span class="chip" style="color:{{ o.conf_fg }};background:{{ o.conf_bg }};">Conf {{ o.confidence_label }}</span>
