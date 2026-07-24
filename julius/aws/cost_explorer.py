@@ -40,10 +40,13 @@ def collect_services(ce_client, *, months: int = 1, today: date | None = None) -
     )
 
     totals: dict[str, float] = {}
+    currency = "BRL"
     for result in resp.get("ResultsByTime", []):
         for group in result.get("Groups", []):
             name = group["Keys"][0]
-            amount = float(group["Metrics"]["UnblendedCost"]["Amount"])
+            metric = group["Metrics"]["UnblendedCost"]
+            amount = float(metric["Amount"])
+            currency = metric.get("Unit") or currency
             label = _SERVICE_LABEL.get(name, "Outros")
             totals[label] = totals.get(label, 0.0) + amount
 
@@ -51,10 +54,20 @@ def collect_services(ce_client, *, months: int = 1, today: date | None = None) -
     for label in ("AWS Glue", "Amazon Athena", "Amazon S3", "Step Functions", "Amazon SageMaker"):
         if label in totals:
             services.append(
-                ServiceCost(name=label, monthly_cost=round(totals.pop(label), 2), subtitle=_SUBTITLE.get(label, ""))
+                ServiceCost(
+                    name=label,
+                    monthly_cost=round(totals.pop(label), 2),
+                    subtitle=_SUBTITLE.get(label, ""),
+                    currency=currency,
+                )
             )
     if totals:
         services.append(
-            ServiceCost(name="Outros", monthly_cost=round(sum(totals.values()), 2), subtitle="demais serviços")
+            ServiceCost(
+                name="Outros",
+                monthly_cost=round(sum(totals.values()), 2),
+                subtitle="demais serviços",
+                currency=currency,
+            )
         )
     return services

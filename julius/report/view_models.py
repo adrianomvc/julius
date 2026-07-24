@@ -114,7 +114,7 @@ def _producer_vm(p: ProducerCandidate) -> ProducerVM:
     )
 
 
-def _prev_vm(r: PreviousResult) -> PreviousResultVM:
+def _prev_vm(r: PreviousResult, currency: str) -> PreviousResultVM:
     p = r.precision
     if p >= 85:
         fg, bg = "#e8730c", "#fdefdd"
@@ -126,8 +126,8 @@ def _prev_vm(r: PreviousResult) -> PreviousResultVM:
         title=r.title,
         asset=r.asset,
         date=r.date,
-        predicted_fmt=fmt.brl(r.predicted_monthly) + "/mês",
-        realized_fmt=fmt.brl(r.realized_monthly) + "/mês",
+        predicted_fmt=fmt.money(r.predicted_monthly, currency) + "/mês",
+        realized_fmt=fmt.money(r.realized_monthly, currency) + "/mês",
         precision=p,
         prec_fg=fg,
         prec_bg=bg,
@@ -143,7 +143,7 @@ def _mask(account_id: str) -> str:
     return account_id
 
 
-def _opp_vm(o: Opportunity) -> OpportunityVM:
+def _opp_vm(o: Opportunity, currency: str) -> OpportunityVM:
     cat_label, cat_fg, cat_bg = fmt.CATEGORY_LABELS.get(
         o.asset_type, (o.asset_type, "#5b6169", "#eef0ea")
     )
@@ -158,11 +158,11 @@ def _opp_vm(o: Opportunity) -> OpportunityVM:
         category_label=cat_label,
         category_fg=cat_fg,
         category_bg=cat_bg,
-        monthly_fmt=fmt.brl(g.monthly_expected) if not g.is_strategic else "Estratégico",
+        monthly_fmt=fmt.money(g.monthly_expected, currency) if not g.is_strategic else "Estratégico",
         band_fmt=(
-            f"{fmt.brl(g.monthly_low)}–{fmt.brl(g.monthly_high)}" if not g.is_strategic else "—"
+            f"{fmt.money(g.monthly_low, currency)}–{fmt.money(g.monthly_high, currency)}" if not g.is_strategic else "—"
         ),
-        year_fmt=fmt.brl(g.realizable_year) if not g.is_strategic else "Estratégico",
+        year_fmt=fmt.money(g.realizable_year, currency) if not g.is_strategic else "Estratégico",
         difficulty=o.difficulty_score,
         difficulty_label=_diff_label(o.difficulty_score),
         diff_fg=diff_fg,
@@ -213,6 +213,7 @@ class ReportViewModel:
     lookback: str
     scan_id: str
     generated_at: str
+    currency: str
 
     total_cost_fmt: str
     identified_fmt: str
@@ -256,9 +257,13 @@ class ReportViewModel:
     ai_summary: str = ""
     ai_implementation_order: list[dict] = field(default_factory=list)
     ai_recommendations: list[dict] = field(default_factory=list)
+    athena_coverage: dict = field(default_factory=dict)
+    athena_queries: list[dict] = field(default_factory=list)
+    athena_actors: list[dict] = field(default_factory=list)
+    athena_gaps: list[str] = field(default_factory=list)
 
 
-def _recommendation(do_now: list[Opportunity]) -> str:
+def _recommendation(do_now: list[Opportunity], currency: str) -> str:
     picks = sorted(
         [o for o in do_now if o.actionable and not o.estimated_gain.is_strategic],
         key=lambda o: o.execution_priority,
@@ -273,7 +278,7 @@ def _recommendation(do_now: list[Opportunity]) -> str:
     combined = sum(o.estimated_gain.monthly_expected for o in picks)
     return (
         f"Começar por {names} — mudanças isoladas, baixa dificuldade, economia combinada estimada de "
-        f"{fmt.brl(combined)}/mês. Estimativa a validar após a mudança."
+        f"{fmt.money(combined, currency)}/mês. Estimativa a validar após a mudança."
     )
 
 
@@ -301,8 +306,8 @@ def _services(account: Account, opportunities: list[Opportunity]) -> tuple[list[
             {
                 "name": s.name,
                 "sub": s.subtitle,
-                "cost_fmt": fmt.brl(s.monthly_cost),
-                "saving_fmt": fmt.brl(saving) if saving > 0 else "—",
+                "cost_fmt": fmt.money(s.monthly_cost, account.currency),
+                "saving_fmt": fmt.money(saving, account.currency) if saving > 0 else "—",
                 "saving_color": "#e8730c" if saving > 0 else "#b6bcae",
                 "pct_opt": f"{round(saving / s.monthly_cost * 100)}%" if saving > 0 and s.monthly_cost else "—",
                 "bar_base_w": f"{s.monthly_cost / total * 100:.1f}%",
@@ -312,7 +317,7 @@ def _services(account: Account, opportunities: list[Opportunity]) -> tuple[list[
     return rows, sum(saving_by_service.values())
 
 
-def _pareto_bar(pareto: Pareto) -> list[dict]:
+def _pareto_bar(pareto: Pareto, currency: str) -> list[dict]:
     total = pareto.monthly_total or 1.0
     segments: list[dict] = []
     for i, o in enumerate(pareto.financial_focus):
@@ -321,7 +326,7 @@ def _pareto_bar(pareto: Pareto) -> list[dict]:
             {
                 "w": f"{g / total * 100:.1f}%",
                 "color": fmt.PARETO_SEGMENT_COLORS[i % len(fmt.PARETO_SEGMENT_COLORS)],
-                "title": f"{o.finding} · {fmt.brl(g)}",
+                "title": f"{o.finding} · {fmt.money(g, currency)}",
             }
         )
     remainder = pareto.monthly_total - pareto.financial_sum
@@ -330,10 +335,63 @@ def _pareto_bar(pareto: Pareto) -> list[dict]:
             {
                 "w": f"{remainder / total * 100:.1f}%",
                 "color": fmt.PARETO_REMAINDER_COLOR,
-                "title": f"Demais oportunidades · {fmt.brl(remainder)}",
+                "title": f"Demais oportunidades · {fmt.money(remainder, currency)}",
             }
         )
     return segments
+
+
+def _athena_views(account: Account) -> tuple[dict, list[dict], list[dict], list[str]]:
+    coverage = account.athena_coverage
+    if coverage is None:
+        return {}, [], [], []
+    coverage_vm = {
+        "window": f"{coverage.window_start[:10]} → {coverage.window_end[:10]} UTC",
+        "workgroups": f"{coverage.workgroups_covered}/{coverage.workgroups_total}",
+        "truncated": coverage.truncated,
+        "cost_quality": coverage.cost_quality,
+        "cost_fmt": fmt.money(coverage.net_cost, coverage.currency),
+        "ratio": f"{coverage.reconciliation_ratio * 100:.1f}%"
+        if coverage.reconciliation_ratio is not None else "—",
+    }
+    query_rows = [
+        {
+            "fingerprint": q.structural_fingerprint or q.query_id,
+            "workgroup": q.workgroup,
+            "executions": q.observed_runs,
+            "active_days": q.active_days,
+            "cost_fmt": fmt.money(q.allocated_cost, q.currency),
+            "billed_gb": f"{q.billed_bytes / 1024**3:.2f}",
+            "recurrence": ", ".join(
+                label for flag, label in (
+                    (q.recurring, "recorrente"), (q.burst, "burst"), (q.regular, "regular")
+                ) if flag
+            ) or "ocasional",
+            "failures": q.failed_runs + q.cancelled_runs,
+            "reuse": q.reused_runs,
+            "sql": q.statement,
+        }
+        for q in account.athena_queries[:20]
+    ]
+    actor_rows = [
+        {
+            "actor": actor.actor,
+            "type": "automação" if actor.automated else actor.actor_type,
+            "queries": actor.query_count,
+            "active_days": actor.active_days,
+            "cost_fmt": fmt.money(actor.allocated_cost, actor.currency),
+            "recurring": actor.recurring_patterns,
+            "bursts": actor.bursts,
+            "selects_star": actor.selects_star,
+            "missing_partition": actor.missing_partition_filters,
+            "failures": actor.failures,
+            "opportunity_refs": list(actor.opportunity_refs),
+            "guidance": actor.query_count >= 3
+            and (actor.selects_star + actor.missing_partition_filters + actor.failures) >= 3,
+        }
+        for actor in account.athena_actor_usage
+    ]
+    return coverage_vm, query_rows, actor_rows, list(coverage.gaps)
 
 
 def build(
@@ -363,6 +421,7 @@ def build(
     investigate = [o for o in opportunities if o.bucket == "investigar_primeiro"]
 
     services, _ = _services(account, opportunities)
+    athena_coverage, athena_queries, athena_actors, athena_gaps = _athena_views(account)
 
     table_sorted = sorted(opportunities, key=lambda o: o.execution_priority, reverse=True)
 
@@ -374,26 +433,31 @@ def build(
         lookback=f"{account.lookback_days} dias",
         scan_id=manifest_val(manifest, "scan_id"),
         generated_at=account.generated_at,
-        total_cost_fmt=fmt.brl(account.total_monthly_cost),
-        identified_fmt=fmt.brl(identified),
-        high_conf_fmt=fmt.brl(high_conf),
-        realizable_year_fmt=fmt.brl(realizable_year),
-        recommendation=_recommendation(do_now),
+        currency=account.currency,
+        total_cost_fmt=fmt.money(account.total_monthly_cost, account.currency),
+        identified_fmt=fmt.money(identified, account.currency),
+        high_conf_fmt=fmt.money(high_conf, account.currency),
+        realizable_year_fmt=fmt.money(realizable_year, account.currency),
+        recommendation=_recommendation(do_now, account.currency),
         kpi_total=len(opportunities),
         kpi_actionable=len([o for o in opportunities if o.actionable]),
         kpi_strategic=len([o for o in opportunities if o.estimated_gain.is_strategic]),
         pareto_pct=pareto.financial_pct,
         pareto_count=len(pareto.financial_focus),
-        pareto_sentence=pareto.sentence,
-        pareto_sum_fmt=fmt.brl(pareto.financial_sum),
-        monthly_total_fmt=fmt.brl(pareto.monthly_total),
-        pareto_bar=_pareto_bar(pareto),
+        pareto_sentence=(
+            f"{pareto.financial_pct}% da economia está em {len(pareto.financial_focus)} "
+            f"oportunidades ({fmt.money(pareto.financial_sum, account.currency)} de "
+            f"{fmt.money(pareto.monthly_total, account.currency)})."
+        ),
+        pareto_sum_fmt=fmt.money(pareto.financial_sum, account.currency),
+        monthly_total_fmt=fmt.money(pareto.monthly_total, account.currency),
+        pareto_bar=_pareto_bar(pareto, account.currency),
         executable_pct=pareto.executable_pct,
         executable_count=len(pareto.executable_focus),
         months_remaining=months_remaining_in_year(),
         services=services,
-        account_total_fmt=fmt.brl(account.total_monthly_cost),
-        account_saving_fmt=fmt.brl(identified),
+        account_total_fmt=fmt.money(account.total_monthly_cost, account.currency),
+        account_saving_fmt=fmt.money(identified, account.currency),
         account_saving_pct=(
             f"{round(identified / account.total_monthly_cost * 100)}%"
             if account.total_monthly_cost
@@ -404,15 +468,19 @@ def build(
             if account.total_monthly_cost
             else "0%"
         ),
-        focus=[_opp_vm(o) for o in pareto.financial_focus],
-        table=[_opp_vm(o) for o in table_sorted],
-        do_now=[_opp_vm(o) for o in do_now],
-        plan=[_opp_vm(o) for o in plan],
-        monitor=[_opp_vm(o) for o in monitor],
-        investigate=[_opp_vm(o) for o in investigate],
+        focus=[_opp_vm(o, account.currency) for o in pareto.financial_focus],
+        table=[_opp_vm(o, account.currency) for o in table_sorted],
+        do_now=[_opp_vm(o, account.currency) for o in do_now],
+        plan=[_opp_vm(o, account.currency) for o in plan],
+        monitor=[_opp_vm(o, account.currency) for o in monitor],
+        investigate=[_opp_vm(o, account.currency) for o in investigate],
         producers=[_producer_vm(p) for p in account.producer_candidates],
-        previous_results=[_prev_vm(r) for r in account.previous_results],
+        previous_results=[_prev_vm(r, account.currency) for r in account.previous_results],
         manifest=manifest,
+        athena_coverage=athena_coverage,
+        athena_queries=athena_queries,
+        athena_actors=athena_actors,
+        athena_gaps=athena_gaps,
     )
 
 

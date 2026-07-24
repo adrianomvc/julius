@@ -171,6 +171,24 @@ class HistoryStore:
                 notes VARCHAR NOT NULL,
                 PRIMARY KEY (fingerprint, validated_at)
             );
+
+            CREATE TABLE IF NOT EXISTS athena_recommendation_baselines (
+                scan_id VARCHAR NOT NULL,
+                account VARCHAR NOT NULL,
+                workgroup VARCHAR NOT NULL,
+                fingerprint VARCHAR NOT NULL,
+                actor VARCHAR NOT NULL,
+                rule_id VARCHAR NOT NULL,
+                period VARCHAR NOT NULL,
+                currency VARCHAR NOT NULL,
+                allocated_cost DOUBLE,
+                billed_bytes BIGINT NOT NULL,
+                executions INTEGER NOT NULL,
+                cost_per_execution DOUBLE,
+                reuse_count INTEGER NOT NULL,
+                successor_fingerprint VARCHAR,
+                PRIMARY KEY (scan_id, account, fingerprint, actor, rule_id)
+            );
             """
         )
         self._db.execute(
@@ -259,10 +277,127 @@ class HistoryStore:
                     """,
                     rows,
                 )
+            self._record_athena_baselines(account, opportunities, scan_id)
             self._db.execute("COMMIT")
         except Exception:
             self._db.execute("ROLLBACK")
             raise
+
+    def _record_athena_baselines(
+        self, account: Account, opportunities: list[Opportunity], scan_id: str
+    ) -> None:
+        """Persiste somente agregados aprovados; nunca execuções ou SQL."""
+        eligible = {
+            (opportunity.asset_name, opportunity.rule_id)
+            for opportunity in opportunities
+            if opportunity.asset_type == "athena_query"
+            and opportunity.status in {"accepted", "planned", "implemented"}
+        }
+        self._db.execute(
+            "DELETE FROM athena_recommendation_baselines WHERE scan_id = ? AND account = ?",
+            [scan_id, account.account_id],
+        )
+        rows = []
+        for query in account.athena_queries:
+            rules = [rule for asset, rule in eligible if asset == query.query_id]
+            for rule in rules:
+                for actor in query.actors or ["desconhecido"]:
+                    rows.append(
+                        [
+                            scan_id,
+                            account.account_id,
+                            query.workgroup,
+                            query.structural_fingerprint or query.query_id,
+                            actor,
+                            rule,
+                            account.athena_coverage.window_start
+                            + "/"
+                            + account.athena_coverage.window_end
+                            if account.athena_coverage else account.period,
+                            query.currency or account.currency,
+                            query.allocated_cost,
+                            query.billed_bytes,
+                            query.observed_runs,
+                            query.allocated_cost / query.observed_runs
+                            if query.allocated_cost is not None and query.observed_runs else None,
+                            query.reused_runs,
+                            None,
+                        ]
+                    )
+        if rows:
+            self._db.executemany(
+                """
+                INSERT INTO athena_recommendation_baselines VALUES (
+                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+                )
+                """,
+                rows,
+            )
+
+    def link_athena_successor(
+        self, account: str, fingerprint: str, successor_fingerprint: str
+    ) -> int:
+        """Associação manual de uma query reescrita ao baseline anterior."""
+        result = self._db.execute(
+            """
+            UPDATE athena_recommendation_baselines
+            SET successor_fingerprint = ?
+            WHERE account = ? AND fingerprint = ?
+            """,
+            [successor_fingerprint, account, fingerprint],
+        )
+        return int(result.rowcount if result.rowcount >= 0 else 0)
+
+    def compare_athena_baseline(
+        self, account: str, fingerprint: str, current
+    ) -> dict | None:
+        """Compara agregados mensais sem inferir economia quando a query sumiu."""
+        row = self._db.execute(
+            """
+            SELECT b.allocated_cost, b.billed_bytes, b.executions, b.reuse_count,
+                   b.currency, b.successor_fingerprint
+            FROM athena_recommendation_baselines b
+            JOIN runs r USING (scan_id, account)
+            WHERE b.account = ? AND b.fingerprint = ?
+            ORDER BY r.scanned_on DESC, b.scan_id DESC
+            LIMIT 1
+            """,
+            [account, fingerprint],
+        ).fetchone()
+        if row is None:
+            return None
+        baseline_cost, baseline_bytes, baseline_executions, baseline_reuse, currency, successor = row
+        if current is None:
+            return {
+                "status": "not_observed",
+                "currency": currency,
+                "successor_fingerprint": successor,
+                "estimated_saving": None,
+                "note": "desaparecimento não equivale automaticamente a 100% de economia",
+            }
+        current_cost_per_execution = (
+            current.allocated_cost / current.observed_runs
+            if current.allocated_cost is not None and current.observed_runs else None
+        )
+        baseline_cost_per_execution = (
+            baseline_cost / baseline_executions
+            if baseline_cost is not None and baseline_executions else None
+        )
+        return {
+            "status": "compared",
+            "currency": currency,
+            "cost_total_change": _ratio_change(baseline_cost, current.allocated_cost),
+            "cost_per_execution_change": _ratio_change(
+                baseline_cost_per_execution, current_cost_per_execution
+            ),
+            "bytes_per_execution_change": _ratio_change(
+                baseline_bytes / baseline_executions if baseline_executions else None,
+                current.billed_bytes / current.observed_runs if current.observed_runs else None,
+            ),
+            "frequency_change": _ratio_change(baseline_executions, current.observed_runs),
+            "reuse_change": current.reused_runs - baseline_reuse,
+            "successor_fingerprint": successor,
+        }
 
     def record_review(
         self,
@@ -565,3 +700,9 @@ class HistoryStore:
 
 def _round_optional(value) -> float | None:
     return round(float(value), 2) if value is not None else None
+
+
+def _ratio_change(previous, current) -> float | None:
+    if previous is None or current is None or float(previous) == 0:
+        return None
+    return round((float(current) - float(previous)) / float(previous), 4)

@@ -69,6 +69,7 @@ def render_json(vm: ReportViewModel, opportunities: list[Opportunity]) -> str:
         "account": vm.account_id,
         "period": vm.period,
         "scan_id": vm.scan_id,
+        "currency": vm.currency,
         "summary": {
             "total_cost_monthly": vm.total_cost_fmt,
             "identified_monthly": vm.identified_fmt,
@@ -91,6 +92,12 @@ def render_json(vm: ReportViewModel, opportunities: list[Opportunity]) -> str:
             "executive_summary": vm.ai_summary,
             "implementation_order": vm.ai_implementation_order,
             "recommendations": vm.ai_recommendations,
+        },
+        "athena": {
+            "coverage": vm.athena_coverage,
+            "query_patterns": vm.athena_queries,
+            "actor_usage": vm.athena_actors,
+            "gaps": vm.athena_gaps,
         },
         "manifest": vm.manifest,
         "opportunities": [asdict(o) for o in opportunities],

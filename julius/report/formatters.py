@@ -29,9 +29,15 @@ CATEGORY_LABELS = {
 
 
 def brl(value: float | None) -> str:
+    return money(value, "BRL")
+
+
+def money(value: float | None, currency: str = "BRL") -> str:
     if value is None:
         return "—"
-    return "R$ " + f"{value:,.0f}".replace(",", ".")
+    symbols = {"BRL": "R$", "USD": "US$", "EUR": "€", "GBP": "£"}
+    prefix = symbols.get(currency.upper(), currency.upper())
+    return f"{prefix} " + f"{value:,.0f}".replace(",", ".")
 
 
 def difficulty_color(difficulty: int) -> tuple[str, str]:

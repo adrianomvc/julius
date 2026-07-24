@@ -1,5 +1,8 @@
 Julius · {{ r.account_masked }} · {{ r.period }}
 Identificamos {{ r.identified_fmt }}/mês em oportunidades.
+{% if r.athena_coverage %}
+Athena integrado: {{ r.athena_queries|length }} padrões, {{ r.athena_actors|length }} atores, workgroups {{ r.athena_coverage.workgroups }}, custo {{ r.athena_coverage.cost_quality }}.
+{% endif %}
 
 {% if r.ai_summary %}
 == ANÁLISE CONTEXTUAL PELO DEVIN ===================

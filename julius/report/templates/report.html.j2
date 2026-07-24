@@ -109,6 +109,33 @@
     </div>
     {% endif %}
 
+    {% if r.athena_coverage %}
+    <!-- ATHENA INTEGRADO -->
+    <div class="sec"><span class="n mono" style="color:#e8730c;">A</span><h2>Athena — padrões de query e uso por pessoa</h2></div>
+    <p class="lead">Janela {{ r.athena_coverage.window }} · workgroups {{ r.athena_coverage.workgroups }} · custo líquido alocado {{ r.athena_coverage.cost_fmt }} (qualidade: {{ r.athena_coverage.cost_quality }}) · API × CloudWatch {{ r.athena_coverage.ratio }}.</p>
+    <div style="margin-top:16px;border:1px solid #e2e4dc;border-radius:10px;overflow:hidden;">
+      {% for q in r.athena_queries %}
+      <div style="padding:11px 14px;border-top:1px solid #edeee8;font-size:12px;">
+        <b class="mono">{{ q.fingerprint }}</b> · {{ q.workgroup }} · {{ q.executions }} execuções / {{ q.active_days }} dias · {{ q.recurrence }} · {{ q.billed_gb }} GB faturáveis · {{ q.cost_fmt }}{% if q.failures %} · {{ q.failures }} falhas/cancelamentos{% endif %} · reuse {{ q.reuse }}
+        <div class="mono" style="margin-top:4px;color:#7c8374;overflow-wrap:anywhere;">{{ q.sql }}</div>
+      </div>
+      {% else %}<div style="padding:12px 14px;color:#7c8374;">Nenhum padrão coletado na janela.</div>{% endfor %}
+    </div>
+    {% if r.athena_actors %}
+    <div class="kicker" style="margin-top:18px;">Uso interno por pessoa/processo — sem alterar ownership</div>
+    <div style="margin-top:8px;display:grid;grid-template-columns:repeat(2,1fr);gap:8px;">
+      {% for a in r.athena_actors %}
+      <div style="border:1px solid #e2e4dc;border-radius:8px;padding:10px 12px;font-size:12px;">
+        <b>{{ a.actor }}</b> <span class="chip" style="background:#eef0ea;color:#5b6169;">{{ a.type }}</span>
+        <div style="margin-top:5px;color:#4b5159;">{{ a.queries }} queries · {{ a.active_days }} dias · {{ a.cost_fmt }} · {{ a.recurring }} padrões recorrentes · {{ a.bursts }} bursts</div>
+        {% if a.guidance %}<div style="margin-top:5px;color:#a5581a;">Orientação: revisar {{ a.selects_star }} SELECT *, {{ a.missing_partition }} filtros de partição ausentes e {{ a.failures }} falhas.</div>{% endif %}
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+    {% if r.athena_gaps %}<div style="margin-top:10px;font-size:11.5px;color:#a07326;"><b>Lacunas:</b> {{ r.athena_gaps | join("; ") }}</div>{% endif %}
+    {% endif %}
+
     <!-- 00 RECONCILIAÇÃO -->
     <div class="sec"><span class="n mono" style="color:#7b8498;">00</span><h2>Custo da conta — reconciliação</h2></div>
     <p class="lead">O Cost Explorer confere o <b>total</b> da conta e por serviço. A atribuição fina por ativo vem dos coletores de execução (Glue GetJobRuns, bytes Athena) — não do Cost Explorer.</p>

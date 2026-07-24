@@ -45,6 +45,8 @@ def collect_account(
         generated_at=date.today().isoformat(),
     )
     account.services = _safe(lambda: cost_explorer.collect_services(session.client("ce")), [])
+    if account.services:
+        account.currency = account.services[0].currency
     account.glue_jobs = _safe(lambda: glue_collector.collect_jobs(glue, lookback_days=lookback_days), [])
     account.tables = _safe(lambda: glue_collector.collect_tables(glue), [])
     # Enriquece com CPU (CloudWatch) → destrava as regras de capacidade.
@@ -55,9 +57,27 @@ def collect_account(
         None,
     )
     account.interactive_sessions = _safe(lambda: sessions_collector.collect_sessions(glue), [])
-    account.athena_queries = _safe(
-        lambda: athena_collector.collect_queries(session.client("athena"), lookback_days=lookback_days), []
+    # Athena usa sempre os últimos 30 dias completos em UTC. A coleta é
+    # exclusivamente descritiva e não habilita métricas, controles ou reuse.
+    athena_analysis = _safe(
+        lambda: athena_collector.collect_analysis(
+            session.client("athena"),
+            cloudwatch_client=session.client("cloudwatch"),
+            cloudtrail_client=session.client("cloudtrail"),
+            identitystore_client=session.client("identitystore"),
+            glue_client=glue,
+            s3_client=session.client("s3"),
+            ce_client=session.client("ce"),
+            lookback_days=30,
+        ),
+        None,
     )
+    if athena_analysis is not None:
+        account.athena_queries = athena_analysis.queries
+        account.athena_actor_usage = athena_analysis.actors
+        account.athena_coverage = athena_analysis.coverage
+        if athena_analysis.coverage.cost_metric:
+            account.currency = athena_analysis.coverage.currency or account.currency
     account.state_machines = _safe(
         lambda: stepfunctions_collector.collect_state_machines(
             session.client("stepfunctions"), lookback_days=lookback_days
