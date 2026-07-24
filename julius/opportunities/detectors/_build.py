@@ -63,6 +63,9 @@ def build(
     # que a revisão humana continue ligada à mesma oportunidade.
     asset_digest = hashlib.sha1(asset_name.encode("utf-8")).hexdigest()[:8]
     slug = f"{rule_id}-{asset_digest}"
+    missing_evidence = [] if has_optional_metrics else ["métricas operacionais parciais"]
+    if estimation.saving_quality == "unavailable":
+        missing_evidence.append("contrafactual de bytes/custo ainda não medido")
     o = Opportunity(
         opportunity_id=slug,
         account=account,
@@ -85,7 +88,7 @@ def build(
         confidence=confidence,
         confidence_label=conf_label,
         evidence_coverage=coverage,
-        missing_evidence=[] if has_optional_metrics else ["métricas de CPU/Spark UI parciais"],
+        missing_evidence=missing_evidence,
         data_sources=data_sources,
         owner=owner,
         owner_source=owner_source,

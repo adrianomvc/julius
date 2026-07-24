@@ -36,6 +36,11 @@ class Estimation:
     assumptions: list[str] = field(default_factory=list)
     pricing_region: str = "sa-east-1"
     estimation_version: str = "1.0"
+    baseline_quality: str = "modeled"
+    saving_quality: str = "modeled"
+    baseline_bytes: int | None = None
+    projected_bytes: int | None = None
+    avoidable_bytes: int | None = None
 
 
 @dataclass

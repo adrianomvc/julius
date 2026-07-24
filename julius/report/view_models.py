@@ -25,6 +25,10 @@ class OpportunityVM:
     category_fg: str
     category_bg: str
     monthly_fmt: str
+    baseline_fmt: str
+    baseline_quality_label: str
+    saving_quality: str
+    saving_quality_label: str
     band_fmt: str
     year_fmt: str
     difficulty: int
@@ -151,6 +155,16 @@ def _opp_vm(o: Opportunity, currency: str) -> OpportunityVM:
     conf_fg, conf_bg = fmt.confidence_color(o.confidence_label)
     bucket_fg, bucket_bg = fmt.BUCKET_COLORS.get(o.bucket, ("#5b6169", "#eef0ea"))
     g = o.estimated_gain
+    estimation = o.estimation
+    saving_quality = estimation.saving_quality if estimation else "unavailable"
+    quality_labels = {
+        "realized": "Realizado",
+        "measured": "Medido",
+        "allocated": "Alocado",
+        "modeled": "Modelado",
+        "unavailable": "Indisponível",
+    }
+    saving_unavailable = saving_quality == "unavailable"
     return OpportunityVM(
         id=o.opportunity_id,
         title=o.finding,
@@ -158,11 +172,38 @@ def _opp_vm(o: Opportunity, currency: str) -> OpportunityVM:
         category_label=cat_label,
         category_fg=cat_fg,
         category_bg=cat_bg,
-        monthly_fmt=fmt.money(g.monthly_expected, currency) if not g.is_strategic else "Estratégico",
-        band_fmt=(
-            f"{fmt.money(g.monthly_low, currency)}–{fmt.money(g.monthly_high, currency)}" if not g.is_strategic else "—"
+        monthly_fmt=(
+            "Indisponível"
+            if saving_unavailable
+            else fmt.money(g.monthly_expected, currency)
+            if not g.is_strategic
+            else "Estratégico"
         ),
-        year_fmt=fmt.money(g.realizable_year, currency) if not g.is_strategic else "Estratégico",
+        baseline_fmt=(
+            fmt.money(estimation.baseline_cost, currency)
+            if estimation and estimation.baseline_cost > 0
+            else "—"
+        ),
+        baseline_quality_label=quality_labels.get(
+            estimation.baseline_quality if estimation else "unavailable",
+            estimation.baseline_quality if estimation else "unavailable",
+        ),
+        saving_quality=saving_quality,
+        saving_quality_label=quality_labels.get(saving_quality, saving_quality),
+        band_fmt=(
+            "—"
+            if saving_unavailable
+            else f"{fmt.money(g.monthly_low, currency)}–{fmt.money(g.monthly_high, currency)}"
+            if not g.is_strategic
+            else "—"
+        ),
+        year_fmt=(
+            "—"
+            if saving_unavailable
+            else fmt.money(g.realizable_year, currency)
+            if not g.is_strategic
+            else "Estratégico"
+        ),
         difficulty=o.difficulty_score,
         difficulty_label=_diff_label(o.difficulty_score),
         diff_fg=diff_fg,

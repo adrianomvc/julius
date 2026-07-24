@@ -250,6 +250,7 @@ def _non_financial(
             projected_cost=0,
             estimated_saving=0,
             assumptions=["sem economia até benchmark controlado"],
+            saving_quality="unavailable",
         ),
         finding=finding,
         why=why,
@@ -384,6 +385,7 @@ def _failures(account: Account, q: AthenaQuery, config: Config, scan_id: str) ->
             projected_cost=0,
             estimated_saving=0,
             assumptions=["falhas não recebem economia estimada"],
+            saving_quality="unavailable",
         ),
         finding="Falhas ou cancelamentos recorrentes no Athena",
         why=f"{q.failed_runs} falhas e {q.cancelled_runs} cancelamentos no período.",
@@ -419,6 +421,7 @@ def _small_files(account: Account, q: AthenaQuery, config: Config, scan_id: str)
             projected_cost=0,
             estimated_saving=0,
             assumptions=["sem economia financeira sem benchmark posterior"],
+            saving_quality="unavailable",
         ),
         finding="Muitos arquivos pequenos nas tabelas consultadas",
         why=(
