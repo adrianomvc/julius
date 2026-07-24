@@ -1,27 +1,28 @@
 """Configuração determinística do Julius.
 
 Preços e limiares ficam aqui, versionados, para que toda estimativa seja
-reproduzível e auditável. Valores em BRL. Preços são *premissas* explícitas —
-troque pelos preços da sua região/contrato.
+reproduzível e auditável. Valores financeiros são mantidos em USD, a mesma
+moeda retornada pelo Cost Explorer. Preços são *premissas* explícitas —
+troque pelos preços da sua região/contrato ou por uma tabela versionada.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-# Preço aproximado (R$/hora) por tipo de instância SageMaker (~USD × câmbio).
+# Preço aproximado (USD/hora) por tipo de instância SageMaker.
 SAGEMAKER_HOURLY: dict[str, float] = {
-    "ml.t3.medium": 0.33,
-    "ml.t3.large": 0.65,
-    "ml.m5.large": 0.75,
-    "ml.m5.xlarge": 1.50,
-    "ml.m5.2xlarge": 3.00,
-    "ml.c5.xlarge": 1.35,
-    "ml.g4dn.xlarge": 3.42,   # GPU
-    "ml.g5.xlarge": 6.50,     # GPU
-    "ml.p3.2xlarge": 26.0,    # GPU
+    "ml.t3.medium": 0.05,
+    "ml.t3.large": 0.10,
+    "ml.m5.large": 0.12,
+    "ml.m5.xlarge": 0.23,
+    "ml.m5.2xlarge": 0.46,
+    "ml.c5.xlarge": 0.21,
+    "ml.g4dn.xlarge": 0.53,   # GPU
+    "ml.g5.xlarge": 1.00,     # GPU
+    "ml.p3.2xlarge": 4.00,    # GPU
 }
-SAGEMAKER_HOURLY_DEFAULT = 1.20
+SAGEMAKER_HOURLY_DEFAULT = 0.18
 
 
 def sagemaker_hourly(instance_type: str) -> float:
@@ -61,11 +62,20 @@ ATHENA_RECOVERY_RATES: dict[str, RecoveryBand] = {
 }
 
 # DPU por worker type do Glue (Glue 2.0+).
-DPU_PER_WORKER: dict[str, int] = {
+DPU_PER_WORKER: dict[str, float] = {
+    "G.025X": 0.25,
     "G.1X": 1,
     "G.2X": 2,
     "G.4X": 4,
     "G.8X": 8,
+    "G.12X": 12,
+    "G.16X": 16,
+    "R.1X": 1,
+    "R.2X": 2,
+    "R.4X": 4,
+    "R.8X": 8,
+    # Ray usa M-DPU; o valor representa unidades faturáveis por worker.
+    "Z.2X": 2,
     "Standard": 1,
 }
 
@@ -75,16 +85,28 @@ class Pricing:
     """Preços (premissas) por região. Ajustáveis via config."""
 
     region: str = "sa-east-1"
-    currency: str = "BRL"
-    version: str = "1.0"
-    # R$/DPU-hora (Glue ETL/Interactive standard). ~USD 0.44 * câmbio.
-    glue_dpu_hour: float = 2.85
-    # R$/TB escaneado no Athena. ~USD 5/TB * câmbio.
-    athena_per_tb: float = 32.5
+    currency: str = "USD"
+    version: str = "2.0-usd"
+    # USD/DPU-hora. Fallback versionado; a cobrança permanece no Cost Explorer.
+    glue_dpu_hour: float = 0.44
+    glue_flex_dpu_hour: float = 0.29
+    glue_ray_mdpu_hour: float = 0.44
+    # DataBrew usa node-hour, não Glue DPU-hour.
+    databrew_node_hour: float = 0.48
+    # USD/TB escaneado no Athena.
+    athena_per_tb: float = 5.0
+    # Fallback USD explícito usado pelos modelos Athena quando a query é USD.
     athena_per_tb_usd: float = 5.0
-    # Step Functions: R$/state transition (Standard) e R$/request (Express).
-    sfn_standard_per_transition: float = 0.00016   # ~USD 0,025/1k * câmbio
-    sfn_express_per_request: float = 0.0000065     # ~USD 1/milhão * câmbio
+    # Step Functions: USD/state transition (Standard) e USD/request (Express).
+    sfn_standard_per_transition: float = 0.000025
+    sfn_express_per_request: float = 0.000001
+
+    def glue_rate(self, execution_class: str = "STANDARD") -> float:
+        return (
+            self.glue_flex_dpu_hour
+            if execution_class.upper() == "FLEX"
+            else self.glue_dpu_hour
+        )
 
 
 @dataclass(frozen=True)
@@ -118,6 +140,16 @@ class Thresholds:
     timeout_excess_min_minutes: int = 120
     # Worker type é "grande demais" quando a CPU fica abaixo disto (types G.4X/G.8X).
     worker_type_low_cpu: float = 0.30
+    # Evidência complementar obrigatória antes de reduzir capacidade.
+    worker_memory_pressure_high: float = 0.75
+    worker_disk_pressure_high: float = 0.70
+    worker_utilization_low: float = 0.45
+    executor_gap_high: float = 0.35
+    task_skew_high: float = 1.0
+    task_duration_cv_high: float = 0.75
+    high_job_frequency_monthly: int = 100
+    # Estimativas conservadoras: parte do desperdício medido que esperamos capturar.
+    conservative_realization: float = 0.70
     # Step Functions: volume/duração para avaliar Standard → Express.
     sfn_express_min_executions: int = 5000
     sfn_short_duration_sec: int = 300
@@ -147,6 +179,7 @@ class Config:
     weights: Weights = field(default_factory=Weights)
     # Fator de realização padrão (parte da economia efetivamente capturada).
     realization_factor: float = 0.8
+    preferred_glue_version: str = "5.1"
     # Mês/ano de referência para "realizável no ano" (dez do ano corrente).
     year_end_month: int = 12
 

@@ -6,11 +6,11 @@
   "generated_at": "2026-07-23",
   "cost_explorer": {
     "services": [
-      { "name": "AWS Glue", "subtitle": "Jobs + Interactive Sessions", "monthly_cost": 21400 },
-      { "name": "Amazon Athena", "subtitle": "queries + workgroups", "monthly_cost": 6800 },
-      { "name": "Amazon S3", "subtitle": "armazenamento + requests", "monthly_cost": 4200 },
-      { "name": "Step Functions", "subtitle": "Standard / Express", "monthly_cost": 2100 },
-      { "name": "Outros", "subtitle": "CloudWatch, KMS, transfer", "monthly_cost": 4000 }
+      { "name": "AWS Glue", "subtitle": "Jobs, sessions e crawlers", "monthly_cost": 3292.31, "currency": "USD", "period_kind": "month_to_date", "data_through": "2026-07-22", "estimated": true },
+      { "name": "Amazon Athena", "subtitle": "queries + workgroups", "monthly_cost": 1046.15, "currency": "USD", "period_kind": "month_to_date", "data_through": "2026-07-22", "estimated": true },
+      { "name": "Amazon S3", "subtitle": "armazenamento + requests", "monthly_cost": 646.15, "currency": "USD", "period_kind": "month_to_date", "data_through": "2026-07-22", "estimated": true },
+      { "name": "Step Functions", "subtitle": "Standard / Express", "monthly_cost": 323.08, "currency": "USD", "period_kind": "month_to_date", "data_through": "2026-07-22", "estimated": true },
+      { "name": "Outros", "subtitle": "CloudWatch, KMS, transfer", "monthly_cost": 615.38, "currency": "USD", "period_kind": "month_to_date", "data_through": "2026-07-22", "estimated": true }
     ]
   },
   "glue_jobs": [
@@ -241,9 +241,9 @@
       { "name": "export_adhoc_planilha", "candidate_score": 28, "readiness_score": 24 }
     ],
     "previous_results": [
-      { "title": "Redução de workers", "asset": "glue_job: normaliza_clientes", "date": "abr/2026", "predicted_monthly": 1100, "realized_monthly": 1240, "unit": "R$ 620 → R$ 470 por execução" },
-      { "title": "Result reuse no workgroup", "asset": "athena: wg-avi-analytics", "date": "mai/2026", "predicted_monthly": 540, "realized_monthly": 500, "unit": "R$ 38 → R$ 21 por query" },
-      { "title": "Desligar sessões ociosas", "asset": "glue_session: adhoc-ds", "date": "mai/2026", "predicted_monthly": 380, "realized_monthly": 300, "unit": "R$ 12,8 → R$ 5,1 por hora-sessão" }
+      { "title": "Redução de workers", "asset": "glue_job: normaliza_clientes", "date": "abr/2026", "predicted_monthly": 169.23, "realized_monthly": 190.77, "currency": "USD", "unit": "US$ 95.38 → US$ 72.31 por execução" },
+      { "title": "Result reuse no workgroup", "asset": "athena: wg-avi-analytics", "date": "mai/2026", "predicted_monthly": 83.08, "realized_monthly": 76.92, "currency": "USD", "unit": "US$ 5.85 → US$ 3.23 por query" },
+      { "title": "Desligar sessões ociosas", "asset": "glue_session: adhoc-ds", "date": "mai/2026", "predicted_monthly": 58.46, "realized_monthly": 46.15, "currency": "USD", "unit": "US$ 1.97 → US$ 0.78 por hora-sessão" }
     ]
   }
 }

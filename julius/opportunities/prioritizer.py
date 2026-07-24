@@ -39,14 +39,24 @@ def check_actionable(o: Opportunity) -> tuple[bool, str | None]:
     return True, None
 
 
-def assign(o: Opportunity, *, risk: float = 0.6, blocked: bool = False) -> None:
+def assign(
+    o: Opportunity, *, risk: float = 0.6, blocked: bool | None = None
+) -> None:
     """Preenche prioridades, gate e bucket na oportunidade (in place)."""
+    if blocked is not None:
+        o.blocked = blocked
     o.execution_priority = execution_priority(o)
     o.strategic_priority = strategic_priority(o, risk)
 
     actionable, next_action = check_actionable(o)
     o.actionable = actionable
     o.next_action = next_action
+
+    if o.blocked:
+        o.actionable = False
+        o.next_action = o.next_action or "validar evidência antes de implementar"
+        o.bucket = "investigar_primeiro"
+        return
 
     low_conf = o.confidence < 0.55
     is_strategic = o.estimated_gain.is_strategic
@@ -65,7 +75,7 @@ def assign(o: Opportunity, *, risk: float = 0.6, blocked: bool = False) -> None:
         o.bucket = "investigar_primeiro" if o.gain_score >= 50 else "monitorar"
         return
 
-    blockers = blocked or o.owner is None
+    blockers = o.blocked or o.owner is None
     if o.difficulty_score <= 2 and o.execution_priority >= 45 and not blockers:
         o.bucket = "fazer_agora"
     elif o.execution_priority >= 25:

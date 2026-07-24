@@ -23,9 +23,9 @@ class Pareto:
     def sentence(self) -> str:
         return (
             f"{len(self.financial_focus)} ações capturam {self.financial_pct}% da economia mensal "
-            f"(R$ {self.financial_sum:,.0f} de R$ {self.monthly_total:,.0f}). "
+            f"(US$ {self.financial_sum:,.2f} de US$ {self.monthly_total:,.2f}). "
             f"Destas, {len(self.executable_focus)} são implementáveis já ({self.executable_pct}%)."
-        ).replace(",", ".")
+        )
 
 
 def _monthly(o: Opportunity) -> float:

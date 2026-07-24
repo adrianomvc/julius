@@ -21,6 +21,7 @@ BUCKET_COLORS = {
 
 CATEGORY_LABELS = {
     "glue_job": ("Glue", "#7a4bc4", "#f1ebfb"),
+    "glue_service": ("Glue billing", "#7a4bc4", "#f1ebfb"),
     "glue_session": ("Session", "#0053b3", "#e6effa"),
     "athena_query": ("Athena", "#e8730c", "#fdefdd"),
     "s3": ("S3", "#b26a12", "#faf0dd"),
@@ -28,11 +29,8 @@ CATEGORY_LABELS = {
 }
 
 
-def brl(value: float | None) -> str:
-    return money(value, "BRL")
-
-
-def money(value: float | None, currency: str = "BRL") -> str:
+def money(value: float | None, currency: str = "USD") -> str:
+    """Portfólio mono-moeda em USD; mantém a assinatura por moeda por compat."""
     if value is None:
         return "—"
     symbols = {"BRL": "R$", "USD": "US$", "EUR": "€", "GBP": "£"}
@@ -41,6 +39,16 @@ def money(value: float | None, currency: str = "BRL") -> str:
     formatted = f"{value:,.{decimals}f}"
     formatted = formatted.replace(",", "\0").replace(".", ",").replace("\0", ".")
     return f"{prefix} {formatted}"
+
+
+def usd(value: float | None) -> str:
+    """Formatação canônica do portfólio (USD)."""
+    return money(value, "USD")
+
+
+def brl(value: float | None) -> str:
+    """Alias legado; o portfólio canônico agora é expresso em USD."""
+    return money(value, "USD")
 
 
 def difficulty_color(difficulty: int) -> tuple[str, str]:

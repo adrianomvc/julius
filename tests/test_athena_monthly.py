@@ -373,10 +373,10 @@ def test_partial_collection_uses_versioned_modeled_recovery():
         cost_quality="partial",
     )
     estimate = athena_estimation.projection_saving(query, DEFAULT_CONFIG)
-    assert estimate.baseline_cost == 32.5
-    assert estimate.estimated_saving_low == 4.88
-    assert estimate.estimated_saving == 9.75
-    assert estimate.estimated_saving_high == 16.25
+    assert estimate.baseline_cost == 5
+    assert estimate.estimated_saving_low == 0.75
+    assert estimate.estimated_saving == 1.5
+    assert estimate.estimated_saving_high == 2.5
     assert estimate.baseline_quality == "modeled"
     assert estimate.saving_quality == "modeled_rule"
     assert estimate.projected_bytes is not None

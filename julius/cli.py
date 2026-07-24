@@ -17,7 +17,7 @@ from julius.agent import (
     validate_result_file,
     write_validated_result,
 )
-from julius.aws.session import assume_role, make_session
+from julius.aws.session import make_session
 from julius.aws.account_targets import (
     AccountTargetError,
     load_account_targets,
@@ -38,7 +38,7 @@ from julius.notification import (
     load_recipient_registry,
     load_settings,
 )
-from julius.notification.transports import DryRunTransport, SesTransport, SmtpTransport
+from julius.notification.transports import DryRunTransport, SmtpTransport
 from julius.metrics import compute_kpis
 from julius.opportunities.lifecycle import can_transition
 from julius.pipeline import analyze
@@ -85,6 +85,24 @@ def _load_agent_enrichment(
     return context, contextual
 
 
+def _require_same_opportunity_set(context, analysis) -> None:
+    if context is None:
+        return
+    expected = {
+        str(item["opportunity_id"]) for item in context.opportunities
+    }
+    available = {
+        item.opportunity_id for item in analysis.opportunities
+    }
+    missing = sorted(expected - available)
+    if missing:
+        raise typer.BadParameter(
+            "o relatório não reproduziu as oportunidades do contexto; "
+            "informe o mesmo --artifacts-manifest usado no agent prepare "
+            f"(ausentes: {', '.join(missing[:3])})"
+        )
+
+
 @agent_app.command("prepare")
 def agent_prepare(
     input: str = typer.Option(_DEFAULT_INPUT, "--input", "-i"),
@@ -95,8 +113,11 @@ def agent_prepare(
     ),
 ) -> None:
     """Prepara contexto, contrato e instruções que o Devin analisará localmente."""
-    analysis = analyze(input)
     try:
+        analysis = analyze(
+            input,
+            artifacts_manifest=artifacts_manifest or None,
+        )
         context, files = prepare_agent_workspace(
             analysis,
             output,
@@ -123,16 +144,20 @@ def agent_collect_artifacts(
         help="Dataset da conta já coletado e verificado.",
     ),
     output: str = typer.Option("data/artifacts", "--output", "-o"),
-    profile: str = typer.Option("", "--profile", help="Perfil AWS CLI explícito."),
-    region: str = typer.Option("", "--region"),
-    role_arn: str = typer.Option("", "--role-arn", help="Role read-only explícita."),
+    sso_profile: str = typer.Option(
+        "",
+        "--sso-profile",
+        help="Nome do perfil SSO no AWS CLI; vazio usa default/AWS_PROFILE.",
+    ),
     max_bytes: int = typer.Option(256_000, "--max-bytes", min=1, max=1_000_000),
 ) -> None:
-    """Coleta código/SQL/ASL em modo read-only para o Devin analisar."""
+    """Coleta código/SQL/ASL com o perfil SSO selecionado em sa-east-1."""
     account = load_account(input)
-    session = make_session(profile or None, region or account.region)
-    if role_arn:
-        session = assume_role(session, role_arn, region or account.region)
+    if account.region != "sa-east-1":
+        raise typer.BadParameter(
+            f"região da conta deve ser sa-east-1, recebido {account.region}"
+        )
+    session = make_session(sso_profile or None, "sa-east-1")
     try:
         bundle = collect_technical_artifacts(
             session,
@@ -154,7 +179,7 @@ def agent_verify_accounts(
     config: str = typer.Option(
         "~/.julius-accounts.json",
         "--config",
-        help="Cadastro explícito de perfis/roles e IDs esperados.",
+        help="Cadastro da conta esperada para a identidade SSO ativa.",
     ),
     output: str = typer.Option(
         "data/agent/verified-accounts.json",
@@ -162,7 +187,7 @@ def agent_verify_accounts(
         "-o",
     ),
 ) -> None:
-    """Valida via STS todas as contas habilitadas antes da coleta."""
+    """Valida via STS os perfis SSO habilitados antes da coleta."""
     try:
         targets = load_account_targets(config)
         verified = verify_account_targets(targets)
@@ -179,7 +204,7 @@ def agent_verify_accounts(
     for account in verified:
         typer.echo(
             f"- {account.name}: {account.account_id} · "
-            f"perfil {account.profile or '<default>'}"
+            f"região {account.region} · credencial SSO ativa"
         )
     typer.echo(f"Manifesto: {path}")
 
@@ -219,14 +244,25 @@ def agent_validate(
 def opportunities(
     input: str = typer.Option(_DEFAULT_INPUT, "--input", "-i", help="Dataset exportado (JSON)."),
     history_db: str = typer.Option("", "--history-db", help="DuckDB para carregar revisões."),
+    artifacts_manifest: str = typer.Option(
+        "", "--artifacts-manifest", help="Manifesto read-only de scripts Glue."
+    ),
 ) -> None:
     """Detecta e prioriza oportunidades, imprimindo o ranking."""
     if history_db:
         with HistoryStore(history_db) as history:
-            a = analyze(input, history=history)
+            a = analyze(
+                input,
+                history=history,
+                artifacts_manifest=artifacts_manifest or None,
+            )
     else:
-        a = analyze(input)
+        a = analyze(input, artifacts_manifest=artifacts_manifest or None)
     typer.echo(f"Conta {a.account.account_id} · {len(a.opportunities)} oportunidades · scan {a.scan_id}")
+    typer.echo(
+        f"Saúde da coleta: {a.vm.collection_status_label} · "
+        f"{a.vm.collection_health_summary}"
+    )
     typer.echo(
         f"KPIs: acionabilidade {a.kpis.actionability_rate*100:.0f}% · "
         f"ownership {a.kpis.ownership_rate*100:.0f}% · "
@@ -239,10 +275,10 @@ def opportunities(
             f"falsos positivos {a.kpis.false_positives_at_10}"
         )
     typer.echo(f"Recomendação: {a.vm.recommendation}\n")
-    typer.echo(f"{'Exec':>4} {'Estrat':>6}  {'Bucket':<20} {'R$/mês':>9}  Oportunidade")
+    typer.echo(f"{'Exec':>4} {'Estrat':>6}  {'Bucket':<20} {'US$/mês':>9}  Oportunidade")
     for o in a.opportunities:
         gain = o.estimated_gain.monthly_expected
-        gain_s = f"{gain:,.0f}".replace(",", ".") if not o.estimated_gain.is_strategic else "estrat."
+        gain_s = f"{gain:,.2f}" if not o.estimated_gain.is_strategic else "estrat."
         typer.echo(
             f"{o.execution_priority:>4} {o.strategic_priority:>6}  "
             f"{o.bucket:<20} {gain_s:>9}  {o.finding} ({o.asset_name})"
@@ -259,6 +295,9 @@ def report(
     parquet_dir: str = typer.Option(_DEFAULT_PARQUET, "--parquet-dir"),
     agent_context: str = typer.Option("", "--agent-context"),
     agent_result: str = typer.Option("", "--agent-result"),
+    artifacts_manifest: str = typer.Option(
+        "", "--artifacts-manifest", help="Manifesto read-only usado na análise de código."
+    ),
 ) -> None:
     """Gera os artefatos (report.html, report.json, email.html/.txt)."""
     context, contextual = _load_agent_enrichment(agent_context, agent_result)
@@ -270,8 +309,10 @@ def report(
             store=BacklogStore(store),
             history=history,
             scan_id=context.scan_id if context else None,
+            artifacts_manifest=artifacts_manifest or None,
         )
         history.export_parquet(parquet_dir)
+    _require_same_opportunity_set(context, a)
     if context:
         attach_contextual_analysis(a.vm, contextual)
     out = Path(output)
@@ -291,6 +332,10 @@ def report(
         (out / "email.txt").write_text(text, encoding="utf-8")
         written += ["email.html", "email.txt"]
     typer.echo(f"Gerado em {out}/: {', '.join(written)}")
+    typer.echo(
+        f"Saúde da coleta: {a.vm.collection_status_label} · "
+        f"{a.vm.collection_health_summary}"
+    )
 
 
 @app.command()
@@ -298,6 +343,9 @@ def notify(
     input: str = typer.Option(_DEFAULT_INPUT, "--input", "-i"),
     mode: str = typer.Option("dry-run", "--mode", help="dry-run | active"),
     outbox: str = typer.Option("data/outbox", "--outbox"),
+    artifacts_manifest: str = typer.Option(
+        "", "--artifacts-manifest", help="Manifesto read-only usado na análise de código."
+    ),
     to: str = typer.Option(
         "", "--to", help="Destinatários de prévia separados por vírgula (somente dry-run)."
     ),
@@ -311,10 +359,7 @@ def notify(
         "--recipients-config",
         help="Cadastro local de destinatários por conta.",
     ),
-    transport: str = typer.Option("", "--transport", help="ses | smtp; vazio usa a configuração."),
     send_log: str = typer.Option("data/state/send_log.json", "--send-log"),
-    profile: str = typer.Option("", "--profile", help="Perfil AWS CLI para SES."),
-    region: str = typer.Option("", "--region", help="Região do SES."),
     recipient_group: str = typer.Option(
         "", "--recipient-group", help="Grupo da prévia (somente dry-run)."
     ),
@@ -335,7 +380,12 @@ def notify(
     context, contextual = _load_agent_enrichment(agent_context, agent_result)
     if context and str(context.account["id"]) != load_account(input).account_id:
         raise typer.BadParameter("contexto Devin pertence a outra conta.")
-    a = analyze(input, scan_id=context.scan_id if context else None)
+    a = analyze(
+        input,
+        scan_id=context.scan_id if context else None,
+        artifacts_manifest=artifacts_manifest or None,
+    )
+    _require_same_opportunity_set(context, a)
     if context:
         attach_contextual_analysis(a.vm, contextual)
     settings = None
@@ -385,24 +435,13 @@ def notify(
         cc = registered.cc
         effective_group = registered.recipient_group
         sender = settings.sender
-        selected_transport = transport or settings.transport
-        if selected_transport == "ses":
-            active_transport = SesTransport(
-                client_factory=lambda: make_session(
-                    profile or None, region or settings.aws_region
-                ).client("sesv2"),
-                configuration_set=settings.configuration_set,
-            )
-        elif selected_transport == "smtp":
-            active_transport = SmtpTransport(
-                settings.smtp_host,
-                port=settings.smtp_port,
-                username=os.getenv("JULIUS_SMTP_USERNAME", ""),
-                password=os.getenv("JULIUS_SMTP_PASSWORD", ""),
-                starttls=settings.smtp_starttls,
-            )
-        else:
-            raise typer.BadParameter("--transport deve ser ses ou smtp.")
+        active_transport = SmtpTransport(
+            settings.smtp_host,
+            port=settings.smtp_port,
+            username=os.getenv("JULIUS_SMTP_USERNAME", ""),
+            password=os.getenv("JULIUS_SMTP_PASSWORD", ""),
+            starttls=settings.smtp_starttls,
+        )
         service = NotificationService(
             active_transport,
             policy=NotificationPolicy(settings),
@@ -439,6 +478,9 @@ def scan(
     store: str = typer.Option(_DEFAULT_STORE, "--store", help="Backlog operacional JSON."),
     history_db: str = typer.Option(_DEFAULT_HISTORY, "--history-db", help="Histórico DuckDB."),
     parquet_dir: str = typer.Option(_DEFAULT_PARQUET, "--parquet-dir"),
+    artifacts_manifest: str = typer.Option(
+        "", "--artifacts-manifest", help="Manifesto read-only de scripts Glue."
+    ),
 ) -> None:
     """Detecta, persiste o histórico e grava report.json."""
     with HistoryStore(history_db) as history:
@@ -446,6 +488,7 @@ def scan(
             input,
             store=BacklogStore(store) if store else None,
             history=history,
+            artifacts_manifest=artifacts_manifest or None,
         )
         history.export_parquet(parquet_dir)
     out = Path(output)
@@ -457,13 +500,19 @@ def scan(
         f"scan {a.scan_id}: {len(a.opportunities)} oportunidades · "
         f"identificada {a.vm.identified_fmt}/mês -> {out}/report.json"
     )
+    typer.echo(
+        f"Saúde da coleta: {a.vm.collection_status_label} · "
+        f"{a.vm.collection_health_summary}"
+    )
 
 
 @app.command()
 def collect(
-    profile: str = typer.Option("", "--profile", help="Perfil do AWS CLI (cadeia de credenciais)."),
-    region: str = typer.Option("", "--region", help="Região AWS."),
-    role_arn: str = typer.Option("", "--role-arn", help="Assume role read-only (multi-conta)."),
+    sso_profile: str = typer.Option(
+        "",
+        "--sso-profile",
+        help="Nome do perfil SSO no AWS CLI; vazio usa default/AWS_PROFILE.",
+    ),
     lookback_days: int = typer.Option(90, "--lookback-days"),
     touches_table: str = typer.Option("", "--touches-table", help="Tabela oficial de toques (Athena)."),
     athena_workgroup: str = typer.Option("julius", "--athena-workgroup"),
@@ -476,23 +525,24 @@ def collect(
     ),
     output: str = typer.Option("data/collected/account.json", "--output", "-o"),
 ) -> None:
-    """Coleta ao vivo (boto3) e grava um dataset (mesmo schema do exportado)."""
+    """Coleta em sa-east-1 com o perfil SSO selecionado e grava o dataset."""
     from julius.aws.collect import collect_account
-    from julius.aws.session import assume_role, make_session
+    from julius.aws.collection_health import RequiredCollectionError
     from julius.ingest.dump import account_to_dataset
 
-    session = make_session(profile, region)
-    if role_arn:
-        session = assume_role(session, role_arn, region or None)
-    account = collect_account(
-        session,
-        lookback_days=lookback_days,
-        touches_table=touches_table,
-        athena_workgroup=athena_workgroup,
-        athena_output=athena_output or None,
-        include_cloudtrail=cloudtrail,
-        datawarm_job=datawarm_job,
-    )
+    session = make_session(sso_profile or None, "sa-east-1")
+    try:
+        account = collect_account(
+            session,
+            lookback_days=lookback_days,
+            touches_table=touches_table,
+            athena_workgroup=athena_workgroup,
+            athena_output=athena_output or None,
+            include_cloudtrail=cloudtrail,
+            datawarm_job=datawarm_job,
+        )
+    except RequiredCollectionError as exc:
+        raise typer.BadParameter(str(exc)) from exc
 
     out = Path(output)
     out.parent.mkdir(parents=True, exist_ok=True)
@@ -503,6 +553,10 @@ def collect(
     typer.echo(
         f"Coletado: conta {account.account_id} · {len(account.glue_jobs)} jobs · "
         f"{len(account.athena_queries)} queries · {len(account.services)} serviços -> {out}"
+    )
+    typer.echo(
+        f"Saúde da coleta: {account.collection_status} · "
+        f"{len(account.collection_health)} fontes registradas"
     )
     typer.echo(f"Rode: julius report --input {out}")
 
@@ -553,7 +607,7 @@ def portfolio(
 
     typer.echo(
         f"Portfólio: {len(p.analyses)} contas · identificada total "
-        f"R$ {p.total_identified_monthly:,.0f}/mês".replace(",", ".")
+        f"US$ {p.total_identified_monthly:,.2f}/mês"
     )
     typer.echo(f"{'Conta':<18} {'Custo/mês':>10} {'Identif./mês':>13} {'Oport.':>6} {'Ação%':>6}")
     for r in p.rollups:
@@ -777,8 +831,8 @@ def validate_command(
         calibration = history.calibration_for(opportunity.rule_id)
         history.export_parquet(parquet_dir)
     typer.echo(
-        f"Validada: prevista R$ {result.predicted_monthly:,.2f} · "
-        f"realizada R$ {result.realized_monthly:,.2f} · "
+        f"Validada: prevista US$ {result.predicted_monthly:,.2f} · "
+        f"realizada US$ {result.realized_monthly:,.2f} · "
         f"precisão {result.estimation_precision*100:.0f}%"
     )
     if calibration is not None:

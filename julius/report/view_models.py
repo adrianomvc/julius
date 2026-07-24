@@ -56,6 +56,7 @@ class OpportunityVM:
     doc_url: str
     owner: str
     owner_source: str
+    owner_event_time: str
     actor: str | None
     coverage_pct: str
     sources: str
@@ -63,6 +64,10 @@ class OpportunityVM:
     next_action: str | None
     is_strategic: bool
     source_process: str | None
+    process_cost_fmt: str
+    process_forecast_fmt: str
+    cost_data_through: str
+    traceability: str
     ai_diagnosis: str = ""
     ai_recommendation: str = ""
     ai_implementation_steps: list[str] = field(default_factory=list)
@@ -118,7 +123,7 @@ def _producer_vm(p: ProducerCandidate) -> ProducerVM:
     )
 
 
-def _prev_vm(r: PreviousResult, currency: str) -> PreviousResultVM:
+def _prev_vm(r: PreviousResult) -> PreviousResultVM:
     p = r.precision
     if p >= 85:
         fg, bg = "#e8730c", "#fdefdd"
@@ -130,8 +135,8 @@ def _prev_vm(r: PreviousResult, currency: str) -> PreviousResultVM:
         title=r.title,
         asset=r.asset,
         date=r.date,
-        predicted_fmt=fmt.money(r.predicted_monthly, currency) + "/mês",
-        realized_fmt=fmt.money(r.realized_monthly, currency) + "/mês",
+        predicted_fmt=fmt.money(r.predicted_monthly, r.currency) + "/mês",
+        realized_fmt=fmt.money(r.realized_monthly, r.currency) + "/mês",
         precision=p,
         prec_fg=fg,
         prec_bg=bg,
@@ -168,6 +173,13 @@ def _opp_vm(o: Opportunity, currency: str) -> OpportunityVM:
         "unavailable": "Indisponível",
     }
     saving_unavailable = saving_quality == "unavailable"
+    trace_parts = []
+    for ref in o.evidence_refs:
+        ids = ref.get("run_ids") or ref.get("execution_ids") or []
+        suffix = f" · {len(ids)} execução(ões)" if ids else ""
+        if ids:
+            suffix += " · " + ", ".join(str(item) for item in ids[:3])
+        trace_parts.append(f"{ref.get('source', 'evidência')}{suffix}")
     return OpportunityVM(
         id=o.opportunity_id,
         title=o.finding,
@@ -236,6 +248,7 @@ def _opp_vm(o: Opportunity, currency: str) -> OpportunityVM:
         doc_url=o.doc_links[0] if o.doc_links else "",
         owner=o.owner or "não identificado",
         owner_source=o.owner_source,
+        owner_event_time=o.owner_event_time or "—",
         actor=o.actor,
         coverage_pct=f"{round(o.evidence_coverage * 100)}%",
         sources=", ".join(o.data_sources),
@@ -243,6 +256,18 @@ def _opp_vm(o: Opportunity, currency: str) -> OpportunityVM:
         next_action=o.next_action,
         is_strategic=g.is_strategic,
         source_process=o.source_process,
+        process_cost_fmt=(
+            fmt.money(o.process_cost_mtd, currency)
+            if o.process_cost_mtd is not None
+            else "—"
+        ),
+        process_forecast_fmt=(
+            fmt.money(o.process_forecast_eom, currency)
+            if o.process_forecast_eom is not None
+            else "—"
+        ),
+        cost_data_through=o.cost_data_through or "—",
+        traceability="; ".join(trace_parts) or "sem IDs de execução disponíveis",
     )
 
 
@@ -287,6 +312,17 @@ class ReportViewModel:
     account_saving_fmt: str
     account_saving_pct: str
     account_bar_w: str
+    process_costs: list[dict]
+    process_cost_attributed_fmt: str
+    glue_cost_explorer_fmt: str
+    process_cost_delta_fmt: str
+    process_reconciliation_note: str
+    collection_status: str
+    collection_status_label: str
+    collection_status_fg: str
+    collection_status_bg: str
+    collection_health_summary: str
+    collection_health: list[dict]
 
     focus: list[OpportunityVM]
     table: list[OpportunityVM]
@@ -298,8 +334,8 @@ class ReportViewModel:
     previous_results: list[PreviousResultVM] = field(default_factory=list)
     manifest: list[dict] = field(default_factory=list)
     diff_events: list[dict] = field(default_factory=list)
-    committed_fmt: str = "R$ 0"
-    realized_fmt: str = "R$ 0"
+    committed_fmt: str = "US$ 0.00"
+    realized_fmt: str = "US$ 0.00"
     realization_rate_pct: str = "—"
     lifecycle_lead_times: list[dict] = field(default_factory=list)
     ai_summary: str = ""
@@ -339,23 +375,37 @@ def _services(account: Account, opportunities: list[Opportunity]) -> tuple[list[
         "s3": "Amazon S3",
     }
     saving_by_service: dict[str, float] = {}
+    saving_currency_by_service: dict[str, str] = {}
     for o in opportunities:
         if o.estimated_gain.is_strategic:
             continue
         svc = service_of.get(o.asset_type)
         if svc:
             saving_by_service[svc] = saving_by_service.get(svc, 0.0) + o.estimated_gain.monthly_expected
+            if o.estimation is not None:
+                saving_currency_by_service[svc] = o.estimation.currency
 
-    total = account.total_monthly_cost or 1.0
+    total = account.total_cost_mtd or 1.0
     rows = []
     for s in account.services:
         saving = saving_by_service.get(s.name, 0.0)
+        comparable = saving_currency_by_service.get(s.name, s.currency) == s.currency
+        if not comparable:
+            saving = 0.0
         rows.append(
             {
                 "name": s.name,
-                "sub": s.subtitle,
-                "cost_fmt": fmt.money(s.monthly_cost, account.currency),
-                "saving_fmt": fmt.money(saving, account.currency) if saving > 0 else "—",
+                "sub": (
+                    f"{s.subtitle} · MTD até {s.data_through or '—'}"
+                    f"{' · estimado pela AWS' if s.estimated else ''}"
+                    + (
+                        f" · forecast AWS {fmt.money(s.forecast_cost_eom, s.currency)}"
+                        if s.forecast_cost_eom is not None
+                        else ""
+                    )
+                ),
+                "cost_fmt": fmt.money(s.monthly_cost, s.currency),
+                "saving_fmt": fmt.money(saving, s.currency) if saving > 0 else "—",
                 "saving_color": "#e8730c" if saving > 0 else "#b6bcae",
                 "pct_opt": f"{round(saving / s.monthly_cost * 100)}%" if saving > 0 and s.monthly_cost else "—",
                 "bar_base_w": f"{s.monthly_cost / total * 100:.1f}%",
@@ -363,6 +413,59 @@ def _services(account: Account, opportunities: list[Opportunity]) -> tuple[list[
             }
         )
     return rows, sum(saving_by_service.values())
+
+
+def _process_costs(account: Account) -> list[dict]:
+    return [
+        {
+            "name": row.process_name,
+            "root_type": row.root_type,
+            "owner": row.owner or "não identificado",
+            "owner_source": row.owner_source,
+            "owner_event_time": row.owner_event_time or "—",
+            "owner_event_name": row.owner_event_name or "—",
+            "cost_mtd": fmt.money(row.total_cost_mtd, row.currency),
+            "forecast_eom": fmt.money(row.forecast_cost_eom, row.currency),
+            "actual_cost_mtd_value": row.actual_cost_mtd,
+            "estimated_cost_mtd_value": row.estimated_cost_mtd,
+            "total_cost_mtd_value": row.total_cost_mtd,
+            "forecast_cost_eom_value": row.forecast_cost_eom,
+            "currency": row.currency,
+            "period_start": row.period_start,
+            "data_through": row.data_through or "—",
+            "dpu_actual": f"{row.actual_dpu_hours:.2f}",
+            "dpu_estimated": f"{row.estimated_dpu_hours:.2f}",
+            "allocation": row.allocation_method,
+            "components": ", ".join(row.component_names),
+        }
+        for row in account.process_costs
+    ]
+
+
+def _cost_reconciliation(account: Account) -> tuple[str, str, str, str]:
+    glue = next((service for service in account.services if service.name == "AWS Glue"), None)
+    process_total = sum(row.total_cost_mtd for row in account.process_costs)
+    process_currency = (
+        account.process_costs[0].currency if account.process_costs else "USD"
+    )
+    attributed = fmt.money(process_total, process_currency)
+    if glue is None:
+        return attributed, "—", "—", "Cost Explorer Glue não disponível."
+    explorer = fmt.money(glue.monthly_cost, glue.currency)
+    if glue.currency != process_currency:
+        return (
+            attributed,
+            explorer,
+            "—",
+            "Moedas diferentes; reconciliação não calculada sem taxa de câmbio versionada.",
+        )
+    delta = glue.monthly_cost - process_total
+    note = (
+        f"Cost Explorer atualizado até {glue.data_through or 'data não informada'}; "
+        "valor MTD de cobrança estimado pela AWS; a diferença reúne atraso, "
+        "tarifas, arredondamento e consumo ainda não atribuído."
+    )
+    return attributed, explorer, fmt.money(delta, glue.currency), note
 
 
 def _pareto_bar(pareto: Pareto, currency: str) -> list[dict]:
@@ -387,6 +490,73 @@ def _pareto_bar(pareto: Pareto, currency: str) -> list[dict]:
             }
         )
     return segments
+
+
+def _collection_health(account: Account) -> tuple[str, str, str, str, str, list[dict]]:
+    status = account.collection_status
+    status_style = {
+        "ok": ("Completa", "#1f6b45", "#e5f3eb"),
+        "partial": ("Parcial", "#9a5b10", "#fff0d8"),
+        "failed": ("Falhou", "#a72f2f", "#f9e2e2"),
+        "not_reported": ("Não informada", "#5b6169", "#eef0ea"),
+    }
+    label, fg, bg = status_style[status]
+    rows = []
+    for item in account.collection_health:
+        row_label, row_fg, row_bg = {
+            "ok": ("OK", "#1f6b45", "#e5f3eb"),
+            "partial": ("Parcial", "#9a5b10", "#fff0d8"),
+            "unavailable": ("Indisponível", "#a72f2f", "#f9e2e2"),
+            "error": ("Erro", "#a72f2f", "#f9e2e2"),
+        }.get(item.status, (item.status, "#5b6169", "#eef0ea"))
+        rows.append(
+            {
+                "source": item.source,
+                "status": item.status,
+                "status_label": row_label,
+                "status_fg": row_fg,
+                "status_bg": row_bg,
+                "required": (
+                    "essencial"
+                    if item.required
+                    else ("cobertura" if item.affects_status else "informativa")
+                ),
+                "count": (
+                    f"{item.collected}/{item.expected}"
+                    if item.expected is not None
+                    else str(item.collected)
+                ),
+                "coverage": (
+                    f"{item.coverage * 100:.0f}%"
+                    if item.coverage is not None
+                    else "—"
+                ),
+                "data_through": item.data_through or "—",
+                "duration": f"{item.duration_ms} ms",
+                "error_category": item.error_category or "—",
+                "impact": item.impact or "—",
+                "next_action": item.next_action or "—",
+            }
+        )
+    if rows:
+        ok = sum(item.status == "ok" for item in account.collection_health)
+        partial = sum(item.status == "partial" for item in account.collection_health)
+        unavailable = sum(
+            item.affects_status and item.status in {"unavailable", "error"}
+            for item in account.collection_health
+        )
+        informational = sum(
+            not item.affects_status and item.status != "ok"
+            for item in account.collection_health
+        )
+        summary = (
+            f"{len(rows)} fontes · {ok} OK · {partial} parciais · "
+            f"{unavailable} indisponíveis/erros"
+            + (f" · {informational} opcionais desabilitadas" if informational else "")
+        )
+    else:
+        summary = "Dataset sem telemetria de coleta; cobertura das fontes não informada."
+    return status, label, fg, bg, summary, rows
 
 
 def _athena_views(account: Account) -> tuple[dict, list[dict], list[dict], list[str]]:
@@ -493,10 +663,34 @@ def build(
     investigate = [o for o in opportunities if o.bucket == "investigar_primeiro"]
 
     services, _ = _services(account, opportunities)
+    attributed_fmt, glue_ce_fmt, delta_fmt, reconciliation_note = _cost_reconciliation(account)
+    (
+        collection_status,
+        collection_status_label,
+        collection_status_fg,
+        collection_status_bg,
+        collection_health_summary,
+        collection_health,
+    ) = _collection_health(account)
     athena_coverage, athena_queries, athena_actors, athena_gaps = _athena_views(account)
 
     table_sorted = sorted(opportunities, key=lambda o: o.execution_priority, reverse=True)
 
+    account_currency = (
+        account.services[0].currency
+        if account.services and len({s.currency for s in account.services}) == 1
+        else "USD"
+    )
+    saving_currencies = {
+        o.estimation.currency
+        for o in opportunities
+        if o.estimation is not None and not o.estimated_gain.is_strategic
+    }
+    saving_currency = next(iter(saving_currencies), "USD")
+    account_saving_comparable = (
+        len(saving_currencies) <= 1
+        and (not saving_currencies or account_currency in saving_currencies)
+    )
     return ReportViewModel(
         account_id=account.account_id,
         account_masked=_mask(account.account_id),
@@ -505,49 +699,56 @@ def build(
         lookback=f"{account.lookback_days} dias",
         scan_id=manifest_val(manifest, "scan_id"),
         generated_at=account.generated_at,
-        currency=account.currency,
-        total_cost_fmt=fmt.money(account.total_monthly_cost, account.currency),
-        identified_fmt=fmt.money(identified, account.currency),
-        high_conf_fmt=fmt.money(high_conf, account.currency),
-        realizable_year_fmt=fmt.money(realizable_year, account.currency),
-        recommendation=_recommendation(do_now, account.currency),
+        currency=account_currency,
+        total_cost_fmt=fmt.money(account.total_cost_mtd, account_currency),
+        identified_fmt=fmt.money(identified, saving_currency),
+        high_conf_fmt=fmt.money(high_conf, saving_currency),
+        realizable_year_fmt=fmt.money(realizable_year, saving_currency),
+        recommendation=_recommendation(do_now, saving_currency),
         kpi_total=len(opportunities),
         kpi_actionable=len([o for o in opportunities if o.actionable]),
         kpi_strategic=len([o for o in opportunities if o.estimated_gain.is_strategic]),
         pareto_pct=pareto.financial_pct,
         pareto_count=len(pareto.financial_focus),
-        pareto_sentence=(
-            f"{pareto.financial_pct}% da economia está em {len(pareto.financial_focus)} "
-            f"oportunidades ({fmt.money(pareto.financial_sum, account.currency)} de "
-            f"{fmt.money(pareto.monthly_total, account.currency)})."
-        ),
-        pareto_sum_fmt=fmt.money(pareto.financial_sum, account.currency),
-        monthly_total_fmt=fmt.money(pareto.monthly_total, account.currency),
-        pareto_bar=_pareto_bar(pareto, account.currency),
+        pareto_sentence=pareto.sentence,
+        pareto_sum_fmt=fmt.money(pareto.financial_sum, saving_currency),
+        monthly_total_fmt=fmt.money(pareto.monthly_total, saving_currency),
+        pareto_bar=_pareto_bar(pareto, saving_currency),
         executable_pct=pareto.executable_pct,
         executable_count=len(pareto.executable_focus),
         months_remaining=months_remaining_in_year(),
         services=services,
-        account_total_fmt=fmt.money(account.total_monthly_cost, account.currency),
-        account_saving_fmt=fmt.money(identified, account.currency),
+        account_total_fmt=fmt.money(account.total_cost_mtd, account_currency),
+        account_saving_fmt=fmt.money(identified, saving_currency),
         account_saving_pct=(
-            f"{round(identified / account.total_monthly_cost * 100)}%"
-            if account.total_monthly_cost
+            f"{round(identified / account.total_cost_mtd * 100)}%"
+            if account.total_cost_mtd and account_saving_comparable
             else "—"
         ),
         account_bar_w=(
-            f"{identified / account.total_monthly_cost * 100:.1f}%"
-            if account.total_monthly_cost
+            f"{identified / account.total_cost_mtd * 100:.1f}%"
+            if account.total_cost_mtd and account_saving_comparable
             else "0%"
         ),
-        focus=[_opp_vm(o, account.currency) for o in pareto.financial_focus],
-        table=[_opp_vm(o, account.currency) for o in table_sorted],
-        do_now=[_opp_vm(o, account.currency) for o in do_now],
-        plan=[_opp_vm(o, account.currency) for o in plan],
-        monitor=[_opp_vm(o, account.currency) for o in monitor],
-        investigate=[_opp_vm(o, account.currency) for o in investigate],
+        process_costs=_process_costs(account),
+        process_cost_attributed_fmt=attributed_fmt,
+        glue_cost_explorer_fmt=glue_ce_fmt,
+        process_cost_delta_fmt=delta_fmt,
+        process_reconciliation_note=reconciliation_note,
+        collection_status=collection_status,
+        collection_status_label=collection_status_label,
+        collection_status_fg=collection_status_fg,
+        collection_status_bg=collection_status_bg,
+        collection_health_summary=collection_health_summary,
+        collection_health=collection_health,
+        focus=[_opp_vm(o, account_currency) for o in pareto.financial_focus],
+        table=[_opp_vm(o, account_currency) for o in table_sorted],
+        do_now=[_opp_vm(o, account_currency) for o in do_now],
+        plan=[_opp_vm(o, account_currency) for o in plan],
+        monitor=[_opp_vm(o, account_currency) for o in monitor],
+        investigate=[_opp_vm(o, account_currency) for o in investigate],
         producers=[_producer_vm(p) for p in account.producer_candidates],
-        previous_results=[_prev_vm(r, account.currency) for r in account.previous_results],
+        previous_results=[_prev_vm(r) for r in account.previous_results],
         manifest=manifest,
         athena_coverage=athena_coverage,
         athena_queries=athena_queries,

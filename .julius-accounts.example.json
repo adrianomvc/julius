@@ -4,17 +4,13 @@
     {
       "name": "consumer-principal",
       "expected_account_id": "123456789012",
-      "profile": "",
-      "region": "sa-east-1",
-      "role_arn": "",
+      "sso_profile": "consumer-principal",
       "enabled": false
     },
     {
       "name": "consumer-secundaria",
       "expected_account_id": "210987654321",
-      "profile": "consumer-secundaria",
-      "region": "sa-east-1",
-      "role_arn": "",
+      "sso_profile": "consumer-secundaria",
       "enabled": false
     }
   ]

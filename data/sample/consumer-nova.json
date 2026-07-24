@@ -6,9 +6,9 @@
   "generated_at": "2026-07-23",
   "cost_explorer": {
     "services": [
-      { "name": "AWS Glue", "subtitle": "Jobs + Interactive Sessions", "monthly_cost": 3400 },
-      { "name": "Amazon Athena", "subtitle": "queries + workgroups", "monthly_cost": 1200 },
-      { "name": "Amazon S3", "subtitle": "armazenamento + requests", "monthly_cost": 900 }
+      { "name": "AWS Glue", "subtitle": "Jobs, sessions e crawlers", "monthly_cost": 523.08, "currency": "USD", "period_kind": "month_to_date", "data_through": "2026-07-22", "estimated": true },
+      { "name": "Amazon Athena", "subtitle": "queries + workgroups", "monthly_cost": 184.62, "currency": "USD", "period_kind": "month_to_date", "data_through": "2026-07-22", "estimated": true },
+      { "name": "Amazon S3", "subtitle": "armazenamento + requests", "monthly_cost": 138.46, "currency": "USD", "period_kind": "month_to_date", "data_through": "2026-07-22", "estimated": true }
     ]
   },
   "glue_jobs": [],

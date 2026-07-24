@@ -12,6 +12,8 @@ class OwnerAttribution:
     owner: str | None
     source: str
     confidence: float
+    event_time: str = ""
+    event_name: str = ""
 
 
 def resolve_owner(account: Account, asset_type: str, asset_name: str) -> OwnerAttribution:
@@ -19,6 +21,44 @@ def resolve_owner(account: Account, asset_type: str, asset_name: str) -> OwnerAt
     owner_tag = getattr(asset, "owner_tag", None) if asset is not None else None
     if owner_tag:
         return OwnerAttribution(owner_tag, "tag oficial", 1.0)
+
+    mutation_events = [
+        event
+        for event in account.actor_events
+        if event.resource_type == asset_type
+        and event.resource_name == asset_name
+        and _human_event(event)
+        and event.event_name.startswith(("Create", "Update", "Put"))
+    ]
+    updates = sorted(
+        (event for event in mutation_events if event.event_name.startswith(("Update", "Put"))),
+        key=lambda event: event.event_time,
+        reverse=True,
+    )
+    creates = sorted(
+        (event for event in mutation_events if event.event_name.startswith("Create")),
+        key=lambda event: event.event_time,
+    )
+    if updates:
+        person = _person(updates[0])
+        if person:
+            return OwnerAttribution(
+                person,
+                f"última alteração humana ({updates[0].event_name})",
+                0.9,
+                updates[0].event_time,
+                updates[0].event_name,
+            )
+    if creates:
+        person = _person(creates[0])
+        if person:
+            return OwnerAttribution(
+                person,
+                f"criador identificado ({creates[0].event_name})",
+                0.85,
+                creates[0].event_time,
+                creates[0].event_name,
+            )
 
     if asset_type == "table" and asset is not None:
         if asset.corporate_owner:
@@ -38,6 +78,9 @@ def _asset(account: Account, asset_type: str, asset_name: str):
     collections = {
         "glue_job": account.glue_jobs,
         "glue_session": account.interactive_sessions,
+        "glue_crawler": account.glue_crawlers,
+        "glue_trigger": account.glue_triggers,
+        "databrew_job": account.databrew_jobs,
         "athena_query": account.athena_queries,
         "state_machine": account.state_machines,
         "sagemaker_app": account.sagemaker_apps,
@@ -58,6 +101,38 @@ def _asset(account: Account, asset_type: str, asset_name: str):
         ),
         None,
     )
+
+
+def _person(event) -> str | None:
+    if event.source_identity:
+        return event.source_identity
+    arn = event.user_arn or ""
+    if ":assumed-role/" in arn:
+        candidate = arn.rsplit("/", 1)[-1].strip()
+        return candidate or None
+    if ":user/" in arn:
+        return arn.rsplit("/", 1)[-1].strip() or None
+    return None
+
+
+def _human_event(event) -> bool:
+    if event.is_human:
+        return True
+    # Compatibilidade com datasets anteriores ao campo `is_human`.
+    candidate = str(event.source_identity or event.user_arn or "").lower()
+    if not candidate:
+        return False
+    automated = (
+        "cloudformation",
+        "terraform",
+        "pipeline",
+        "codebuild",
+        "github",
+        "service-role",
+        "aws-service-role",
+        "botocore",
+    )
+    return not any(token in candidate for token in automated)
 
 
 def asset_owner_tag(account: Account, asset_type: str, asset_name: str) -> str | None:

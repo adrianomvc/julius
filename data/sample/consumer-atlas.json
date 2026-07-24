@@ -6,10 +6,10 @@
   "generated_at": "2026-07-23",
   "cost_explorer": {
     "services": [
-      { "name": "AWS Glue", "subtitle": "Jobs + Interactive Sessions", "monthly_cost": 12800 },
-      { "name": "Amazon Athena", "subtitle": "queries + workgroups", "monthly_cost": 3100 },
-      { "name": "Amazon S3", "subtitle": "armazenamento + requests", "monthly_cost": 2600 },
-      { "name": "Outros", "subtitle": "CloudWatch, KMS, transfer", "monthly_cost": 1800 }
+      { "name": "AWS Glue", "subtitle": "Jobs, sessions e crawlers", "monthly_cost": 1969.23, "currency": "USD", "period_kind": "month_to_date", "data_through": "2026-07-22", "estimated": true },
+      { "name": "Amazon Athena", "subtitle": "queries + workgroups", "monthly_cost": 476.92, "currency": "USD", "period_kind": "month_to_date", "data_through": "2026-07-22", "estimated": true },
+      { "name": "Amazon S3", "subtitle": "armazenamento + requests", "monthly_cost": 400.00, "currency": "USD", "period_kind": "month_to_date", "data_through": "2026-07-22", "estimated": true },
+      { "name": "Outros", "subtitle": "CloudWatch, KMS, transfer", "monthly_cost": 276.92, "currency": "USD", "period_kind": "month_to_date", "data_through": "2026-07-22", "estimated": true }
     ]
   },
   "glue_jobs": [

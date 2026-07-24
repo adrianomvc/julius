@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from julius.inventory.model import Schedule
+from julius.aws.schedule_frequency import expected_runs_per_month
 
 
 def collect_schedules(events_client) -> list[Schedule]:
@@ -24,6 +25,11 @@ def collect_schedules(events_client) -> list[Schedule]:
                         name=rule["Name"],
                         target_type="state_machine",
                         target_name=arn.rsplit(":", 1)[-1],
+                        expression=str(rule.get("ScheduleExpression") or ""),
+                        state=str(rule.get("State") or "ENABLED"),
+                        expected_runs_monthly=expected_runs_per_month(
+                            str(rule.get("ScheduleExpression") or "")
+                        ),
                     )
                 )
     return schedules

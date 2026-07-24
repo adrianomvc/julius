@@ -1,0 +1,95 @@
+"""Coleta read-only de DataBrew jobs, schedules e consumo mensal estimado."""
+
+from __future__ import annotations
+
+from datetime import datetime, timezone
+
+from julius.inventory.model import DataBrewJob
+from julius.aws.schedule_frequency import expected_runs_per_month
+
+
+def collect_jobs(databrew_client, *, now: datetime | None = None) -> list[DataBrewJob]:
+    now = now or datetime.now(timezone.utc)
+    month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    schedules = _schedules(databrew_client)
+    out: list[DataBrewJob] = []
+    paginator = databrew_client.get_paginator("list_jobs")
+    for page in paginator.paginate():
+        for raw in page.get("Jobs", []):
+            name = str(raw.get("Name") or "")
+            runs = _runs(databrew_client, name, month_start)
+            capacity = int(raw.get("MaxCapacity", 5) or 5)
+            execution_hours = sum(
+                float(run.get("ExecutionTime", 0) or 0) / 3600.0 for run in runs
+            )
+            out.append(
+                DataBrewJob(
+                    name=name,
+                    job_type=str(raw.get("Type") or "RECIPE"),
+                    max_capacity=capacity,
+                    timeout_min=int(raw.get("Timeout", 2880) or 2880),
+                    max_retries=int(raw.get("MaxRetries", 0) or 0),
+                    schedule_names=sorted(
+                        schedule_name
+                        for schedule_name, schedule in schedules.items()
+                        if name in schedule["jobs"]
+                    ),
+                    runs_mtd=len(runs),
+                    failures_mtd=sum(
+                        1
+                        for run in runs
+                        if str(run.get("State") or "") in {"FAILED", "TIMEOUT"}
+                    ),
+                    execution_hours_mtd=round(execution_hours, 4),
+                    # A API informa capacidade máxima, não utilização por node.
+                    estimated_node_hours_mtd=round(execution_hours * capacity, 4),
+                    owner_tag=(raw.get("Tags", {}) or {}).get("Owner"),
+                    run_ids_mtd=sorted(
+                        str(run["RunId"]) for run in runs if run.get("RunId")
+                    ),
+                    expected_runs_monthly=sum(
+                        float(schedule["expected"] or 0.0)
+                        for schedule in schedules.values()
+                        if name in schedule["jobs"]
+                    )
+                    or None,
+                    cost_data_through=now.date().isoformat(),
+                )
+            )
+    return out
+
+
+def _schedules(databrew_client) -> dict[str, dict]:
+    result: dict[str, dict] = {}
+    try:
+        paginator = databrew_client.get_paginator("list_schedules")
+        pages = paginator.paginate()
+    except Exception:
+        return result
+    for page in pages:
+        for raw in page.get("Schedules", []):
+            result[str(raw.get("Name") or "")] = {
+                "jobs": {str(name) for name in raw.get("JobNames", []) if name},
+                "expected": expected_runs_per_month(
+                    str(raw.get("CronExpression") or "")
+                ),
+            }
+    return result
+
+
+def _runs(databrew_client, name: str, month_start: datetime) -> list[dict]:
+    try:
+        paginator = databrew_client.get_paginator("list_job_runs")
+        pages = paginator.paginate(Name=name)
+    except Exception:
+        return []
+    out: list[dict] = []
+    for page in pages:
+        for run in page.get("JobRuns", []):
+            created = run.get("CreatedOn")
+            if isinstance(created, datetime):
+                normalized = created.replace(tzinfo=created.tzinfo or timezone.utc)
+                if normalized < month_start:
+                    continue
+            out.append(run)
+    return out

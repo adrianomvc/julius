@@ -30,6 +30,8 @@ Regras obrigatórias:
 7. Grave exclusivamente a saída estruturada em `{result_file}`, respeitando
    `{schema_file}`.
 8. Use somente opportunity_id presentes no pacote e preserve account e scan_id.
+9. Considere `constraints.collection_health`: fontes parciais ou indisponíveis
+   devem aparecer como evidência ausente, nunca como valor zero.
 
 Conta: {context.account["id"]}
 Scan: {context.scan_id}

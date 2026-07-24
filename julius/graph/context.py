@@ -32,6 +32,8 @@ def enrich_opportunities(
             opportunity.owner = owner.owner
             opportunity.owner_source = owner.source
             opportunity.owner_confidence = owner.confidence
+            opportunity.owner_event_time = owner.event_time
+            opportunity.owner_event_name = owner.event_name
 
         if not opportunity.actor:
             actor = resolve_actor(
@@ -40,6 +42,28 @@ def enrich_opportunities(
             opportunity.actor = actor.actor
             opportunity.actor_source = actor.source
             opportunity.actor_confidence = actor.confidence
+
+        process_rows = [
+            row
+            for row in account.process_costs
+            if opportunity.asset_name in row.component_names
+            or opportunity.asset_name == row.process_name
+            or (
+                opportunity.source_process is not None
+                and opportunity.source_process in row.component_names
+            )
+        ]
+        if process_rows:
+            opportunity.process_cost_mtd = round(
+                sum(row.total_cost_mtd for row in process_rows), 2
+            )
+            opportunity.process_forecast_eom = round(
+                sum(row.forecast_cost_eom for row in process_rows), 2
+            )
+            opportunity.cost_data_through = max(
+                row.data_through for row in process_rows
+            )
+        opportunity.evidence_refs = _evidence_refs(account, opportunity)
 
         key = AssetKey(
             account.account_id, opportunity.asset_type, opportunity.asset_name
@@ -100,3 +124,54 @@ def _reach(graph: ProcessGraph, start: AssetKey) -> tuple[int, bool]:
                 seen.add(target)
                 queue.append(target)
     return max(len(consumers), aggregate_consumers), datawarm
+
+
+def _evidence_refs(account: Account, opportunity: Opportunity) -> list[dict]:
+    common = {
+        "resource_type": opportunity.asset_type,
+        "resource_name": opportunity.asset_name,
+        "collected_at": account.generated_at,
+    }
+    if opportunity.asset_type == "glue_job":
+        job = account.job_by_name(opportunity.asset_name)
+        if job is not None:
+            return [
+                {
+                    **common,
+                    "source": "Glue GetJobRuns",
+                    "run_ids": job.run_ids_mtd,
+                    "data_through": job.cost_data_through,
+                    "actual_dpu_hours": job.actual_dpu_hours_mtd,
+                    "estimated_dpu_hours": job.estimated_dpu_hours_mtd,
+                }
+            ]
+    collections = {
+        "glue_session": (account.interactive_sessions, "session_id", "statement_ids"),
+        "glue_crawler": (account.glue_crawlers, "name", "crawl_ids_mtd"),
+        "databrew_job": (account.databrew_jobs, "name", "run_ids_mtd"),
+    }
+    spec = collections.get(opportunity.asset_type)
+    if spec is None:
+        return []
+    items, name_field, ids_field = spec
+    asset = next(
+        (
+            item
+            for item in items
+            if getattr(item, name_field, None) == opportunity.asset_name
+        ),
+        None,
+    )
+    if asset is None:
+        return []
+    return [
+        {
+            **common,
+            "source": {
+                "glue_session": "Glue ListStatements",
+                "glue_crawler": "Glue ListCrawls",
+                "databrew_job": "DataBrew ListJobRuns",
+            }[opportunity.asset_type],
+            "execution_ids": list(getattr(asset, ids_field, [])),
+        }
+    ]

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 from dataclasses import asdict
 from pathlib import Path
 
@@ -95,12 +96,17 @@ def _load_technical_artifacts(
     ):
         raise ValueError("manifesto de artefatos não pertence à conta ou não é read-only")
     references = []
+    root = path.parent.resolve()
     for item in raw["artifacts"]:
         if not isinstance(item, dict) or not isinstance(item.get("file"), str):
             raise ValueError("entrada inválida no manifesto de artefatos")
-        artifact_path = path.parent / item["file"]
-        if not artifact_path.is_file():
-            raise ValueError(f"arquivo técnico ausente: {artifact_path}")
+        artifact_path = (root / item["file"]).resolve()
+        if root not in artifact_path.parents or not artifact_path.is_file():
+            raise ValueError(f"arquivo técnico ausente ou fora do bundle: {item['file']}")
+        digest = hashlib.sha256(artifact_path.read_bytes()).hexdigest()
+        expected = str(item.get("sha256") or "")
+        if expected and digest != expected:
+            raise ValueError(f"hash divergente no artefato técnico: {item['file']}")
         references.append(
             {
                 "kind": item.get("kind"),

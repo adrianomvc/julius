@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 import boto3
 import pytest
@@ -37,6 +37,7 @@ def test_cost_explorer_maps_services():
         {
             "ResultsByTime": [
                 {
+                    "Estimated": True,
                     "Groups": [
                         {"Keys": ["AWS Glue"], "Metrics": {"UnblendedCost": {"Amount": "21400", "Unit": "USD"}}},
                         {"Keys": ["Amazon Athena"], "Metrics": {"UnblendedCost": {"Amount": "6800", "Unit": "USD"}}},
@@ -53,6 +54,26 @@ def test_cost_explorer_maps_services():
     assert by_name["AWS Glue"] == 21400
     assert by_name["Amazon Athena"] == 6800
     assert by_name["Outros"] == 500  # serviço fora do escopo → agregado
+    assert all(service.currency == "USD" for service in services)
+    assert all(service.period_kind == "month_to_date" for service in services)
+    assert all(service.estimated is True for service in services)
+
+
+def test_cost_explorer_first_day_uses_a_valid_exclusive_end():
+    ce = _client("ce")
+    stub = Stubber(ce)
+    stub.add_response(
+        "get_cost_and_usage",
+        {"ResultsByTime": []},
+        {
+            "TimePeriod": {"Start": "2026-07-01", "End": "2026-07-02"},
+            "Granularity": "MONTHLY",
+            "Metrics": ["UnblendedCost"],
+            "GroupBy": [{"Type": "DIMENSION", "Key": "SERVICE"}],
+        },
+    )
+    with stub:
+        assert cost_explorer.collect_services(ce, today=date(2026, 7, 1)) == []
 
 
 def test_glue_collector_jobs_and_failure_rate():

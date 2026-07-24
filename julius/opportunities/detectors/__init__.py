@@ -7,7 +7,9 @@ from julius.inventory.model import Account
 from julius.opportunities.base import Opportunity
 from julius.opportunities.detectors import (
     athena,
+    crawlers,
     data,
+    databrew,
     glue,
     sagemaker,
     sessions,
@@ -19,6 +21,8 @@ def run_all(account: Account, config: Config, scan_id: str) -> list[Opportunity]
     found: list[Opportunity] = []
     found += glue.detect(account, config, scan_id)
     found += sessions.detect(account, config, scan_id)
+    found += crawlers.detect(account, config, scan_id)
+    found += databrew.detect(account, config, scan_id)
     found += athena.detect(account, config, scan_id)
     found += stepfunctions.detect(account, config, scan_id)
     found += sagemaker.detect(account, config, scan_id)

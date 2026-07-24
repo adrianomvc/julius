@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -28,7 +29,6 @@ def test_detectors_cover_expected_rules():
         "GLUE-AUTOSCALING",
         "GLUE-OVERPROVISIONED",
         "GLUE-VERSION-OLD",
-        "GLUE-FLEX-CANDIDATE",
         "GLUE-BOOKMARK-OFF",
         "GLUE-IS-IDLE",
         "ATHENA-NO-PARTITION-FILTER",
@@ -37,6 +37,7 @@ def test_detectors_cover_expected_rules():
         "GLUE-FAILING-JOB",
         "GLUE-TIMEOUT-EXCESSIVE",
         "GLUE-WORKER-TYPE-OVERSIZED",
+        "GLUE-UNATTRIBUTED-COST",
         "DATA-UNUSED-OUTPUT",
         "DATA-LOW-USE-SINGLE-CONSUMER",
         "SFN-STANDARD-TO-EXPRESS",
@@ -86,7 +87,11 @@ def test_root_cause_grouping(analysis):
 def test_savings_are_positive(analysis):
     for o in analysis.opportunities:
         if not o.estimated_gain.is_strategic:
-            assert o.estimation.estimated_saving > 0
+            if o.estimation.estimated_saving == 0:
+                assert o.blocked is True
+                assert o.bucket == "investigar_primeiro"
+            else:
+                assert o.estimation.estimated_saving > 0
             assert o.estimated_gain.realizable_year >= 0
 
 
@@ -126,8 +131,15 @@ def test_producer_recommendations(analysis):
 
 def test_previous_results_precision(analysis):
     prev = {r.title: r for r in analysis.vm.previous_results}
-    # Redução de workers: previsto 1100, realizado 1240 → precisão ~87%.
+    # A conversão de moeda preserva a razão previsto × realizado.
     assert prev["Redução de workers"].precision == 87
+    assert prev["Redução de workers"].predicted_fmt.startswith("US$")
+
+
+def test_report_json_calls_billing_cost_mtd_by_its_real_period(analysis):
+    payload = json.loads(renderer.render_json(analysis.vm, analysis.opportunities))
+    assert payload["summary"]["billing_cost_mtd"].startswith("US$")
+    assert "total_cost_monthly" not in payload["summary"]
 
 
 def test_html_has_no_unrendered_template(analysis):

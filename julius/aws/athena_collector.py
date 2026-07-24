@@ -767,7 +767,7 @@ def _reconcile_cloudwatch(coverage, client, workgroups, start, end):
 def _costs(client, start, end, gaps):
     if client is None:
         gaps.append("Cost Explorer não coletado")
-        return {}, "", "BRL", False
+        return {}, "", "USD", False
     for metric in ("NetUnblendedCost", "UnblendedCost"):
         try:
             response = client.get_cost_and_usage(
@@ -795,7 +795,7 @@ def _costs(client, start, end, gaps):
             return daily, metric, currency, isolated
         except Exception as exc:
             gaps.append(f"Cost Explorer {metric}: {type(exc).__name__}")
-    return {}, "", "BRL", False
+    return {}, "", "USD", False
 
 
 def _reconciled(coverage: AthenaCoverage) -> bool:

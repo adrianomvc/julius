@@ -49,6 +49,7 @@ def build(
     today: date | None = None,
     source_process: str | None = None,
 ) -> Opportunity:
+    estimation.currency = config.pricing.currency
     confidence, conf_label = conf_mod.score_and_label(
         observed_runs, coverage_days, has_optional_metrics, config
     )
@@ -109,6 +110,7 @@ def build(
         julius_version=JULIUS_VERSION,
         scan_id=scan_id,
         source_process=source_process,
+        blocked=blocked,
     )
     o.confidence_label = conf_label
     prioritizer.assign(o, risk=risk, blocked=blocked)

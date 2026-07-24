@@ -1,4 +1,4 @@
-"""MIME multipart compartilhado por SES e SMTP."""
+"""MIME multipart usado pelo envio SMTP local."""
 
 from __future__ import annotations
 

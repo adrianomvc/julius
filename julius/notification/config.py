@@ -10,15 +10,12 @@ from pathlib import Path
 @dataclass(frozen=True)
 class EmailSettings:
     mode: str = "dry-run"
-    transport: str = "ses"
-    aws_region: str = "sa-east-1"
     sender: str = ""
     allowed_recipient_domains: list[str] = field(default_factory=list)
     approved_recipient_groups: list[str] = field(default_factory=list)
     max_recipients: int = 10
     attach_full_html: bool = True
     report_base_url: str = ""
-    configuration_set: str = ""
     smtp_host: str = ""
     smtp_port: int = 587
     smtp_starttls: bool = True
