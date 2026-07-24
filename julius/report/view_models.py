@@ -370,6 +370,14 @@ def _athena_views(account: Account) -> tuple[dict, list[dict], list[dict], list[
             "failures": q.failed_runs + q.cancelled_runs,
             "reuse": q.reused_runs,
             "sql": q.statement,
+            "wide_tables": list(q.wide_tables),
+            "full_scan": q.full_scan_confirmed,
+            "unpartitioned": list(q.unpartitioned_tables),
+            "uncompressed": list(
+                q.row_format_uncompressed + q.columnar_uncompressed
+            ),
+            "codecs": list(q.compression_codecs),
+            "projection_candidates": list(q.partition_projection_candidates),
         }
         for q in account.athena_queries[:20]
     ]
@@ -385,9 +393,21 @@ def _athena_views(account: Account) -> tuple[dict, list[dict], list[dict], list[
             "selects_star": actor.selects_star,
             "missing_partition": actor.missing_partition_filters,
             "failures": actor.failures,
+            "full_scans": actor.full_scans,
+            "unpartitioned": actor.unpartitioned_tables,
+            "compression": actor.compression_findings,
+            "projection": actor.partition_projection_candidates,
             "opportunity_refs": list(actor.opportunity_refs),
             "guidance": actor.query_count >= 3
-            and (actor.selects_star + actor.missing_partition_filters + actor.failures) >= 3,
+            and (
+                actor.selects_star
+                + actor.missing_partition_filters
+                + actor.full_scans
+                + actor.unpartitioned_tables
+                + actor.compression_findings
+                + actor.partition_projection_candidates
+                + actor.failures
+            ) >= 3,
         }
         for actor in account.athena_actor_usage
     ]
