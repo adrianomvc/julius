@@ -14,6 +14,7 @@ class ServiceCost:
     name: str
     monthly_cost: float
     subtitle: str = ""
+    currency: str = "BRL"
 
 
 @dataclass
@@ -90,10 +91,86 @@ class AthenaQuery:
     coverage_days: int = 0
     owner_tag: str | None = None
     reads_tables: list[str] = field(default_factory=list)
+    # Agregado sanitizado de um padrão de query. `query_id` continua aceito
+    # para preservar compatibilidade com inventários anteriores.
+    exact_fingerprint: str = ""
+    structural_fingerprint: str = ""
+    modality: str = "on_demand"
+    allocated_cost: float | None = None
+    cost_quality: str = "unavailable"
+    currency: str = "BRL"
+    active_days: int = 0
+    actor_count: int = 0
+    actors: list[str] = field(default_factory=list)
+    recurring: bool = False
+    burst: bool = False
+    regular: bool = False
+    automated: bool = False
+    p50_ms: int = 0
+    p95_ms: int = 0
+    failed_runs: int = 0
+    cancelled_runs: int = 0
+    reused_runs: int = 0
+    billed_bytes: int = 0
+    avg_billed_bytes: int = 0
+    partition_keys: list[str] = field(default_factory=list)
+    missing_partition_filters: list[str] = field(default_factory=list)
+    storage_formats: list[str] = field(default_factory=list)
+    small_files_confirmed: bool = False
+    small_file_count: int = 0
+    average_file_bytes: int = 0
+    parse_succeeded: bool = True
+    evidence: list[str] = field(default_factory=list)
+    opportunity_refs: list[str] = field(default_factory=list)
 
     @property
     def monthly_bytes_scanned(self) -> int:
-        return int(self.data_scanned_bytes * self.executions_per_month)
+        return self.billed_bytes or int(self.data_scanned_bytes * self.executions_per_month)
+
+
+@dataclass
+class AthenaActorUsage:
+    """Visão agregada por ator; nunca substitui ownership da conta."""
+
+    actor: str
+    actor_type: str = "unknown"
+    identity_source: str = "unknown"
+    identity_confidence: str = "low"
+    email: str | None = None
+    query_count: int = 0
+    allocated_cost: float | None = None
+    currency: str = "BRL"
+    billed_bytes: int = 0
+    active_days: int = 0
+    recurring_patterns: int = 0
+    bursts: int = 0
+    selects_star: int = 0
+    missing_partition_filters: int = 0
+    failures: int = 0
+    automated: bool = False
+    opportunity_refs: list[str] = field(default_factory=list)
+
+
+@dataclass
+class AthenaCoverage:
+    """Cobertura e reconciliação da coleta mensal do Athena."""
+
+    window_start: str = ""
+    window_end: str = ""
+    workgroups_total: int = 0
+    workgroups_covered: int = 0
+    workgroups: list[str] = field(default_factory=list)
+    oldest_submission: str = ""
+    truncated: bool = False
+    api_scanned_bytes: int = 0
+    api_billed_bytes: int = 0
+    cloudwatch_bytes: int | None = None
+    reconciliation_ratio: float | None = None
+    cost_quality: str = "unavailable"
+    cost_metric: str = ""
+    net_cost: float | None = None
+    currency: str = "BRL"
+    gaps: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -245,6 +322,9 @@ class Account:
     actor_events: list[ActorEvent] = field(default_factory=list)
     producer_candidates: list[ProducerCandidate] = field(default_factory=list)
     previous_results: list[PreviousResult] = field(default_factory=list)
+    currency: str = "BRL"
+    athena_coverage: AthenaCoverage | None = None
+    athena_actor_usage: list[AthenaActorUsage] = field(default_factory=list)
 
     def job_by_name(self, name: str | None) -> GlueJob | None:
         if not name:

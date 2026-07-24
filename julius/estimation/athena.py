@@ -13,10 +13,16 @@ def _cost(bytes_scanned: int, pricing) -> float:
     return (bytes_scanned / _TB) * pricing.athena_per_tb
 
 
+def _baseline(query: AthenaQuery, pricing) -> float:
+    if query.allocated_cost is not None and query.cost_quality == "reconciled":
+        return query.allocated_cost
+    return _cost(query.monthly_bytes_scanned, pricing)
+
+
 def partition_pruning_saving(query: AthenaQuery, config: Config, reduction: float = 0.7) -> Estimation:
     """Filtro de partição elimina scan de partições irrelevantes."""
     pricing = config.pricing
-    baseline = _cost(query.monthly_bytes_scanned, pricing)
+    baseline = _baseline(query, pricing)
     saving = baseline * reduction
     return Estimation(
         method="athena_partition_pruning_v1",
@@ -36,7 +42,7 @@ def partition_pruning_saving(query: AthenaQuery, config: Config, reduction: floa
 def result_reuse_saving(query: AthenaQuery, config: Config, reduction: float = 0.2) -> Estimation:
     """Query result reuse evita reprocessar resultados idênticos em execuções repetidas."""
     pricing = config.pricing
-    baseline = _cost(query.monthly_bytes_scanned, pricing)
+    baseline = _baseline(query, pricing)
     saving = baseline * reduction
     return Estimation(
         method="athena_result_reuse_v1",
@@ -56,7 +62,7 @@ def result_reuse_saving(query: AthenaQuery, config: Config, reduction: float = 0
 def projection_saving(query: AthenaQuery, config: Config, reduction: float = 0.35) -> Estimation:
     """Projetar colunas (evitar SELECT *) + result reuse reduzem bytes lidos."""
     pricing = config.pricing
-    baseline = _cost(query.monthly_bytes_scanned, pricing)
+    baseline = _baseline(query, pricing)
     saving = baseline * reduction
     return Estimation(
         method="athena_projection_v1",

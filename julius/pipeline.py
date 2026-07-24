@@ -21,7 +21,7 @@ from julius.opportunities.detectors import run_all
 from julius.opportunities.grouping import group_by_asset
 from julius.opportunities.prioritizer import tiebreak_key
 from julius.report.view_models import ReportViewModel, build as build_vm
-from julius.report.formatters import brl
+from julius.report.formatters import money
 from julius.state import (
     BacklogStore,
     BenefitSummary,
@@ -86,6 +86,7 @@ def analyze_account(
     enrich_opportunities(account, graph, opportunities)
     # Consolida achados do mesmo ativo numa ação principal (causa raiz).
     opportunities = group_by_asset(opportunities)
+    _link_athena_opportunities(account, opportunities)
     if history is not None:
         apply_calibrations(opportunities, history, config)
     # Ordena por prioridade de execução, com desempate determinístico.
@@ -169,8 +170,8 @@ def analyze_account(
         }
         for event in events
     ]
-    vm.committed_fmt = brl(kpis.committed_monthly)
-    vm.realized_fmt = brl(benefit.realized_monthly)
+    vm.committed_fmt = money(kpis.committed_monthly, account.currency)
+    vm.realized_fmt = money(benefit.realized_monthly, account.currency)
     vm.realization_rate_pct = (
         f"{benefit.realization_rate * 100:.0f}%"
         if benefit.realization_rate is not None
@@ -211,7 +212,7 @@ def _merge_validations(account: Account, rows: list[dict]) -> None:
             continue
         normalized = row.get("normalized_saving")
         unit = (
-            f"economia normalizada {brl(normalized)}/mês"
+            f"economia normalizada {money(normalized, account.currency)}/mês"
             if normalized is not None
             else "comparação de custo absoluto"
         )
@@ -225,3 +226,22 @@ def _merge_validations(account: Account, rows: list[dict]) -> None:
                 unit=unit,
             )
         )
+
+
+def _link_athena_opportunities(
+    account: Account, opportunities: list[Opportunity]
+) -> None:
+    """Liga orientação pessoal à ação única do padrão, sem somar economia."""
+    refs_by_pattern: dict[str, list[str]] = {}
+    for opportunity in opportunities:
+        if opportunity.asset_type == "athena_query":
+            refs_by_pattern.setdefault(opportunity.asset_name, []).append(
+                opportunity.opportunity_id
+            )
+    refs_by_actor: dict[str, set[str]] = {}
+    for query in account.athena_queries:
+        query.opportunity_refs = sorted(set(refs_by_pattern.get(query.query_id, [])))
+        for actor in query.actors:
+            refs_by_actor.setdefault(actor, set()).update(query.opportunity_refs)
+    for usage in account.athena_actor_usage:
+        usage.opportunity_refs = sorted(refs_by_actor.get(usage.actor, set()))

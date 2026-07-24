@@ -13,6 +13,8 @@ from julius.inventory.model import (
     Account,
     ActorEvent,
     AthenaQuery,
+    AthenaActorUsage,
+    AthenaCoverage,
     GlueJob,
     InteractiveSession,
     PreviousResult,
@@ -40,6 +42,7 @@ def load_account(path: str | Path) -> Account:
         period=raw.get("period", ""),
         lookback_days=raw.get("lookback_days", 90),
         generated_at=raw.get("generated_at", ""),
+        currency=raw.get("currency", "BRL"),
     )
     ce = raw.get("cost_explorer", {})
     account.services = [_pick(s, ServiceCost) for s in ce.get("services", [])]
@@ -48,6 +51,11 @@ def load_account(path: str | Path) -> Account:
         _pick(s, InteractiveSession) for s in raw.get("interactive_sessions", [])
     ]
     account.athena_queries = [_pick(q, AthenaQuery) for q in raw.get("athena_queries", [])]
+    if raw.get("athena_coverage"):
+        account.athena_coverage = _pick(raw["athena_coverage"], AthenaCoverage)
+    account.athena_actor_usage = [
+        _pick(a, AthenaActorUsage) for a in raw.get("athena_actor_usage", [])
+    ]
     account.state_machines = [_pick(s, StateMachine) for s in raw.get("state_machines", [])]
     account.sagemaker_apps = [_pick(a, SageMakerApp) for a in raw.get("sagemaker_apps", [])]
     account.sagemaker_endpoints = [

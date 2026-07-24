@@ -3,6 +3,8 @@
 from julius.inventory.model import (
     Account,
     AthenaQuery,
+    AthenaActorUsage,
+    AthenaCoverage,
     GlueJob,
     InteractiveSession,
     PreviousResult,
@@ -17,6 +19,8 @@ from julius.inventory.model import (
 __all__ = [
     "Account",
     "AthenaQuery",
+    "AthenaActorUsage",
+    "AthenaCoverage",
     "GlueJob",
     "InteractiveSession",
     "PreviousResult",
