@@ -35,7 +35,20 @@ _COMPRESSED_SUFFIXES = (
 )
 _WIDE_TABLE_COLUMNS = 50
 _PARTITION_PROJECTION_MIN_PARTITIONS = 1000
+_RESULT_REUSE_WINDOW = timedelta(minutes=60)
 _DDL = {"DDL", "CREATE", "DROP", "ALTER", "MSCK", "SHOW", "DESCRIBE", "EXPLAIN"}
+_NONDETERMINISTIC_FUNCTIONS = {
+    "current_date",
+    "current_time",
+    "current_timestamp",
+    "localtime",
+    "localtimestamp",
+    "now",
+    "rand",
+    "random",
+    "shuffle",
+    "uuid",
+}
 _AUTOMATION = re.compile(r"(service|automation|pipeline|scheduler|airflow|lambda|glue|states)", re.I)
 _LITERAL_FALLBACK = re.compile(
     r"'(?:''|[^'])*'|\"(?:\"\"|[^\"])*\"|\b(?:\d+(?:\.\d+)?|true|false|null)\b",
@@ -62,6 +75,7 @@ class AthenaExecutionEvidence:
     billed_bytes: int = 0
     duration_ms: int = 0
     reused: bool = False
+    reuse_eligible: bool = False
     modality: str = "on_demand"
     actor: str = "desconhecido"
     actor_type: str = "unknown"
@@ -331,13 +345,14 @@ def _execution(qe: dict, workgroup: dict) -> AthenaExecutionEvidence | None:
     scanned = int(stats.get("DataScannedInBytes") or 0)
     exact, structural, sanitized, parsed = fingerprints(str(qe.get("Query") or ""))
     modality = _modality(qe, workgroup)
+    sql = str(qe.get("Query") or "")
     return AthenaExecutionEvidence(
         query_execution_id=str(qe.get("QueryExecutionId") or ""),
         workgroup=str(qe.get("WorkGroup") or workgroup.get("Name") or "primary"),
         submitted_at=submitted,
         state=state,
         statement_type=statement_type,
-        raw_sql=str(qe.get("Query") or ""),
+        raw_sql=sql,
         exact_fingerprint=exact,
         structural_fingerprint=structural,
         sanitized_sql=sanitized,
@@ -348,8 +363,9 @@ def _execution(qe: dict, workgroup: dict) -> AthenaExecutionEvidence | None:
         duration_ms=int(stats.get("EngineExecutionTimeInMillis") or stats.get("TotalExecutionTimeInMillis") or 0),
         planning_ms=int(stats.get("QueryPlanningTimeInMillis") or 0),
         reused=reuse,
+        reuse_eligible=_result_reuse_eligible(sql, statement_type, modality),
         modality=modality,
-        **_ast_facts(str(qe.get("Query") or "")),
+        **_ast_facts(sql),
     )
 
 
@@ -411,6 +427,25 @@ def _ast_facts(sql: str) -> dict[str, Any]:
         ),
         "has_where": any(True for _ in tree.find_all(exp.Where)),
     }
+
+
+def _result_reuse_eligible(sql: str, statement_type: str, modality: str) -> bool:
+    """Gate conservador para não sugerir cache quando a AWS não o suporta."""
+    if sqlglot is None or modality != "on_demand" or statement_type != "DML":
+        return False
+    try:
+        tree = sqlglot.parse_one(sql, read="athena")
+    except Exception:
+        return False
+    if not any(True for _ in tree.find_all(exp.Select)):
+        return False
+    if len(list(tree.find_all(exp.Table))) > 20:
+        return False
+    for function in tree.find_all(exp.Func):
+        name = str(function.sql_name() or function.name or "").lower()
+        if name in _NONDETERMINISTIC_FUNCTIONS:
+            return False
+    return True
 
 
 def _enrich_catalog(items: list[AthenaExecutionEvidence], glue, s3, gaps: list[str]) -> None:
@@ -817,6 +852,7 @@ def _aggregate_queries(items, coverage):
         actors = sorted({item.actor for item in group})
         billed = sum(item.billed_bytes for item in group)
         costs = [item.allocated_cost for item in group if item.allocated_cost is not None]
+        avoidable = _reuse_avoidable(group)
         partition_keys = sorted({key for item in group for key in item.partition_keys})
         missing = sorted({key for item in group for key in item.missing_partition_filters})
         formats = sorted({fmt for item in group for fmt in item.storage_formats})
@@ -881,6 +917,9 @@ def _aggregate_queries(items, coverage):
                 failed_runs=sum(i.state == "FAILED" for i in group),
                 cancelled_runs=sum(i.state == "CANCELLED" for i in group),
                 reused_runs=sum(i.reused for i in group),
+                reuse_eligible_runs=avoidable["runs"],
+                reuse_avoidable_billed_bytes=avoidable["bytes"],
+                reuse_avoidable_cost=avoidable["cost"],
                 billed_bytes=billed,
                 avg_billed_bytes=round(billed / len(group)),
                 partition_keys=partition_keys,
@@ -979,9 +1018,49 @@ def _query_evidence(group, missing):
         evidence.append("sem filtro comprovado: " + ", ".join(missing))
     if any(item.reused for item in group):
         evidence.append(f"{sum(item.reused for item in group)} reutilizações confirmadas")
+    avoidable = _reuse_avoidable(group)
+    if avoidable["runs"]:
+        evidence.append(
+            f"{avoidable['runs']} repetições exatas elegíveis em janela de 60 minutos"
+        )
+        evidence.append(
+            f"{avoidable['bytes']} bytes faturáveis potencialmente evitáveis por result reuse"
+        )
     if not all(item.parse_succeeded for item in group):
         evidence.append("parsing AST incompleto; recomendações semânticas bloqueadas")
     return evidence
+
+
+def _reuse_avoidable(group: list[AthenaExecutionEvidence]) -> dict[str, Any]:
+    """Soma somente duplicatas exatas, elegíveis e próximas; nunca o padrão todo."""
+    exact: dict[str, list[AthenaExecutionEvidence]] = defaultdict(list)
+    for item in group:
+        exact[item.exact_fingerprint].append(item)
+    candidates: list[AthenaExecutionEvidence] = []
+    for executions in exact.values():
+        anchor: AthenaExecutionEvidence | None = None
+        for item in sorted(executions, key=lambda value: value.submitted_at):
+            if not item.reuse_eligible or item.state != "SUCCEEDED":
+                continue
+            if (
+                anchor is not None
+                and item.submitted_at - anchor.submitted_at <= _RESULT_REUSE_WINDOW
+                and not item.reused
+                and item.billed_bytes > 0
+            ):
+                candidates.append(item)
+            anchor = item
+    costs = [item.allocated_cost for item in candidates]
+    cost = (
+        round(sum(value for value in costs if value is not None), 6)
+        if candidates and all(value is not None for value in costs)
+        else None
+    )
+    return {
+        "runs": len(candidates),
+        "bytes": sum(item.billed_bytes for item in candidates),
+        "cost": cost,
+    }
 
 
 def _percentile(values: list[int], fraction: float) -> int:

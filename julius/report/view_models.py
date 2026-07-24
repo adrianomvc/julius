@@ -369,6 +369,10 @@ def _athena_views(account: Account) -> tuple[dict, list[dict], list[dict], list[
             ) or "ocasional",
             "failures": q.failed_runs + q.cancelled_runs,
             "reuse": q.reused_runs,
+            "reuse_eligible": q.reuse_eligible_runs,
+            "reuse_avoidable_cost_fmt": fmt.money(
+                q.reuse_avoidable_cost, q.currency
+            ),
             "sql": q.statement,
             "wide_tables": list(q.wide_tables),
             "full_scan": q.full_scan_confirmed,

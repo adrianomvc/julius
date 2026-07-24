@@ -116,7 +116,7 @@
     <div style="margin-top:16px;border:1px solid #e2e4dc;border-radius:10px;overflow:hidden;">
       {% for q in r.athena_queries %}
       <div style="padding:11px 14px;border-top:1px solid #edeee8;font-size:12px;">
-        <b class="mono">{{ q.fingerprint }}</b> · {{ q.workgroup }} · {{ q.executions }} execuções / {{ q.active_days }} dias · {{ q.recurrence }} · {{ q.billed_gb }} GB faturáveis · {{ q.cost_fmt }}{% if q.failures %} · {{ q.failures }} falhas/cancelamentos{% endif %} · reuse {{ q.reuse }}
+        <b class="mono">{{ q.fingerprint }}</b> · {{ q.workgroup }} · {{ q.executions }} execuções / {{ q.active_days }} dias · {{ q.recurrence }} · {{ q.billed_gb }} GB faturáveis · {{ q.cost_fmt }}{% if q.failures %} · {{ q.failures }} falhas/cancelamentos{% endif %} · reuse {{ q.reuse }}{% if q.reuse_eligible %} · {{ q.reuse_eligible }} repetições exatas elegíveis (até {{ q.reuse_avoidable_cost_fmt }} evitável){% endif %}
         <div class="mono" style="margin-top:4px;color:#7c8374;overflow-wrap:anywhere;">{{ q.sql }}</div>
         {% if q.wide_tables or q.full_scan or q.unpartitioned or q.uncompressed or q.projection_candidates %}
         <div style="margin-top:4px;color:#a5581a;">
