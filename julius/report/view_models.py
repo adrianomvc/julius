@@ -161,7 +161,10 @@ def _opp_vm(o: Opportunity, currency: str) -> OpportunityVM:
         "realized": "Realizado",
         "measured": "Medido",
         "allocated": "Alocado",
+        "allocated_partial": "Alocado parcial",
         "modeled": "Modelado",
+        "modeled_rule": "Modelado por regra",
+        "modeled_evidence": "Modelado por evidência",
         "unavailable": "Indisponível",
     }
     saving_unavailable = saving_quality == "unavailable"
@@ -175,6 +178,10 @@ def _opp_vm(o: Opportunity, currency: str) -> OpportunityVM:
         monthly_fmt=(
             "Indisponível"
             if saving_unavailable
+            else fmt.money(
+                estimation.estimated_saving if estimation else 0, currency
+            )
+            if estimation and estimation.saving_quality == "modeled_rule"
             else fmt.money(g.monthly_expected, currency)
             if not g.is_strategic
             else "Estratégico"

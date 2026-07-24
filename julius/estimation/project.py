@@ -19,6 +19,8 @@ def build_gain(
     config: Config,
     *,
     band: float = 0.35,
+    monthly_low: float | None = None,
+    monthly_high: float | None = None,
     today: date | None = None,
     is_strategic: bool = False,
 ) -> EstimatedGain:
@@ -41,9 +43,15 @@ def build_gain(
     impl_date = f"{today.year}-{impl_month:02d}"
 
     return EstimatedGain(
-        monthly_low=round(monthly_expected * (1 - band), 2),
+        monthly_low=round(
+            monthly_low if monthly_low is not None else monthly_expected * (1 - band),
+            2,
+        ),
         monthly_expected=round(monthly_expected, 2),
-        monthly_high=round(monthly_expected * (1 + band), 2),
+        monthly_high=round(
+            monthly_high if monthly_high is not None else monthly_expected * (1 + band),
+            2,
+        ),
         annual_potential=round(monthly_expected * 12, 2),
         likely_implementation_date=impl_date,
         realization_factor=config.realization_factor,

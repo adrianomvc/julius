@@ -21,6 +21,7 @@ from julius.estimation import athena as athena_estimation
 from julius.inventory.model import AthenaQuery
 from julius.pipeline import analyze_account
 from julius.report import renderer
+from julius.report.formatters import money
 from julius.state.history import HistoryStore
 
 MB = 1024**2
@@ -107,6 +108,11 @@ def test_result_reuse_gate_rejects_nondeterministic_queries():
     assert not _result_reuse_eligible(
         "SELECT customer_id FROM db.sales", "DML", "federated"
     )
+
+
+def test_money_preserves_small_recovery_values():
+    assert money(0.42, "USD") == "US$ 0,42"
+    assert money(2, "USD") == "US$ 2"
 
 
 class _Paginator:
@@ -354,11 +360,11 @@ def test_result_reuse_saving_uses_only_exact_nearby_duplicates():
     report_html = renderer.render_html(analyze_account(account, scan_id="reuse").vm)
     assert "2 repetições exatas elegíveis" in report_html
     assert "US$ 2 evitável" in report_html
-    assert "SAVE Medido" in report_html
+    assert "Economia estimada (SAVE): Medido" in report_html
     assert "US$ 3 (Alocado)" in report_html
 
 
-def test_new_athena_patterns_do_not_invent_cost_when_reconciliation_is_partial():
+def test_partial_collection_uses_versioned_modeled_recovery():
     query = AthenaQuery(
         query_id="pattern",
         structural_fingerprint="pattern",
@@ -367,15 +373,17 @@ def test_new_athena_patterns_do_not_invent_cost_when_reconciliation_is_partial()
         cost_quality="partial",
     )
     estimate = athena_estimation.projection_saving(query, DEFAULT_CONFIG)
-    assert estimate.baseline_cost == 0
-    assert estimate.estimated_saving == 0
-    assert estimate.baseline_quality == "unavailable"
-    assert estimate.saving_quality == "unavailable"
-    assert estimate.projected_bytes is None
-    assert "não reconciliado" in estimate.assumptions[-1]
+    assert estimate.baseline_cost == 32.5
+    assert estimate.estimated_saving_low == 4.88
+    assert estimate.estimated_saving == 9.75
+    assert estimate.estimated_saving_high == 16.25
+    assert estimate.baseline_quality == "modeled"
+    assert estimate.saving_quality == "modeled_rule"
+    assert estimate.projected_bytes is not None
+    assert "athena-recovery-1.0" in estimate.assumptions[-2]
 
 
-def test_partition_and_projection_require_a_measured_counterfactual():
+def test_partition_and_projection_expose_versioned_recovery_ranges():
     query = AthenaQuery(
         query_id="pattern",
         structural_fingerprint="pattern",
@@ -386,14 +394,18 @@ def test_partition_and_projection_require_a_measured_counterfactual():
     )
     partition = athena_estimation.partition_pruning_saving(query, DEFAULT_CONFIG)
     projection = athena_estimation.projection_saving(query, DEFAULT_CONFIG)
+    assert partition.baseline_cost == projection.baseline_cost == 8
+    assert partition.estimated_saving_low == 2.4
+    assert partition.estimated_saving == 4
+    assert partition.estimated_saving_high == 5.6
+    assert projection.estimated_saving_low == 1.2
+    assert projection.estimated_saving == 2.4
+    assert projection.estimated_saving_high == 4
     for estimate in (partition, projection):
-        assert estimate.baseline_cost == 8
-        assert estimate.estimated_saving == 0
-        assert estimate.projected_cost == 8
         assert estimate.baseline_quality == "allocated"
-        assert estimate.saving_quality == "unavailable"
+        assert estimate.saving_quality == "modeled_rule"
         assert estimate.baseline_bytes == 400 * MB
-        assert estimate.projected_bytes is None
+        assert estimate.projected_bytes is not None
 
 
 def test_history_persists_only_approved_athena_aggregates(tmp_path):
@@ -556,10 +568,8 @@ def test_requested_rules_are_grouped_by_pattern_and_actor():
         athena_actor_usage=collected.actors,
         athena_coverage=collected.coverage,
     )
-    rule_ids = {
-        opportunity.rule_id
-        for opportunity in athena_detector.detect(account, DEFAULT_CONFIG, "rules-test")
-    }
+    detected = athena_detector.detect(account, DEFAULT_CONFIG, "rules-test")
+    rule_ids = {opportunity.rule_id for opportunity in detected}
     assert {
         "ATHENA-SELECT-STAR-WIDE",
         "ATHENA-FULL-TABLE-SCAN",
@@ -568,6 +578,16 @@ def test_requested_rules_are_grouped_by_pattern_and_actor():
         "ATHENA-COLUMNAR-COMPRESSION",
         "ATHENA-PARTITION-PROJECTION",
     } <= rule_ids
+    for opportunity in detected:
+        assert opportunity.estimation is not None
+        assert opportunity.estimation.saving_quality in {
+            "measured",
+            "modeled_evidence",
+            "modeled_rule",
+        }
+        assert opportunity.estimation.estimated_saving >= 0
+        if opportunity.estimation.saving_quality == "modeled_rule":
+            assert opportunity.confidence_label == "Baixa"
 
     analyzed = analyze_account(account, scan_id="grouping-test")
     athena_opportunities = [
@@ -576,6 +596,18 @@ def test_requested_rules_are_grouped_by_pattern_and_actor():
         if opportunity.asset_type == "athena_query"
     ]
     assert len(athena_opportunities) == 1
+    assert athena_opportunities[0].estimation.estimated_saving > 0
+    assert (
+        athena_opportunities[0].estimated_gain.monthly_low
+        == athena_opportunities[0].estimation.estimated_saving_low
+    )
+    assert (
+        athena_opportunities[0].estimated_gain.monthly_high
+        == athena_opportunities[0].estimation.estimated_saving_high
+    )
+    report_html = renderer.render_html(analyzed.vm)
+    assert "Economia estimada (SAVE): Modelado por regra" in report_html
+    assert "Indisponível" not in report_html
     assert account.athena_actor_usage[0].opportunity_refs == [
         athena_opportunities[0].opportunity_id
     ]
