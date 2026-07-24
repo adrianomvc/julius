@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 import json
-from email import policy
-from email.parser import BytesParser
 
 import pytest
 from typer.testing import CliRunner
@@ -21,13 +19,12 @@ from julius.notification import (
     load_recipient_registry,
     load_settings,
 )
-from julius.notification.transports import DryRunTransport, SesTransport, SmtpTransport
+from julius.notification.transports import DryRunTransport, SmtpTransport
 
 
 def _settings(**overrides) -> EmailSettings:
     values = {
         "mode": "active",
-        "transport": "ses",
         "sender": "julius@empresa.com",
         "allowed_recipient_domains": ["empresa.com"],
         "approved_recipient_groups": ["account-owners"],
@@ -117,7 +114,7 @@ def test_non_interactive_requires_preapproved_group():
 
 def test_service_blocks_duplicate_active_send(tmp_path):
     class FakeTransport:
-        name = "ses"
+        name = "smtp"
 
         def __init__(self):
             self.calls = 0
@@ -154,43 +151,6 @@ def test_service_blocks_duplicate_active_send(tmp_path):
     assert duplicate.status == "blocked"
     assert "já enviada" in duplicate.reason
     assert transport.calls == 1
-
-
-def test_ses_transport_builds_raw_multipart_message():
-    class FakeSes:
-        def __init__(self):
-            self.kwargs = None
-
-        def send_email(self, **kwargs):
-            self.kwargs = kwargs
-            return {"MessageId": "ses-123"}
-
-    client = FakeSes()
-    result = SesTransport(client, configuration_set="julius").send(_message())
-    parsed = BytesParser(policy=policy.default).parsebytes(
-        client.kwargs["Content"]["Raw"]["Data"]
-    )
-
-    assert result.provider_message_id == "ses-123"
-    assert client.kwargs["ConfigurationSetName"] == "julius"
-    assert parsed.is_multipart()
-    assert parsed.get_body(preferencelist=("html",)).get_content().strip() == (
-        "<strong>Resumo</strong>"
-    )
-    assert any(part.get_filename() == "report.html" for part in parsed.iter_attachments())
-
-
-def test_ses_client_is_lazy_until_send():
-    created = []
-
-    class FakeSes:
-        def send_email(self, **_):
-            return {"MessageId": "ses-lazy"}
-
-    transport = SesTransport(client_factory=lambda: created.append(True) or FakeSes())
-    assert created == []
-    assert transport.send(_message()).status == "sent"
-    assert created == [True]
 
 
 def test_smtp_transport_uses_tls_and_environment_credentials():
@@ -245,6 +205,8 @@ def test_email_config_contains_no_credentials(tmp_path):
     settings = load_settings(path)
     assert settings.mode == "dry-run"
     assert not hasattr(settings, "smtp_password")
+    assert not hasattr(settings, "aws_region")
+    assert not hasattr(settings, "transport")
 
 
 def test_recipient_registry_resolves_exact_enabled_account(tmp_path):
@@ -350,3 +312,12 @@ def test_notify_cli_defaults_to_offline_dry_run(tmp_path):
     manifests = list(tmp_path.glob("*/manifest.json"))
     assert len(manifests) == 1
     assert json.loads(manifests[0].read_text(encoding="utf-8"))["mode"] == "dry-run"
+
+
+def test_notify_cli_has_no_aws_email_transport_options():
+    result = CliRunner().invoke(app, ["notify", "--help"])
+
+    assert result.exit_code == 0
+    assert "--transport" not in result.output
+    assert "--profile" not in result.output
+    assert "--region" not in result.output

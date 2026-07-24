@@ -23,6 +23,7 @@ def build_gain(
     monthly_high: float | None = None,
     today: date | None = None,
     is_strategic: bool = False,
+    maximum: float | None = None,
 ) -> EstimatedGain:
     """Monta a projeção de ganho a partir da economia mensal esperada.
 
@@ -31,8 +32,10 @@ def build_gain(
     - realizável no ano: expected × (meses_restantes − offset_impl) × fator
     """
     today = today or date.today()
-    if is_strategic or monthly_expected <= 0:
+    if is_strategic:
         return EstimatedGain(is_strategic=True, realization_factor=config.realization_factor)
+    if monthly_expected <= 0:
+        return EstimatedGain(is_strategic=False, realization_factor=config.realization_factor)
 
     offset = IMPL_OFFSET_BY_DIFFICULTY.get(difficulty, 1)
     remaining = months_remaining_in_year(today)
@@ -42,6 +45,9 @@ def build_gain(
     impl_month = min(12, today.month + offset)
     impl_date = f"{today.year}-{impl_month:02d}"
 
+    high = monthly_expected * (1 + band)
+    if maximum is not None:
+        high = min(high, max(0.0, maximum))
     return EstimatedGain(
         monthly_low=round(
             monthly_low if monthly_low is not None else monthly_expected * (1 - band),
@@ -49,7 +55,7 @@ def build_gain(
         ),
         monthly_expected=round(monthly_expected, 2),
         monthly_high=round(
-            monthly_high if monthly_high is not None else monthly_expected * (1 + band),
+            monthly_high if monthly_high is not None else max(monthly_expected, high),
             2,
         ),
         annual_potential=round(monthly_expected * 12, 2),

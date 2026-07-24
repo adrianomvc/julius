@@ -72,6 +72,9 @@ def build_process_graph(account: Account) -> ProcessGraph:
         ("state_machine", account.state_machines, "name"),
         ("glue_job", account.glue_jobs, "name"),
         ("glue_session", account.interactive_sessions, "session_id"),
+        ("glue_crawler", account.glue_crawlers, "name"),
+        ("glue_trigger", account.glue_triggers, "name"),
+        ("databrew_job", account.databrew_jobs, "name"),
         ("athena_query", account.athena_queries, "query_id"),
         ("sagemaker_app", account.sagemaker_apps, "name"),
         ("sagemaker_endpoint", account.sagemaker_endpoints, "name"),
@@ -125,6 +128,28 @@ def build_process_graph(account: Account) -> ProcessGraph:
                 )
             )
 
+    for trigger in account.glue_triggers:
+        trigger_key = AssetKey(account_id, "glue_trigger", trigger.name)
+        for job_name in trigger.job_names:
+            graph.add_edge(
+                Edge(
+                    trigger_key,
+                    AssetKey(account_id, "glue_job", job_name),
+                    EdgeType.GLUE_TRIGGER_RUNS_JOB,
+                    "ação declarada no Glue Trigger",
+                    1.0,
+                )
+            )
+        for crawler_name in trigger.crawler_names:
+            graph.add_edge(
+                Edge(
+                    trigger_key,
+                    AssetKey(account_id, "glue_crawler", crawler_name),
+                    EdgeType.GLUE_TRIGGER_RUNS_CRAWLER,
+                    "ação declarada no Glue Trigger",
+                    1.0,
+                )
+            )
     for edge in build_lineage(account):
         graph.add_edge(edge)
 

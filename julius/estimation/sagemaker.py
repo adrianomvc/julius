@@ -21,7 +21,7 @@ def idle_app_saving(app: SageMakerApp, config: Config) -> Estimation:
         projected_cost=0.0,
         estimated_saving=round(saving, 2),
         assumptions=[
-            f"{app.instance_type} a R$ {hourly:.2f}/h",
+            f"{app.instance_type} a USD {hourly:.2f}/h",
             f"~{app.idle_hours_per_day:.1f}h ociosas/dia × {app.active_days_per_month} dias",
             "idle shutdown recupera as horas ociosas",
         ],
@@ -41,7 +41,7 @@ def unused_endpoint_saving(ep: SageMakerEndpoint, config: Config) -> Estimation:
         projected_cost=0.0,
         estimated_saving=round(monthly, 2),
         assumptions=[
-            f"{ep.instance_count}× {ep.instance_type} a R$ {hourly:.2f}/h, 24/7",
+            f"{ep.instance_count}× {ep.instance_type} a USD {hourly:.2f}/h, 24/7",
             f"{ep.invocations_per_month} invocações/mês (praticamente sem uso)",
             "descomissionar ou migrar para Serverless/Async recupera o custo",
         ],

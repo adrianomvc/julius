@@ -3,13 +3,12 @@
 from __future__ import annotations
 
 import json
-import re
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
-from julius.aws.session import assume_role, make_session
+from julius.aws.session import make_session
 
-_ROLE_ARN = re.compile(r"^arn:aws[a-zA-Z-]*:iam::\d{12}:role/.+$")
+_AWS_REGION = "sa-east-1"
 
 
 class AccountTargetError(ValueError):
@@ -20,9 +19,7 @@ class AccountTargetError(ValueError):
 class AccountTarget:
     name: str
     expected_account_id: str
-    profile: str
-    region: str
-    role_arn: str
+    sso_profile: str
     enabled: bool
 
 
@@ -31,9 +28,9 @@ class VerifiedAccount:
     name: str
     account_id: str
     caller_arn: str
-    profile: str
+    sso_profile: str
     region: str
-    role_arn: str
+    credential_source: str
 
 
 def load_account_targets(path: str | Path) -> list[AccountTarget]:
@@ -46,17 +43,10 @@ def load_account_targets(path: str | Path) -> list[AccountTarget]:
     items = raw.get("accounts")
     if not isinstance(items, list):
         raise AccountTargetError("accounts deve ser uma lista")
-    expected_fields = {
-        "name",
-        "expected_account_id",
-        "profile",
-        "region",
-        "role_arn",
-        "enabled",
-    }
+    expected_fields = {"name", "expected_account_id", "sso_profile", "enabled"}
     targets = []
     names: set[str] = set()
-    identities: set[tuple[str, str]] = set()
+    profiles: set[str] = set()
     for item in items:
         if not isinstance(item, dict) or set(item) != expected_fields:
             raise AccountTargetError(
@@ -64,39 +54,27 @@ def load_account_targets(path: str | Path) -> list[AccountTarget]:
             )
         if not isinstance(item["enabled"], bool):
             raise AccountTargetError("enabled deve ser booleano")
-        values = {
-            key: item[key]
-            for key in expected_fields - {"enabled"}
-        }
+        values = {key: item[key] for key in expected_fields - {"enabled"}}
         if not all(isinstance(value, str) for value in values.values()):
             raise AccountTargetError("campos da conta devem ser texto")
         name = item["name"].strip()
         account_id = item["expected_account_id"].strip()
-        profile = item["profile"].strip()
-        region = item["region"].strip()
-        role_arn = item["role_arn"].strip()
+        sso_profile = item["sso_profile"].strip()
         if not name or name in names:
             raise AccountTargetError(f"nome de conta vazio ou duplicado: {name}")
         if not (account_id.isdigit() and len(account_id) == 12):
             raise AccountTargetError(f"account_id AWS inválido: {account_id}")
-        if not region:
-            raise AccountTargetError(f"região ausente para: {name}")
-        if role_arn and not _ROLE_ARN.fullmatch(role_arn):
-            raise AccountTargetError(f"role ARN inválida para: {name}")
-        identity = (profile, role_arn)
-        if identity in identities:
+        if sso_profile in profiles:
             raise AccountTargetError(
-                f"perfil/role duplicado no cadastro: {name}"
+                f"perfil SSO vazio ou duplicado no cadastro: {name}"
             )
         names.add(name)
-        identities.add(identity)
+        profiles.add(sso_profile)
         targets.append(
             AccountTarget(
                 name=name,
                 expected_account_id=account_id,
-                profile=profile,
-                region=region,
-                role_arn=role_arn,
+                sso_profile=sso_profile,
                 enabled=item["enabled"],
             )
         )
@@ -110,22 +88,16 @@ def verify_account_targets(
     targets: list[AccountTarget],
     *,
     session_factory=make_session,
-    assume_role_factory=assume_role,
 ) -> list[VerifiedAccount]:
     verified = []
     for target in targets:
-        session = session_factory(target.profile or None, target.region)
-        if target.role_arn:
-            session = assume_role_factory(
-                session,
-                target.role_arn,
-                target.region,
-            )
+        session = session_factory(target.sso_profile or None, _AWS_REGION)
         identity = session.client("sts").get_caller_identity()
         account_id = str(identity.get("Account") or "")
         if account_id != target.expected_account_id:
             raise AccountTargetError(
-                f"perfil/role de {target.name} resolveu para {account_id or 'desconhecido'}, "
+                f"identidade SSO ativa para {target.name} resolveu para "
+                f"{account_id or 'desconhecido'}, "
                 f"esperado {target.expected_account_id}"
             )
         verified.append(
@@ -133,9 +105,9 @@ def verify_account_targets(
                 name=target.name,
                 account_id=account_id,
                 caller_arn=str(identity.get("Arn") or ""),
-                profile=target.profile,
-                region=target.region,
-                role_arn=target.role_arn,
+                sso_profile=target.sso_profile,
+                region=_AWS_REGION,
+                credential_source="aws_cli_sso_profile",
             )
         )
     return verified

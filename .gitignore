@@ -7,6 +7,9 @@ dist/
 .venv/
 venv/
 
+# Git worktrees locais
+.worktrees/
+
 # Saídas geradas
 data/reports/
 data/outbox/

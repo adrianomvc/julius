@@ -11,7 +11,13 @@ from dataclasses import asdict
 from julius.inventory.model import Account
 
 # Campos internos (properties/derivados) que não fazem parte do schema exportado.
-_DROP = {"dpu_per_worker", "monthly_dpu_hours", "glue_version_num", "monthly_bytes_scanned"}
+_DROP = {
+    "dpu_per_worker",
+    "monthly_dpu_hours",
+    "historical_monthly_dpu_hours",
+    "glue_version_num",
+    "monthly_bytes_scanned",
+}
 
 
 def _clean(d: dict) -> dict:
@@ -25,10 +31,17 @@ def account_to_dataset(account: Account) -> dict:
         "period": account.period,
         "lookback_days": account.lookback_days,
         "generated_at": account.generated_at,
+        "collection_health": [
+            _clean(asdict(item)) for item in account.collection_health
+        ],
         "currency": account.currency,
         "cost_explorer": {"services": [asdict(s) for s in account.services]},
         "glue_jobs": [_clean(asdict(j)) for j in account.glue_jobs],
         "interactive_sessions": [_clean(asdict(s)) for s in account.interactive_sessions],
+        "glue_crawlers": [_clean(asdict(c)) for c in account.glue_crawlers],
+        "glue_triggers": [_clean(asdict(t)) for t in account.glue_triggers],
+        "databrew_jobs": [_clean(asdict(j)) for j in account.databrew_jobs],
+        "process_costs": [_clean(asdict(p)) for p in account.process_costs],
         "athena_queries": [_clean(asdict(q)) for q in account.athena_queries],
         "athena_coverage": _clean(asdict(account.athena_coverage))
         if account.athena_coverage else None,

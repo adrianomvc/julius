@@ -9,8 +9,9 @@ então as regras de capacidade só disparam quando essa métrica for adicionada.
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
-from statistics import mean
+from statistics import mean, median, pstdev
 
+from julius.config import DPU_PER_WORKER
 from julius.inventory.model import GlueJob, Table
 
 _FAILED_STATES = {"FAILED", "TIMEOUT", "ERROR"}
@@ -29,11 +30,13 @@ def collect_jobs(glue_client, *, lookback_days: int = 90, now: datetime | None =
     paginator = glue_client.get_paginator("get_jobs")
     for page in paginator.paginate():
         for job in page.get("Jobs", []):
-            jobs.append(_build_job(glue_client, job, cutoff, months))
+            jobs.append(_build_job(glue_client, job, cutoff, months, now))
     return jobs
 
 
-def _build_job(glue_client, job: dict, cutoff: datetime, months: float) -> GlueJob:
+def _build_job(
+    glue_client, job: dict, cutoff: datetime, months: float, now: datetime
+) -> GlueJob:
     name = job["Name"]
     args = job.get("DefaultArguments", {}) or {}
     runs = _job_runs(glue_client, name, cutoff)
@@ -42,13 +45,56 @@ def _build_job(glue_client, job: dict, cutoff: datetime, months: float) -> GlueJ
     failed = [r for r in runs if r.get("JobRunState") in _FAILED_STATES]
     exec_times = [r.get("ExecutionTime", 0) for r in completed if r.get("ExecutionTime")]
     failed_times = [r.get("ExecutionTime", 0) for r in failed if r.get("ExecutionTime")]
+    month_start = now.replace(
+        day=1,
+        hour=0,
+        minute=0,
+        second=0,
+        microsecond=0,
+    )
+    command_type = str((job.get("Command", {}) or {}).get("Name") or "glueetl")
+    if command_type == "gluestreaming":
+        mtd_runs = [
+            r for r in runs if _run_overlap_seconds(r, month_start, now) > 0
+        ]
+    else:
+        mtd_runs = [
+            r for r in runs if _at_or_after(r.get("StartedOn"), month_start)
+        ]
+    dpu_seconds = 0.0
+    estimated_dpu_hours = 0.0
+    worker_type = job.get("WorkerType")
+    number_of_workers = _optional_int(job.get("NumberOfWorkers"))
+    max_capacity = _optional_float(job.get("MaxCapacity"))
+    for run in mtd_runs:
+        if command_type == "gluestreaming":
+            capacity = _run_capacity(
+                run, worker_type, number_of_workers, max_capacity
+            )
+            estimated_dpu_hours += (
+                _run_overlap_seconds(run, month_start, now) * capacity / 3600.0
+            )
+            continue
+        reported = _optional_float(run.get("DPUSeconds"))
+        if reported is not None:
+            dpu_seconds += max(0.0, reported)
+            continue
+        execution_sec = _billable_execution_seconds(
+            str(job.get("GlueVersion", "0.9")),
+            float(run.get("ExecutionTime", 0) or 0),
+        )
+        capacity = _run_capacity(run, worker_type, number_of_workers, max_capacity)
+        estimated_dpu_hours += max(0.0, execution_sec * capacity / 3600.0)
 
     total = len(runs)
     return GlueJob(
         name=name,
         glue_version=str(job.get("GlueVersion", "0.9")),
-        worker_type=job.get("WorkerType", "G.1X"),
-        number_of_workers=int(job.get("NumberOfWorkers", 10) or 10),
+        job_mode=str(job.get("JobMode") or "SCRIPT"),
+        command_type=command_type,
+        worker_type=worker_type,
+        number_of_workers=number_of_workers,
+        max_capacity=max_capacity,
         auto_scaling=_truthy(args.get("--enable-auto-scaling")),
         execution_class=job.get("ExecutionClass", "STANDARD"),
         job_bookmark=str(args.get("--job-bookmark-option", "")) == "job-bookmark-enable",
@@ -56,13 +102,39 @@ def _build_job(glue_client, job: dict, cutoff: datetime, months: float) -> GlueJ
         max_retries=int(job.get("MaxRetries", 0) or 0),
         runs_per_month=round(total / months, 1),
         avg_execution_sec=round(mean(exec_times), 1) if exec_times else 0.0,
+        p50_execution_sec=round(median(exec_times), 1) if exec_times else 0.0,
+        p95_execution_sec=round(_percentile(exec_times, 0.95), 1) if exec_times else 0.0,
+        max_execution_sec=round(max(exec_times), 1) if exec_times else 0.0,
+        execution_stddev_sec=round(pstdev(exec_times), 1) if len(exec_times) > 1 else 0.0,
         avg_failed_execution_sec=round(mean(failed_times), 1) if failed_times else 0.0,
         failure_rate=round(len(failed) / total, 3) if total else 0.0,
         avg_cpu_load=None,  # requer CloudWatch (coletor à parte)
         observed_runs=total,
         coverage_days=int(months * 30),
+        dpu_seconds_mtd=round(dpu_seconds, 3),
+        estimated_dpu_hours_mtd=round(estimated_dpu_hours, 4),
+        current_month_runs=len(mtd_runs),
+        cost_data_through=now.date().isoformat(),
+        trigger_names=sorted(
+            {
+                str(r["TriggerName"])
+                for r in runs
+                if r.get("TriggerName")
+            }
+        ),
+        run_ids_mtd=sorted(
+            str(r["Id"]) for r in mtd_runs if r.get("Id")
+        ),
         owner_tag=(job.get("Tags", {}) or {}).get("Owner"),
-        script_location=(job.get("Command", {}) or {}).get("ScriptLocation"),
+            script_location=(job.get("Command", {}) or {}).get("ScriptLocation"),
+            default_argument_keys=sorted(
+                str(key) for key in (job.get("DefaultArguments") or {})
+            ),
+            connection_names=sorted(
+                str(name)
+                for name in ((job.get("Connections") or {}).get("Connections") or [])
+            ),
+        spark_event_logs_path=args.get("--spark-event-logs-path"),
         reads_tables=_table_args(
             args, "--source_table", "--input_table", "--reads_table"
         ),
@@ -70,6 +142,74 @@ def _build_job(glue_client, job: dict, cutoff: datetime, months: float) -> GlueJ
             args, "--target_table", "--output_table", "--writes_table"
         ),
     )
+
+
+def _optional_int(value) -> int | None:
+    return int(value) if value is not None else None
+
+
+def _optional_float(value) -> float | None:
+    return float(value) if value is not None else None
+
+
+def _at_or_after(value, cutoff: datetime) -> bool:
+    if not isinstance(value, datetime):
+        return False
+    normalized = value.replace(tzinfo=value.tzinfo or timezone.utc)
+    normalized_cutoff = cutoff.replace(tzinfo=cutoff.tzinfo or timezone.utc)
+    return normalized >= normalized_cutoff
+
+
+def _run_overlap_seconds(
+    run: dict, period_start: datetime, period_end: datetime
+) -> float:
+    started = run.get("StartedOn")
+    if not isinstance(started, datetime):
+        return 0.0
+    started = started.replace(tzinfo=started.tzinfo or timezone.utc)
+    completed = run.get("CompletedOn")
+    if isinstance(completed, datetime):
+        completed = completed.replace(tzinfo=completed.tzinfo or timezone.utc)
+    else:
+        completed = period_end
+    start = max(started, period_start)
+    end = min(completed, period_end)
+    return max(0.0, (end - start).total_seconds())
+
+
+def _billable_execution_seconds(glue_version: str, execution_sec: float) -> float:
+    try:
+        version = float(glue_version)
+    except (TypeError, ValueError):
+        version = 99.0
+    minimum = 600.0 if version < 2.0 else 60.0
+    return max(minimum, execution_sec)
+
+
+def _run_capacity(
+    run: dict,
+    default_worker_type: str | None,
+    default_workers: int | None,
+    default_max_capacity: float | None,
+) -> float:
+    max_capacity = _optional_float(run.get("MaxCapacity"))
+    if max_capacity is not None:
+        return max(0.0, max_capacity)
+    worker_type = run.get("WorkerType") or default_worker_type
+    workers = _optional_int(run.get("NumberOfWorkers"))
+    if workers is None:
+        workers = default_workers
+    if worker_type and workers is not None:
+        return max(0.0, DPU_PER_WORKER.get(str(worker_type), 0.0) * workers)
+    return max(0.0, default_max_capacity or 0.0)
+
+
+def _percentile(values: list[float], quantile: float) -> float:
+    ordered = sorted(float(v) for v in values)
+    if not ordered:
+        return 0.0
+    index = max(0, min(len(ordered) - 1, round((len(ordered) - 1) * quantile)))
+    return ordered[index]
 
 
 def _job_runs(glue_client, name: str, cutoff: datetime) -> list[dict]:

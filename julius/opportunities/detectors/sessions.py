@@ -5,7 +5,7 @@ from __future__ import annotations
 from julius.config import Config
 from julius.estimation import interactive_sessions as sess_est
 from julius.inventory.model import Account
-from julius.opportunities.base import Opportunity
+from julius.opportunities.base import Estimation, Opportunity
 from julius.opportunities.detectors._build import build
 
 _DOC = "https://docs.aws.amazon.com/glue/latest/dg/interactive-sessions.html"
@@ -16,7 +16,11 @@ def detect(account: Account, config: Config, scan_id: str) -> list[Opportunity]:
     th = config.thresholds
     for s in account.interactive_sessions:
         idle_high = s.idle_timeout_min > th.session_idle_timeout_high_min
-        actually_idle = s.idle_hours_per_day > 1.0
+        actually_idle = s.idle_hours_per_day > 1.0 and (
+            s.activity_evidence or s.idle_hours_per_day > 0
+        )
+        if s.dpu > 5 and s.status == "READY":
+            out.append(_capacity_review(account, s, config, scan_id))
         if not (idle_high and actually_idle):
             continue
         est = sess_est.idle_saving(s, config)
@@ -58,3 +62,43 @@ def detect(account: Account, config: Config, scan_id: str) -> list[Opportunity]:
             )
         )
     return out
+
+
+def _capacity_review(account, session, config: Config, scan_id: str) -> Opportunity:
+    return build(
+        account=account.account_id,
+        asset_type="glue_session",
+        asset_name=session.session_id,
+        rule_id="GLUE-IS-CAPACITY-REVIEW",
+        rule_version="1.0.0",
+        difficulty=2,
+        estimation=Estimation(
+            method="glue_session_capacity_review_v1",
+            baseline_cost=0.0,
+            projected_cost=0.0,
+            estimated_saving=0.0,
+            assumptions=["capacidade não é reduzida sem Spark UI/logs de executores"],
+            pricing_region=config.pricing.region,
+            estimation_version=config.pricing.version,
+        ),
+        finding="Sessão com capacidade acima do default",
+        why=f"Sessão READY configurada com {session.dpu:.1f} DPU.",
+        recommended_action="Coletar atividade e revisar MaxCapacity/workers",
+        how_to_apply="Analisar statements, logs e Spark UI antes de alterar a sessão.",
+        how_to_validate="Comparar DPU-h e tempo de resposta em sessão controlada.",
+        evidence=[
+            f"DPU={session.dpu:.1f}",
+            f"worker_type={session.worker_type or 'não informado'}",
+            f"number_of_workers={session.number_of_workers or 'não informado'}",
+        ],
+        risks=["capacidade menor pode degradar desenvolvimento interativo"],
+        doc_links=[_DOC],
+        data_sources=["Glue ListSessions"],
+        observed_runs=max(session.observed_runs, 1),
+        coverage_days=session.coverage_days,
+        has_optional_metrics=False,
+        owner_tag=session.owner_tag,
+        config=config,
+        scan_id=scan_id,
+        blocked=True,
+    )

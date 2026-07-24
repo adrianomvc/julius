@@ -38,6 +38,7 @@ class Estimation:
     assumptions: list[str] = field(default_factory=list)
     pricing_region: str = "sa-east-1"
     estimation_version: str = "1.0"
+    currency: str = "USD"
     baseline_quality: str = "modeled"
     saving_quality: str = "modeled"
     baseline_bytes: int | None = None
@@ -78,9 +79,13 @@ class Opportunity:
     # Gate de acionabilidade.
     actionable: bool = True
     next_action: str | None = None
+    blocked: bool = False
 
     # Processo gerador (linhagem) que pode ser pausado/desligado — quando aplicável.
     source_process: str | None = None
+    process_cost_mtd: float | None = None
+    process_forecast_eom: float | None = None
+    cost_data_through: str | None = None
     downstream_consumers: int = 0
     process_criticality: float = 0.0
     calibration_factor: float = 1.0
@@ -89,11 +94,14 @@ class Opportunity:
     evidence_coverage: float = 0.0
     missing_evidence: list[str] = field(default_factory=list)
     data_sources: list[str] = field(default_factory=list)
+    evidence_refs: list[dict] = field(default_factory=list)
 
     # Responsável (Squad) e contato (pessoa/ator).
     owner: str | None = None
     owner_source: str = "desconhecido"
     owner_confidence: float = 0.0
+    owner_event_time: str = ""
+    owner_event_name: str = ""
     actor: str | None = None
     actor_source: str | None = None
     actor_confidence: float = 0.0

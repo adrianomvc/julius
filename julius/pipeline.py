@@ -8,16 +8,26 @@ from datetime import date
 from pathlib import Path
 
 from julius.audit import build_manifest, new_scan_id
+from julius.code_analysis import (
+    GlueCodeArtifact,
+    load_glue_artifacts,
+    summarize_glue_artifact_health,
+)
 from julius.config import Config, DEFAULT_CONFIG
 from julius.estimation.calibration import apply_calibrations
+from julius.estimation.process_cost import (
+    apply_conservative_caps,
+    build_process_costs,
+)
 from julius.governance import compute_candidates
 from julius.graph import ProcessGraph, build_process_graph, enrich_opportunities
 from julius.ingest import load_account
-from julius.inventory.model import Account, PreviousResult
+from julius.inventory.model import Account, CollectionHealth, PreviousResult
 from julius.metrics import ProductKPIs, compute_kpis
 from julius.opportunities.base import Opportunity
 from julius.opportunities.lifecycle import transition
 from julius.opportunities.detectors import run_all
+from julius.opportunities.detectors import glue_code
 from julius.opportunities.grouping import group_by_asset
 from julius.opportunities.prioritizer import tiebreak_key
 from julius.report.view_models import ReportViewModel, build as build_vm
@@ -54,15 +64,46 @@ def analyze(
     labels: dict[str, bool] | None = None,
     today: date | None = None,
     scan_id: str | None = None,
+    artifacts_manifest: str | Path | None = None,
 ) -> Analysis:
+    account = load_account(input_path)
+    code_artifacts = (
+        load_glue_artifacts(artifacts_manifest, account.account_id)
+        if artifacts_manifest
+        else None
+    )
+    if artifacts_manifest:
+        if not account.collection_health:
+            account.collection_health.append(
+                CollectionHealth(
+                    source="Dataset collection telemetry",
+                    status="unavailable",
+                    error_category="not_reported",
+                    impact="a cobertura das fontes do dataset não foi registrada",
+                    next_action="gerar o dataset com uma versão atual do julius collect",
+                )
+            )
+        account.collection_health = [
+            item
+            for item in account.collection_health
+            if item.source != "Glue Scripts"
+        ]
+        account.collection_health.append(
+            summarize_glue_artifact_health(
+                artifacts_manifest,
+                account,
+                code_artifacts or [],
+            )
+        )
     return analyze_account(
-        load_account(input_path),
+        account,
         config,
         store=store,
         history=history,
         labels=labels,
         today=today,
         scan_id=scan_id,
+        code_artifacts=code_artifacts,
     )
 
 
@@ -76,17 +117,26 @@ def analyze_account(
     today: date | None = None,
     source: str = "dataset exportado",
     scan_id: str | None = None,
+    code_artifacts: list[GlueCodeArtifact] | None = None,
 ) -> Analysis:
     scan_id = scan_id or new_scan_id()
     # Governança: candidatos a Producer calculados quando não fornecidos.
     if not account.producer_candidates:
         account.producer_candidates = compute_candidates(account)
+    account.process_costs = build_process_costs(account, config, today=today)
     graph = build_process_graph(account)
     opportunities = run_all(account, config, scan_id)
+    if code_artifacts:
+        opportunities += glue_code.detect(
+            account, code_artifacts, config, scan_id
+        )
     enrich_opportunities(account, graph, opportunities)
     # Consolida achados do mesmo ativo numa ação principal (causa raiz).
     opportunities = group_by_asset(opportunities)
     _link_athena_opportunities(account, opportunities)
+    # Aplica realização e caps depois do agrupamento para não reservar custo
+    # para achados relacionados que não permanecem no portfólio final.
+    apply_conservative_caps(account, opportunities, config, today=today)
     if history is not None:
         apply_calibrations(opportunities, history, config)
     # Ordena por prioridade de execução, com desempate determinístico.
@@ -223,6 +273,7 @@ def _merge_validations(account: Account, rows: list[dict]) -> None:
                 date=date_text,
                 predicted_monthly=float(row["predicted_monthly"]),
                 realized_monthly=float(row["realized_monthly"]),
+                currency="USD",
                 unit=unit,
             )
         )

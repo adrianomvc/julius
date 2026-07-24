@@ -71,7 +71,7 @@ def render_json(vm: ReportViewModel, opportunities: list[Opportunity]) -> str:
         "scan_id": vm.scan_id,
         "currency": vm.currency,
         "summary": {
-            "total_cost_monthly": vm.total_cost_fmt,
+            "billing_cost_mtd": vm.total_cost_fmt,
             "identified_monthly": vm.identified_fmt,
             "high_confidence_monthly": vm.high_conf_fmt,
             "realizable_year": vm.realizable_year_fmt,
@@ -100,6 +100,13 @@ def render_json(vm: ReportViewModel, opportunities: list[Opportunity]) -> str:
             "gaps": vm.athena_gaps,
         },
         "manifest": vm.manifest,
+        "collection_health": {
+            "status": vm.collection_status,
+            "label": vm.collection_status_label,
+            "summary": vm.collection_health_summary,
+            "sources": vm.collection_health,
+        },
+        "process_costs": vm.process_costs,
         "opportunities": [asdict(o) for o in opportunities],
     }
     return json.dumps(payload, ensure_ascii=False, indent=2)

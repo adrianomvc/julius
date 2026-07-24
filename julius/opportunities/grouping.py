@@ -33,9 +33,14 @@ def group_by_asset(opportunities: list[Opportunity]) -> list[Opportunity]:
             grouped.append(members[0])
             continue
 
-        # Primário = maior economia mensal (empate por prioridade de execução).
+        # Primário = ação não bloqueada antes de investigação; dentro da mesma
+        # classe, maior economia (empate por prioridade de execução).
         members.sort(
-            key=lambda o: (o.estimated_gain.monthly_expected, o.execution_priority),
+            key=lambda o: (
+                not o.blocked,
+                o.estimated_gain.monthly_expected,
+                o.execution_priority,
+            ),
             reverse=True,
         )
         primary, *others = members
@@ -44,8 +49,12 @@ def group_by_asset(opportunities: list[Opportunity]) -> list[Opportunity]:
         primary.evidence = list(primary.evidence) + [
             "Achados relacionados no mesmo ativo: " + "; ".join(related)
         ]
-        # Próximos passos após a ação principal (ações dos relacionados).
-        primary.risks = list(primary.risks)
+        # Preserva as recomendações relacionadas sem somar economias sobrepostas.
+        primary.risks = list(primary.risks) + [
+            f"Ação relacionada {o.rule_id}: {o.recommended_action}. "
+            f"Validar: {o.how_to_validate}"
+            for o in others
+        ]
         primary.finding = f"{primary.finding} (+{len(others)} achados relacionados)"
         primary.data_sources = sorted({s for o in members for s in o.data_sources})
         grouped.append(primary)

@@ -12,12 +12,17 @@ from pathlib import Path
 from julius.inventory.model import (
     Account,
     ActorEvent,
-    AthenaQuery,
     AthenaActorUsage,
     AthenaCoverage,
+    AthenaQuery,
+    CollectionHealth,
+    DataBrewJob,
+    GlueCrawler,
     GlueJob,
+    GlueTrigger,
     InteractiveSession,
     PreviousResult,
+    ProcessCost,
     ProducerCandidate,
     SageMakerApp,
     SageMakerEndpoint,
@@ -34,21 +39,64 @@ def _pick(d: dict, cls):
     return cls(**{k: v for k, v in d.items() if k in fields})
 
 
+def _service_cost(raw: dict) -> ServiceCost:
+    """Preserva a moeda de datasets legados em vez de reinterpretá-la como USD."""
+    normalized = dict(raw)
+    if "currency" not in normalized:
+        normalized["currency"] = "BRL"
+        normalized.setdefault("cost_basis", "legacy_export")
+        normalized.setdefault("period_kind", "monthly")
+    return _pick(normalized, ServiceCost)
+
+
+def _previous_result(raw: dict) -> PreviousResult:
+    """Mantém a moeda explícita em históricos exportados antes da migração USD."""
+    normalized = dict(raw)
+    if "currency" not in normalized:
+        normalized["currency"] = "BRL"
+    return _pick(normalized, PreviousResult)
+
+
 def load_account(path: str | Path) -> Account:
     raw = json.loads(Path(path).read_text(encoding="utf-8"))
+    services = raw.get("cost_explorer", {}).get("services", [])
+    account_currency = raw.get("currency") or next(
+        (
+            service.get("currency")
+            for service in services
+            if service.get("currency")
+        ),
+        "USD",
+    )
     account = Account(
         account_id=raw["account"],
         region=raw.get("region", "sa-east-1"),
         period=raw.get("period", ""),
         lookback_days=raw.get("lookback_days", 90),
         generated_at=raw.get("generated_at", ""),
-        currency=raw.get("currency", "BRL"),
+        currency=account_currency,
     )
+    account.collection_health = [
+        _pick(item, CollectionHealth)
+        for item in raw.get("collection_health", [])
+    ]
     ce = raw.get("cost_explorer", {})
-    account.services = [_pick(s, ServiceCost) for s in ce.get("services", [])]
+    account.services = [_service_cost(s) for s in ce.get("services", [])]
     account.glue_jobs = [_pick(j, GlueJob) for j in raw.get("glue_jobs", [])]
     account.interactive_sessions = [
         _pick(s, InteractiveSession) for s in raw.get("interactive_sessions", [])
+    ]
+    account.glue_crawlers = [
+        _pick(c, GlueCrawler) for c in raw.get("glue_crawlers", [])
+    ]
+    account.glue_triggers = [
+        _pick(t, GlueTrigger) for t in raw.get("glue_triggers", [])
+    ]
+    account.databrew_jobs = [
+        _pick(j, DataBrewJob) for j in raw.get("databrew_jobs", [])
+    ]
+    account.process_costs = [
+        _pick(p, ProcessCost) for p in raw.get("process_costs", [])
     ]
     account.athena_queries = [_pick(q, AthenaQuery) for q in raw.get("athena_queries", [])]
     if raw.get("athena_coverage"):
@@ -68,5 +116,7 @@ def load_account(path: str | Path) -> Account:
     account.producer_candidates = [
         _pick(p, ProducerCandidate) for p in gov.get("producer_candidates", [])
     ]
-    account.previous_results = [_pick(r, PreviousResult) for r in gov.get("previous_results", [])]
+    account.previous_results = [
+        _previous_result(r) for r in gov.get("previous_results", [])
+    ]
     return account

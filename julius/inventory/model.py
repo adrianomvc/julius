@@ -2,38 +2,75 @@
 
 from __future__ import annotations
 
+import calendar
 from dataclasses import dataclass, field
+from datetime import date
 
 from julius.config import DPU_PER_WORKER
 
 
 @dataclass
 class ServiceCost:
-    """Custo mensal por serviço (Cost Explorer — reconciliação)."""
+    """Custo de cobrança por serviço (Cost Explorer — reconciliação)."""
 
     name: str
     monthly_cost: float
     subtitle: str = ""
-    currency: str = "BRL"
+    currency: str = "USD"
+    period_start: str = ""
+    data_through: str = ""
+    estimated: bool = True
+    period_kind: str = "month_to_date"
+    cost_basis: str = "cost_explorer_unblended"
+    forecast_cost_eom: float | None = None
 
 
 @dataclass
 class GlueJob:
     name: str
     glue_version: str = "3.0"
-    worker_type: str = "G.1X"
-    number_of_workers: int = 10
+    job_mode: str = "SCRIPT"
+    command_type: str = "glueetl"
+    worker_type: str | None = None
+    number_of_workers: int | None = None
+    max_capacity: float | None = None
     auto_scaling: bool = False
     execution_class: str = "STANDARD"
     job_bookmark: bool = False
     timeout_min: int = 2880
     runs_per_month: int = 0
     avg_execution_sec: float = 0.0
+    p50_execution_sec: float = 0.0
+    p95_execution_sec: float = 0.0
+    max_execution_sec: float = 0.0
+    execution_stddev_sec: float = 0.0
     avg_cpu_load: float | None = None
+    avg_worker_utilization: float | None = None
+    max_memory_used_pct: float | None = None
+    max_disk_used_pct: float | None = None
+    max_task_skew: float | None = None
+    avg_all_executors: float | None = None
+    avg_max_needed_executors: float | None = None
+    shuffle_spill_bytes: float | None = None
+    shuffle_read_bytes: float | None = None
+    shuffle_write_bytes: float | None = None
+    has_spill_evidence: bool = False
+    spark_event_log_objects_scanned: int = 0
+    spark_event_log_evidence_complete: bool = False
+    spark_event_logs_path: str | None = None
+    incremental_source_evidence: bool = False
+    dpu_seconds_mtd: float = 0.0
+    estimated_dpu_hours_mtd: float = 0.0
+    current_month_runs: int = 0
+    cost_data_through: str = ""
+    trigger_names: list[str] = field(default_factory=list)
+    run_ids_mtd: list[str] = field(default_factory=list)
     observed_runs: int = 0
     coverage_days: int = 0
     owner_tag: str | None = None
     script_location: str | None = None
+    default_argument_keys: list[str] = field(default_factory=list)
+    connection_names: list[str] = field(default_factory=list)
     # True/False = sensível a tempo (SLA); None = desconhecido. FLEX só p/ False.
     time_sensitive: bool | None = None
     # Confiabilidade: fração de execuções (incl. retries) que falham, e o compute
@@ -52,20 +89,58 @@ class GlueJob:
             return 99.0
 
     @property
-    def dpu_per_worker(self) -> int:
-        return DPU_PER_WORKER.get(self.worker_type, 1)
+    def dpu_per_worker(self) -> float:
+        return DPU_PER_WORKER.get(self.worker_type or "", 0.0)
+
+    @property
+    def configured_dpu(self) -> float:
+        if self.max_capacity is not None:
+            return max(0.0, self.max_capacity)
+        return max(0, self.number_of_workers or 0) * self.dpu_per_worker
+
+    @property
+    def capacity_unit(self) -> str:
+        return "M-DPU" if self.command_type == "glueray" else "DPU"
+
+    @property
+    def actual_dpu_hours_mtd(self) -> float:
+        return max(0.0, self.dpu_seconds_mtd / 3600.0)
+
+    @property
+    def total_dpu_hours_mtd(self) -> float:
+        return self.actual_dpu_hours_mtd + max(0.0, self.estimated_dpu_hours_mtd)
 
     @property
     def monthly_dpu_hours(self) -> float:
-        """DPU-hora/mês estimado a partir das execuções observadas."""
+        """DPU-hora projetada para o mês, sem chamar MTD de mensal."""
+        return self.forecast_dpu_hours_eom
+
+    @property
+    def forecast_dpu_hours_eom(self) -> float:
+        if self.total_dpu_hours_mtd > 0:
+            try:
+                observed = date.fromisoformat(self.cost_data_through)
+            except (TypeError, ValueError):
+                return self.total_dpu_hours_mtd
+            days = calendar.monthrange(observed.year, observed.month)[1]
+            return self.total_dpu_hours_mtd * days / max(1, observed.day)
         hours = self.avg_execution_sec / 3600.0
-        return self.runs_per_month * self.number_of_workers * self.dpu_per_worker * hours
+        return self.runs_per_month * self.configured_dpu * hours
+
+    @property
+    def historical_monthly_dpu_hours(self) -> float:
+        hours = self.avg_execution_sec / 3600.0
+        return self.runs_per_month * self.configured_dpu * hours
 
 
 @dataclass
 class InteractiveSession:
     session_id: str
-    dpu: int = 5
+    dpu: float = 5
+    worker_type: str | None = None
+    number_of_workers: int | None = None
+    max_capacity: float | None = None
+    glue_version: str = ""
     idle_timeout_min: int = 2880
     status: str = "READY"
     idle_hours_per_day: float = 0.0
@@ -73,6 +148,111 @@ class InteractiveSession:
     observed_runs: int = 0
     coverage_days: int = 0
     owner_tag: str | None = None
+    created_on: str = ""
+    completed_on: str = ""
+    execution_time_sec: float = 0.0
+    dpu_seconds: float = 0.0
+    dpu_seconds_mtd: float | None = None
+    estimated_dpu_hours_mtd: float = 0.0
+    cost_data_through: str = ""
+    last_activity_at: str = ""
+    activity_evidence: bool = False
+    statement_ids: list[str] = field(default_factory=list)
+
+    @property
+    def actual_dpu_hours_mtd(self) -> float:
+        seconds = (
+            self.dpu_seconds
+            if self.dpu_seconds_mtd is None
+            else self.dpu_seconds_mtd
+        )
+        return max(0.0, seconds / 3600.0)
+
+    @property
+    def dpu_hours(self) -> float:
+        return self.actual_dpu_hours_mtd + max(0.0, self.estimated_dpu_hours_mtd)
+
+
+@dataclass
+class GlueCrawler:
+    name: str
+    state: str = "READY"
+    last_crawl_status: str = ""
+    last_crawl_started_at: str = ""
+    last_error: str = ""
+    schedule_expression: str = ""
+    schedule_state: str = "NOT_SCHEDULED"
+    database_name: str = ""
+    median_runtime_sec: float = 0.0
+    last_runtime_sec: float = 0.0
+    tables_created: int = 0
+    tables_updated: int = 0
+    tables_deleted: int = 0
+    runs_mtd: int = 0
+    failures_mtd: int = 0
+    dpu_hours_mtd: float = 0.0
+    owner_tag: str | None = None
+    crawl_ids_mtd: list[str] = field(default_factory=list)
+    expected_runs_monthly: float | None = None
+    cost_data_through: str = ""
+    recrawl_behavior: str = "CRAWL_EVERYTHING"
+
+
+@dataclass
+class GlueTrigger:
+    name: str
+    trigger_type: str = "ON_DEMAND"
+    state: str = ""
+    schedule_expression: str = ""
+    workflow_name: str = ""
+    job_names: list[str] = field(default_factory=list)
+    crawler_names: list[str] = field(default_factory=list)
+    owner_tag: str | None = None
+    expected_runs_monthly: float | None = None
+
+
+@dataclass
+class DataBrewJob:
+    name: str
+    job_type: str = "RECIPE"
+    max_capacity: int = 5
+    timeout_min: int = 2880
+    max_retries: int = 0
+    schedule_names: list[str] = field(default_factory=list)
+    runs_mtd: int = 0
+    failures_mtd: int = 0
+    execution_hours_mtd: float = 0.0
+    estimated_node_hours_mtd: float = 0.0
+    owner_tag: str | None = None
+    run_ids_mtd: list[str] = field(default_factory=list)
+    expected_runs_monthly: float | None = None
+    cost_data_through: str = ""
+
+
+@dataclass
+class ProcessCost:
+    process_id: str
+    process_name: str
+    root_type: str
+    owner: str | None = None
+    owner_source: str = "desconhecido"
+    owner_confidence: float = 0.0
+    owner_event_time: str = ""
+    owner_event_name: str = ""
+    actual_cost_mtd: float = 0.0
+    estimated_cost_mtd: float = 0.0
+    forecast_cost_eom: float = 0.0
+    actual_dpu_hours: float = 0.0
+    estimated_dpu_hours: float = 0.0
+    currency: str = "USD"
+    period_start: str = ""
+    data_through: str = ""
+    allocation_method: str = "direct"
+    component_names: list[str] = field(default_factory=list)
+
+    @property
+    def total_cost_mtd(self) -> float:
+        return self.actual_cost_mtd + self.estimated_cost_mtd
 
 
 @dataclass
@@ -98,7 +278,7 @@ class AthenaQuery:
     modality: str = "on_demand"
     allocated_cost: float | None = None
     cost_quality: str = "unavailable"
-    currency: str = "BRL"
+    currency: str = "USD"
     active_days: int = 0
     actor_count: int = 0
     actors: list[str] = field(default_factory=list)
@@ -154,7 +334,7 @@ class AthenaActorUsage:
     email: str | None = None
     query_count: int = 0
     allocated_cost: float | None = None
-    currency: str = "BRL"
+    currency: str = "USD"
     billed_bytes: int = 0
     active_days: int = 0
     recurring_patterns: int = 0
@@ -188,7 +368,7 @@ class AthenaCoverage:
     cost_quality: str = "unavailable"
     cost_metric: str = ""
     net_cost: float | None = None
-    currency: str = "BRL"
+    currency: str = "USD"
     gaps: list[str] = field(default_factory=list)
 
 
@@ -214,6 +394,7 @@ class PreviousResult:
     date: str = ""
     predicted_monthly: float = 0.0
     realized_monthly: float = 0.0
+    currency: str = "USD"
     unit: str = ""
 
     @property
@@ -306,6 +487,9 @@ class Schedule:
     target_type: str = "state_machine"
     target_name: str = ""
     owner_tag: str | None = None
+    expression: str = ""
+    state: str = "ENABLED"
+    expected_runs_monthly: float | None = None
 
 
 @dataclass
@@ -318,6 +502,29 @@ class ActorEvent:
     event_time: str = ""
     source_identity: str | None = None
     user_arn: str | None = None
+    identity_type: str = ""
+    event_source: str = ""
+    is_human: bool = False
+
+
+@dataclass
+class CollectionHealth:
+    """Resultado sanitizado de uma fonte durante uma coleta read-only."""
+
+    source: str
+    status: str = "ok"  # ok | partial | unavailable | error
+    required: bool = False
+    affects_status: bool = True
+    started_at: str = ""
+    completed_at: str = ""
+    duration_ms: int = 0
+    collected: int = 0
+    expected: int | None = None
+    coverage: float | None = None
+    data_through: str = ""
+    error_category: str = ""
+    impact: str = ""
+    next_action: str = ""
 
 
 @dataclass
@@ -329,9 +536,14 @@ class Account:
     period: str = ""
     lookback_days: int = 90
     generated_at: str = ""
+    collection_health: list[CollectionHealth] = field(default_factory=list)
     services: list[ServiceCost] = field(default_factory=list)
     glue_jobs: list[GlueJob] = field(default_factory=list)
     interactive_sessions: list[InteractiveSession] = field(default_factory=list)
+    glue_crawlers: list[GlueCrawler] = field(default_factory=list)
+    glue_triggers: list[GlueTrigger] = field(default_factory=list)
+    databrew_jobs: list[DataBrewJob] = field(default_factory=list)
+    process_costs: list[ProcessCost] = field(default_factory=list)
     athena_queries: list[AthenaQuery] = field(default_factory=list)
     state_machines: list[StateMachine] = field(default_factory=list)
     sagemaker_apps: list[SageMakerApp] = field(default_factory=list)
@@ -341,7 +553,7 @@ class Account:
     actor_events: list[ActorEvent] = field(default_factory=list)
     producer_candidates: list[ProducerCandidate] = field(default_factory=list)
     previous_results: list[PreviousResult] = field(default_factory=list)
-    currency: str = "BRL"
+    currency: str = "USD"
     athena_coverage: AthenaCoverage | None = None
     athena_actor_usage: list[AthenaActorUsage] = field(default_factory=list)
 
@@ -351,5 +563,42 @@ class Account:
         return next((j for j in self.glue_jobs if j.name == name), None)
 
     @property
-    def total_monthly_cost(self) -> float:
+    def total_cost_mtd(self) -> float:
         return sum(s.monthly_cost for s in self.services)
+
+    @property
+    def total_monthly_cost(self) -> float:
+        """Compatibilidade: os custos de serviço atuais representam cobrança MTD."""
+        return self.total_cost_mtd
+
+    def process_cost_for_asset(self, asset_name: str) -> float | None:
+        matches = [
+            p.total_cost_mtd
+            for p in self.process_costs
+            if asset_name in p.component_names or p.process_name == asset_name
+        ]
+        return sum(matches) if matches else None
+
+    def process_forecast_for_asset(self, asset_name: str) -> float | None:
+        matches = [
+            p.forecast_cost_eom
+            for p in self.process_costs
+            if asset_name in p.component_names or p.process_name == asset_name
+        ]
+        return sum(matches) if matches else None
+
+    @property
+    def collection_status(self) -> str:
+        if not self.collection_health:
+            return "not_reported"
+        if any(
+            item.required and item.status in {"error", "unavailable"}
+            for item in self.collection_health
+        ):
+            return "failed"
+        if any(
+            item.affects_status and item.status != "ok"
+            for item in self.collection_health
+        ):
+            return "partial"
+        return "ok"

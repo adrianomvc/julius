@@ -78,6 +78,17 @@ def build_agent_context(
             "allow_mutations": False,
             "allow_resource_deletion": False,
             "allow_email_send": False,
+            "collection_status": analysis.account.collection_status,
+            "collection_health": [
+                {
+                    "source": item.source,
+                    "status": item.status,
+                    "coverage": item.coverage,
+                    "error_category": item.error_category,
+                    "impact": item.impact,
+                }
+                for item in analysis.account.collection_health
+            ],
             "official_documentation_domain": "docs.aws.amazon.com",
             "deterministic_fields_are_immutable": [
                 "estimated_gain",

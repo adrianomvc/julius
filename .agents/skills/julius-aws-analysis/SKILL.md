@@ -51,22 +51,22 @@ the contradiction in `missing_evidence` or `assumptions`; do not recalculate it.
    python -m pip install -e ".[aws]"
    ```
 
-3. Determine the account scope from the user's request:
+3. Use only AWS CLI SSO identities explicitly configured for Julius:
 
-   - **Current/default account:** use the active AWS CLI credential chain without
-     `--profile`.
-   - **One named account:** use the explicitly named AWS CLI profile.
-   - **All configured accounts:** only when the user explicitly says all, run
-     `aws configure list-profiles`, then process each profile separately.
-   - **Assume-role account:** use only an explicitly supplied role ARN.
+   - the Julius region is always `sa-east-1`;
+   - never use `--role-arn`;
+   - use `--sso-profile` only with a profile explicitly enabled in the local
+     Julius account registry;
+   - never read, copy, print or persist access keys, secrets, session tokens or
+     files from the AWS SSO cache.
 
-   Never infer that "all accounts" is authorized from the mere presence of
-   multiple profiles. Do not call AWS Organizations to expand the scope unless
-   the user explicitly requests and authorizes it.
+   Do not list profiles, discover accounts through AWS Organizations or expand
+   the scope implicitly.
 
-4. For multiple accounts, require `~/.julius-accounts.json` based on
-   `.julius-accounts.example.json`. Only entries with `enabled: true` are in
-   scope. Verify the complete scope before collection:
+4. Require `~/.julius-accounts.json` based on
+   `.julius-accounts.example.json`. It contains only the logical account name,
+   expected Account ID, non-secret SSO profile reference and the explicit
+   `enabled` flag. Verify every enabled identity before collection:
 
    ```bash
    julius agent verify-accounts \
@@ -74,27 +74,26 @@ the contradiction in `missing_evidence` or `assumptions`; do not recalculate it.
      --output data/agent/verified-accounts.json
    ```
 
-5. Before collecting a single account without that manifest, run one of:
+5. Before collecting a configured account, run:
 
    ```bash
-   aws sts get-caller-identity
-   aws sts get-caller-identity --profile <profile>
+   aws sts get-caller-identity --profile <sso-profile>
    ```
 
-   Record account and ARN, without credentials. Confirm the intended account
-   and that the configured identity/role is documented as read-only. Stop that
-   account on mismatch; do not silently continue under another identity.
+   Record account and ARN, without credentials. Confirm the Account ID matches
+   the enabled entry and that the SSO permission set is documented as
+   read-only. Stop on mismatch; do not silently continue under another
+   identity.
 
 6. Use an exported dataset when supplied. For live collection, write one dataset
    per verified account:
 
    ```bash
-   julius collect --output data/collected/current.json
-   julius collect --profile <profile> --output data/collected/<profile>.json
-   julius collect --profile <source-profile> --role-arn <role-arn> \
+   julius collect --sso-profile <sso-profile> \
      --output data/collected/<account>.json
    ```
 
+   The command always uses `sa-east-1` and the active AWS credential chain.
    Never reuse one account's output path for another account.
 
 7. Collect the bounded technical artifacts using the same verified identity:
@@ -102,13 +101,13 @@ the contradiction in `missing_evidence` or `assumptions`; do not recalculate it.
    ```bash
    julius agent collect-artifacts \
      --input data/collected/<account>.json \
-     --profile <profile> \
+     --sso-profile <sso-profile> \
      --output data/artifacts/<account>
    ```
 
-   Add `--role-arn` only when the account collection used that same explicit
-   role. This command may call only STS, S3 GetObject and Step Functions
-   list/describe operations. Stop on identity mismatch.
+   This command uses the same active SSO identity and may call only STS, S3
+   GetObject and Step Functions list/describe operations. Stop on identity
+   mismatch.
 
 8. Generate a separate agent workspace for each account:
 
@@ -136,14 +135,15 @@ the contradiction in `missing_evidence` or `assumptions`; do not recalculate it.
       --result data/agent/<account>/result.json
     ```
 
-14. For multiple accounts, validate every account independently before creating
-    a portfolio summary. Never merge evidence or opportunity IDs across accounts.
+14. Validate every enabled account independently before creating a portfolio
+    summary. Never merge evidence or opportunity IDs across accounts.
 15. Generate the enriched artifacts for each account:
 
     ```bash
     julius report \
       --input data/collected/<account>.json \
       --output data/reports/<account> \
+      --artifacts-manifest data/artifacts/<account>/manifest.json \
       --agent-context data/agent/<account>/context.json \
       --agent-result data/agent/<account>/validated-result.json
 
@@ -151,6 +151,7 @@ the contradiction in `missing_evidence` or `assumptions`; do not recalculate it.
       --mode dry-run \
       --input data/collected/<account>.json \
       --outbox data/outbox \
+      --artifacts-manifest data/artifacts/<account>/manifest.json \
       --agent-context data/agent/<account>/context.json \
       --agent-result data/agent/<account>/validated-result.json
     ```

@@ -49,6 +49,14 @@
     </tr></table>
   </td></tr>
 
+  {% if r.collection_status != "ok" %}
+  <tr><td style="padding:14px 28px 0;">
+    <div style="border:1px solid #ecdcc4;background:#fff8ec;border-radius:8px;padding:11px 14px;font-size:12px;color:#8a5b18;">
+      <b>Saúde da coleta: {{ r.collection_status_label }}</b><br>{{ r.collection_health_summary }} Consulte o relatório completo antes de implementar recomendações.
+    </div>
+  </td></tr>
+  {% endif %}
+
   {% if r.ai_summary %}
   <tr><td style="padding:18px 28px 4px;">
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f4f7fb;border:1px solid #cdd9ea;border-radius:8px;">

@@ -57,6 +57,7 @@
         <span style="color:#7b8498;">scan_id</span><span style="color:#e6e8e0;text-align:right;">{{ r.scan_id }}</span>
       </div>
     </div>
+
     <div style="margin-top:22px;padding-top:16px;border-top:1px solid #2a3c5c;display:flex;gap:10px;flex-wrap:wrap;">
       {% for s in ["detected → validated", "método 80/20 (Pareto)", "scores determinísticos", "contexto: Devin"] %}
       <span class="mono" style="font-size:11px;color:#96a0b4;background:#1a2c4a;border:1px solid #2a3c5c;border-radius:5px;padding:5px 10px;">{{ s }}</span>
@@ -109,6 +110,34 @@
     </div>
     {% endif %}
 
+    <!-- SAÚDE DA COLETA -->
+    <div style="margin-bottom:30px;border:1px solid #e2e4dc;border-radius:12px;overflow:hidden;">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:16px;padding:14px 18px;background:#f7f8f4;flex-wrap:wrap;">
+        <div>
+          <div class="kicker">Saúde da coleta</div>
+          <div style="margin-top:4px;font-size:13px;color:#4b5159;">{{ r.collection_health_summary }}</div>
+        </div>
+        <span class="chip" style="color:{{ r.collection_status_fg }};background:{{ r.collection_status_bg }};">{{ r.collection_status_label }}</span>
+      </div>
+      {% if r.collection_health %}
+      <div style="display:grid;grid-template-columns:1.2fr 88px 74px 72px 86px 1.5fr;background:#12233f;color:#c2c9d6;font-size:10px;text-transform:uppercase;letter-spacing:.05em;font-weight:600;">
+        <div style="padding:10px 14px;">Fonte</div><div style="padding:10px 8px;">Status</div><div style="padding:10px 8px;text-align:right;">Itens</div><div style="padding:10px 8px;text-align:right;">Cobertura</div><div style="padding:10px 8px;text-align:right;">Atualização</div><div style="padding:10px 14px;">Impacto / próxima ação</div>
+      </div>
+      {% for h in r.collection_health %}
+      <div style="display:grid;grid-template-columns:1.2fr 88px 74px 72px 86px 1.5fr;border-top:1px solid #edeee8;align-items:center;font-size:11.5px;">
+        <div style="padding:11px 14px;"><b style="color:#12233f;">{{ h.source }}</b><div class="mono" style="margin-top:2px;font-size:9.5px;color:#8a9082;">{{ h.required }} · {{ h.duration }}</div></div>
+        <div style="padding:11px 8px;"><span class="chip" style="color:{{ h.status_fg }};background:{{ h.status_bg }};font-size:9.5px;">{{ h.status_label }}</span></div>
+        <div class="mono" style="padding:11px 8px;text-align:right;">{{ h.count }}</div>
+        <div class="mono" style="padding:11px 8px;text-align:right;">{{ h.coverage }}</div>
+        <div class="mono" style="padding:11px 8px;text-align:right;font-size:9.5px;">{{ h.data_through }}</div>
+        <div style="padding:11px 14px;color:#4b5159;line-height:1.35;">{{ h.impact }}{% if h.next_action != "—" %}<div style="margin-top:3px;color:#9a5b10;">Próximo: {{ h.next_action }}</div>{% endif %}{% if h.error_category != "—" %}<div class="mono" style="margin-top:3px;font-size:9.5px;color:#8a9082;">{{ h.error_category }}</div>{% endif %}</div>
+      </div>
+      {% endfor %}
+      {% else %}
+      <div style="padding:13px 18px;background:#fff8ec;color:#8a5b18;font-size:12px;">Esse arquivo foi produzido sem telemetria por fonte. Os valores podem ser analisados, mas a completude da coleta não pode ser comprovada.</div>
+      {% endif %}
+    </div>
+
     {% if r.athena_coverage %}
     <!-- ATHENA INTEGRADO -->
     <div class="sec"><span class="n mono" style="color:#e8730c;">A</span><h2>Athena — padrões de query e uso por pessoa</h2></div>
@@ -148,10 +177,10 @@
 
     <!-- 00 RECONCILIAÇÃO -->
     <div class="sec"><span class="n mono" style="color:#7b8498;">00</span><h2>Custo da conta — reconciliação</h2></div>
-    <p class="lead">O Cost Explorer confere o <b>total</b> da conta e por serviço. A atribuição fina por ativo vem dos coletores de execução (Glue GetJobRuns, bytes Athena) — não do Cost Explorer.</p>
+    <p class="lead">O Cost Explorer fornece a <b>cobrança MTD estimada pela AWS em USD</b>. A atribuição por ativo é um modelo baseado no consumo observado (Glue GetJobRuns, bytes Athena) e não deve ser confundida com a fatura.</p>
     <div style="margin-top:20px;display:grid;grid-template-columns:250px 1fr;border:1px solid #e2e4dc;border-radius:12px;overflow:hidden;">
       <div style="background:#12233f;color:#f4f5f1;padding:22px 24px;display:flex;flex-direction:column;justify-content:center;">
-        <div class="kicker" style="color:#96a0b4;">Custo total / mês</div>
+        <div class="kicker" style="color:#96a0b4;">Cobrança MTD</div>
         <div style="margin-top:6px;font-size:34px;font-weight:700;letter-spacing:-.02em;">{{ r.account_total_fmt }}</div>
         <div class="mono" style="margin-top:2px;font-size:11px;color:#8792a8;">Cost Explorer · {{ r.region }} · {{ r.period }}</div>
         <div style="margin-top:20px;padding-top:16px;border-top:1px solid #2a3c5c;">
@@ -165,7 +194,7 @@
       </div>
       <div>
         <div style="display:grid;grid-template-columns:1fr 96px 100px;padding:11px 20px;background:#f3f4ee;font-size:10.5px;text-transform:uppercase;letter-spacing:.07em;font-weight:600;color:#7c8374;">
-          <div>Serviço · custo × economia identificada</div><div style="text-align:right;">Custo/mês</div><div style="text-align:right;">Economia</div>
+          <div>Serviço · cobrança × economia identificada</div><div style="text-align:right;">Cobrança MTD</div><div style="text-align:right;">Economia/mês</div>
         </div>
         {% for s in r.services %}
         <div style="display:grid;grid-template-columns:1fr 96px 100px;align-items:center;padding:12px 20px;border-top:1px solid #edeee8;">
@@ -186,6 +215,30 @@
         {% endfor %}
       </div>
     </div>
+
+    {% if r.process_costs %}
+    <div style="margin-top:18px;border:1px solid #e2e4dc;border-radius:12px;overflow:hidden;">
+      <div style="display:grid;grid-template-columns:1.4fr 1fr 96px 96px 90px;padding:11px 16px;background:#f3f4ee;font-size:10.5px;text-transform:uppercase;letter-spacing:.07em;font-weight:600;color:#7c8374;">
+        <div>Processo · componentes</div><div>Dono inferido</div><div style="text-align:right;">Modelo MTD</div><div style="text-align:right;">Projeção</div><div style="text-align:right;">Consumo</div>
+      </div>
+      {% for p in r.process_costs %}
+      <div style="display:grid;grid-template-columns:1.4fr 1fr 96px 96px 90px;padding:12px 16px;border-top:1px solid #edeee8;align-items:center;">
+        <div><div style="font-size:13px;font-weight:600;color:#12233f;">{{ p.name }}</div><div class="mono" style="font-size:10.5px;color:#8a9082;">{{ p.root_type }} · {{ p.components }} · {{ p.allocation }}</div></div>
+        <div><div style="font-size:12px;color:#3a3f46;">{{ p.owner }}</div><div class="mono" style="font-size:10px;color:#8a9082;">{{ p.owner_source }} · {{ p.owner_event_time }}</div></div>
+        <div class="mono" style="text-align:right;font-size:12px;">{{ p.cost_mtd }}</div>
+        <div class="mono" style="text-align:right;font-size:12px;font-weight:600;color:#e8730c;">{{ p.forecast_eom }}</div>
+        <div class="mono" style="text-align:right;font-size:10.5px;color:#5b6169;">{{ p.dpu_actual }} reportada<br>{{ p.dpu_estimated }} estimada</div>
+      </div>
+      {% endfor %}
+      <div class="mono" style="padding:9px 16px;border-top:1px solid #edeee8;font-size:10.5px;color:#8a9082;">Modelo MTD = consumo reportado/estimado × tarifa USD versionada. Não é a fatura. A projeção de fim do mês é exibida separadamente.</div>
+      <div style="display:flex;gap:22px;flex-wrap:wrap;padding:11px 16px;border-top:1px solid #edeee8;background:#fbfcfa;font-size:11.5px;color:#3a3f46;">
+        <span>modelo atribuído: <b>{{ r.process_cost_attributed_fmt }}</b></span>
+        <span>cobrança MTD Glue: <b>{{ r.glue_cost_explorer_fmt }}</b></span>
+        <span>diferença: <b>{{ r.process_cost_delta_fmt }}</b></span>
+        <span class="mono" style="color:#8a9082;">{{ r.process_reconciliation_note }}</span>
+      </div>
+    </div>
+    {% endif %}
 
     <!-- 01 FOCO 80/20 -->
     <div class="sec" style="margin-top:44px;"><span class="n mono" style="color:#e8730c;">01</span><h2>Foco 80/20 — faça primeiro</h2></div>
@@ -298,6 +351,7 @@
               <div style="flex:1;"><div class="kicker">Até dez</div><div style="font-weight:700;font-size:20px;color:#12233f;margin-top:2px;">{{ o.year_fmt }}</div></div>
             </div>
             <div style="font-size:11px;color:#8a9082;margin-bottom:14px;">faixa provável {{ o.band_fmt }}</div>
+            <div class="mono" style="font-size:11px;color:#5b6169;margin-bottom:14px;">custo do processo: {{ o.process_cost_fmt }} MTD · {{ o.process_forecast_fmt }} projetado · dados até {{ o.cost_data_through }}</div>
             <div style="font-size:11px;color:#8a9082;margin-bottom:14px;">custo baseline {{ o.baseline_fmt }} ({{ o.baseline_quality_label }}) · qualidade da economia estimada (SAVE): {{ o.saving_quality_label }}</div>
             <div style="display:flex;gap:7px;flex-wrap:wrap;margin-bottom:14px;">
               <span class="chip" style="color:{{ o.diff_fg }};background:{{ o.diff_bg }};">Dif {{ o.difficulty }}/5</span>
@@ -306,12 +360,13 @@
             {% if o.source_process %}<div class="kicker">Processo gerador (pode ser desligado)</div><div style="margin-top:5px;font-size:13.5px;font-weight:600;color:#b23b3b;">{{ o.source_process }}</div>{% endif %}
             <div class="kicker" style="margin-top:13px;">Como aplicar</div><div style="margin-top:5px;font-size:13px;line-height:1.45;color:#3a3f46;">{{ o.how_to_apply }} {% if o.doc_url %}<a href="{{ o.doc_url }}" target="_blank" rel="noopener">doc AWS ↗</a>{% endif %}</div>
             <div class="kicker" style="margin-top:13px;">Como validar</div><div style="margin-top:5px;font-size:13px;line-height:1.45;color:#3a3f46;">{{ o.how_to_validate }}</div>
-            <div class="kicker" style="margin-top:13px;">Responsável</div><div style="margin-top:4px;font-size:13px;font-weight:600;color:#12233f;">{{ o.owner }} <span class="mono" style="font-size:10px;font-weight:400;color:#5b6169;">fonte: {{ o.owner_source }}</span></div>
+            <div class="kicker" style="margin-top:13px;">Responsável</div><div style="margin-top:4px;font-size:13px;font-weight:600;color:#12233f;">{{ o.owner }} <span class="mono" style="font-size:10px;font-weight:400;color:#5b6169;">fonte: {{ o.owner_source }} · {{ o.owner_event_time }}</span></div>
             {% if o.ai_documentation %}
             <div class="kicker" style="margin-top:13px;">Documentação validada pela IA</div>
             {% for doc in o.ai_documentation %}<div style="margin-top:5px;font-size:12px;"><a href="{{ doc.url }}" target="_blank" rel="noopener">{{ doc.title }} ↗</a> — {{ doc.relevance }}</div>{% endfor %}
             {% endif %}
             <div class="mono" style="margin-top:13px;padding-top:12px;border-top:1px dashed #dfe1d9;font-size:11px;color:#8a9082;line-height:1.5;">cobertura {{ o.coverage_pct }} · fontes: {{ o.sources }}</div>
+            <div class="mono" style="margin-top:5px;font-size:10.5px;color:#8a9082;line-height:1.45;">rastreabilidade: {{ o.traceability }}</div>
           </div>
         </div>
       </div>

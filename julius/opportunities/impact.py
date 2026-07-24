@@ -9,11 +9,11 @@ from __future__ import annotations
 
 from julius.config import Config
 
-# Referência para normalizar a economia mensal (R$ que mapeia perto do topo).
+# Referência para normalizar a economia mensal (USD que mapeia perto do topo).
 # No MVP 1A a única dimensão medida é ECONOMIA, então o score é dominado por ela;
 # desempenho/governança/alcance/tendência entram (com os pesos de `config`) nas
 # fases seguintes, quando houver dado para medi-las.
-ECONOMIA_REF = 1000.0
+ECONOMIA_REF = 150.0
 
 
 def gain_score(monthly_expected: float, config: Config, *, is_strategic: bool = False) -> int:

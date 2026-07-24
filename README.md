@@ -11,12 +11,14 @@ Ver o plano completo (fases 1A→4) em `../.claude/plans/quero-criar-uma-ia-comp
 
 ## O que o MVP 1B entrega
 
-- 18 detectores para Glue, Interactive Sessions, Athena, dados, Step Functions
-  e SageMaker.
+- Detectores versionados para Glue, código Glue, Interactive Sessions, Athena,
+  dados, Step Functions e SageMaker.
 - Portfólio multi-conta ordenado pela economia identificada.
 - Agrupamento por ativo/causa raiz e fingerprint estável.
 - Backlog operacional em JSON e snapshots analíticos em DuckDB/Parquet.
 - Run manifest com versões, preços, fonte e configuração da execução.
+- Saúde da coleta por fonte, com cobertura, atualização, impacto e erros
+  categorizados sem mensagens sensíveis.
 - Revisão humana do Top 10, Precision@10 e taxa de falsos positivos.
 - `report.html`, `report.json`, `email.html` e `email.txt`; composição de e-mail
   em `dry-run` por padrão.
@@ -50,8 +52,9 @@ ferramenta especializada. O Julius não chama a API do Devin.
 
 As responsabilidades são separadas:
 
-- **Julius determinístico:** coleta, inventário, grafo, evidências, economia,
-  dificuldade, confiança, prioridades, IDs e lifecycle;
+- **Julius determinístico:** coleta, inventário, grafo, scanner estático de
+  scripts Glue, evidências, economia, dificuldade, confiança, prioridades, IDs
+  e lifecycle;
 - **Devin/IA:** leitura contextual de scripts, SQL e dependências, explicação da
   causa, sequência de implementação, conflitos, riscos e documentação oficial;
 - **validador Julius:** impede que a saída da IA altere campos determinísticos,
@@ -84,12 +87,14 @@ julius agent validate \
 # O Devin gera os artefatos já enriquecidos pela análise validada
 julius report \
   --input data/sample/consumer-avi.json \
+  --artifacts-manifest data/artifacts/123456789012/manifest.json \
   --agent-context data/agent/context.json \
   --agent-result data/agent/validated-result.json
 
 # Prévia local; nunca envia durante a análise
 julius notify --mode dry-run \
   --input data/sample/consumer-avi.json \
+  --artifacts-manifest data/artifacts/123456789012/manifest.json \
   --agent-context data/agent/context.json \
   --agent-result data/agent/validated-result.json
 ```
@@ -103,27 +108,32 @@ Linux/Devin Cloud ou `scripts/bootstrap-devin.ps1` no PowerShell. Ambos criam a
 `.venv`, instalam `.[aws,dev]`, executam os testes e fazem um smoke test com os
 dados de exemplo; não acessam uma conta AWS durante o bootstrap.
 
-### Uma ou várias contas AWS
+### Conta AWS via SSO
 
-Na máquina de trabalho, o Devin usa a cadeia de credenciais já configurada no
-AWS CLI:
+Na máquina de trabalho, o Devin usa somente a identidade SSO já ativa na cadeia
+de credenciais do AWS CLI. A região do Julius é fixa em **São Paulo
+(`sa-east-1`)** e não há `role_arn`.
 
-- sem perfil informado, analisa somente a identidade AWS ativa;
-- com um perfil informado, analisa somente aquele perfil;
-- quando o usuário pedir explicitamente **todas as contas**, lista os perfis do
-  AWS CLI e processa cada um separadamente;
-- assume-role só é usado quando o ARN for fornecido explicitamente.
+Um *profile name* é apenas o apelido de uma configuração no arquivo
+`~/.aws/config`; ele não é uma credencial. No cadastro Julius, esse campo se
+chama `sso_profile` e apenas referencia a configuração criada por
+`aws configure sso`. Para uma única conta configurada como `default`, ele pode
+ficar vazio. Para várias contas, cada entrada usa o seu perfil SSO.
 
-Antes de coletar, o Devin executa `aws sts get-caller-identity` para cada
-perfil/role e confere a conta. Cada conta recebe arquivos separados em
-`data/collected/<conta>.json` e `data/agent/<conta>/`; evidências e IDs nunca
-são misturados entre contas. A existência de vários perfis não autoriza
-automaticamente analisar todos eles.
+```bash
+aws sso login --profile <perfil-sso>
+julius collect --sso-profile <perfil-sso> \
+  --output data/collected/<conta>.json
+```
 
-Para múltiplas contas, copie
-[.julius-accounts.example.json](.julius-accounts.example.json) para
-`~/.julius-accounts.json`, informe o ID esperado, perfil, região e role
-opcional, e habilite somente as contas autorizadas. Antes da coleta:
+Access key, secret, token e cache SSO nunca devem ser copiados para o
+repositório nem para os arquivos Julius. O boto3/AWS CLI lê essas credenciais
+do armazenamento local gerenciado pelo AWS CLI.
+
+Copie [.julius-accounts.example.json](.julius-accounts.example.json) para
+`~/.julius-accounts.json`, informe somente o nome lógico e o Account ID
+esperado, associe o `sso_profile` e habilite somente as contas autorizadas.
+Antes da coleta:
 
 ```bash
 julius agent verify-accounts \
@@ -131,9 +141,9 @@ julius agent verify-accounts \
   --output data/agent/verified-accounts.json
 ```
 
-O comando para na primeira divergência entre o perfil/role e o ID esperado.
-Ele usa apenas `sts:GetCallerIdentity` e não descobre nem habilita contas
-implicitamente.
+O comando abre cada perfil SSO habilitado, compara a identidade com o Account
+ID esperado e para em caso de divergência. Ele usa apenas
+`sts:GetCallerIdentity`, não descobre contas e não armazena credenciais.
 
 ## Como rodar
 
@@ -179,7 +189,7 @@ julius notify --open-preview
 
 O comando `julius notify` continua sempre em `dry-run` quando nenhum modo é
 informado. Nesse modo ele apenas grava a mensagem, o relatório e um manifesto
-idempotente em `data/outbox/`; SES e SMTP não são acessados.
+idempotente em `data/outbox/`; o SMTP não é acessado.
 
 O envio ativo existe para uso posterior na máquina de trabalho e exige, ao
 mesmo tempo:
@@ -192,8 +202,8 @@ mesmo tempo:
 - log persistente que impede o reenvio do mesmo scan para o mesmo grupo;
 - scan sem erro crítico e relatório HTML gerado.
 
-Use [.julius-email.example.json](.julius-email.example.json) para transporte e
-allowlist, salvando a configuração local em `~/.julius-email.json`. Use
+Use [.julius-email.example.json](.julius-email.example.json) para o relay SMTP
+local e a allowlist, salvando a configuração em `~/.julius-email.json`. Use
 [.julius-recipients.example.json](.julius-recipients.example.json) para mapear
 cada conta aos seus destinatários, salvando em
 `~/.julius-recipients.json`. Esses arquivos não aceitam credenciais.
@@ -203,8 +213,9 @@ ativo exige correspondência exata com o `account_id` do relatório; não existe
 fallback para destinatários globais. Contas novas começam desabilitadas e
 precisam ser habilitadas conscientemente.
 
-SES usa a cadeia de credenciais AWS; SMTP lê somente
-`JULIUS_SMTP_USERNAME` e `JULIUS_SMTP_PASSWORD` do ambiente.
+O envio não usa a conta AWS. A própria máquina abre a conexão SMTP pela
+biblioteca Python `smtplib`. Quando o relay exigir autenticação, usuário e senha
+são lidos somente de `JULIUS_SMTP_USERNAME` e `JULIUS_SMTP_PASSWORD`.
 
 ```bash
 # Apenas na máquina de trabalho, depois de revisar configuração e destinatários
@@ -215,9 +226,8 @@ julius notify --mode active --confirm
 o Julius sempre usa o cadastro da conta para evitar encaminhamento manual ao
 destinatário errado.
 
-O transporte pode ser selecionado com `--transport ses` ou
-`--transport smtp`. O envio real permanece parte das validações operacionais
-adiadas; os testes locais usam clientes simulados.
+O envio real permanece parte das validações operacionais adiadas; os testes
+locais usam um cliente SMTP simulado.
 
 Na coleta ao vivo, use `--cloudtrail` para atribuição de ator e
 `--datawarm-job <identificador>` para reconhecer o publicador DataWarm.
@@ -227,9 +237,10 @@ Na coleta ao vivo, use `--cloudtrail` para atribuição de ator e
 Estas etapas dependem de contexto corporativo e não bloqueiam a validação local:
 
 - revisão humana real do Top 10;
-- teste read-only em contas AWS reais;
+- homologação read-only do Athena em conta real, conforme o
+  [runbook operacional](docs/athena-operational-validation.md);
 - configuração da tabela de toques, do job DataWarm e do CloudTrail.
-- validação de envio SES/SMTP com remetentes e destinatários corporativos.
+- validação de envio SMTP local com remetentes e destinatários corporativos.
 - conexão do repositório ao Devin e descoberta da Skill Julius;
 - execução da Skill com uma role AWS corporativa estritamente read-only.
 
@@ -245,7 +256,7 @@ O histórico padrão fica em `data/state/julius.duckdb`; os Parquets ficam em
   calculados em código (não por IA). Preços/limiares versionados em `julius/config.py`.
 - **80/20 em dois cortes**: financeiro (~80% da economia) e executável (o que dá
   para fazer já).
-- **Linguagem de incerteza**: "estimamos ~R$ X/mês assumindo mesmo volume; será
+- **Linguagem de incerteza**: "estimamos ~US$ X/mês assumindo mesmo volume; será
   validado após a mudança".
 - **Gate de acionabilidade**: sem ativo/evidência/ação/validação/responsável a
   oportunidade vai para *Investigações necessárias* (bucket `investigar_primeiro`).
