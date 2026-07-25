@@ -17,6 +17,7 @@ from julius.inventory.model import (
     AthenaQuery,
     CollectionHealth,
     DataBrewJob,
+    GlueCostCoverage,
     GlueCrawler,
     GlueJob,
     GlueTrigger,
@@ -39,49 +40,56 @@ def _pick(d: dict, cls):
     return cls(**{k: v for k, v in d.items() if k in fields})
 
 
-def _service_cost(raw: dict) -> ServiceCost:
-    """Preserva a moeda de datasets legados em vez de reinterpretá-la como USD."""
-    normalized = dict(raw)
-    if "currency" not in normalized:
-        normalized["currency"] = "BRL"
-        normalized.setdefault("cost_basis", "legacy_export")
-        normalized.setdefault("period_kind", "monthly")
+def _usd_record(raw: dict) -> dict | None:
+    """Aceita o registro só quando ele está declaradamente em USD.
+
+    A AWS reporta custo em USD, então todo dataset gerado pelo `julius collect`
+    já vem em USD. Um registro sem `currency` é anterior a esse contrato e um
+    registro em outra moeda não pode ser reexpresso sem câmbio — em ambos os
+    casos ele é recusado, para não virar número sem procedência no relatório.
+    """
+    declared = str(raw.get("currency") or "").upper()
+    if declared != "USD":
+        return None
+    return dict(raw)
+
+
+def _service_cost(raw: dict) -> ServiceCost | None:
+    normalized = _usd_record(raw)
+    if normalized is None:
+        return None
+    normalized.setdefault("period_kind", "monthly")
     return _pick(normalized, ServiceCost)
 
 
-def _previous_result(raw: dict) -> PreviousResult:
-    """Mantém a moeda explícita em históricos exportados antes da migração USD."""
-    normalized = dict(raw)
-    if "currency" not in normalized:
-        normalized["currency"] = "BRL"
+def _previous_result(raw: dict) -> PreviousResult | None:
+    normalized = _usd_record(raw)
+    if normalized is None:
+        return None
     return _pick(normalized, PreviousResult)
 
 
 def load_account(path: str | Path) -> Account:
     raw = json.loads(Path(path).read_text(encoding="utf-8"))
-    services = raw.get("cost_explorer", {}).get("services", [])
-    account_currency = raw.get("currency") or next(
-        (
-            service.get("currency")
-            for service in services
-            if service.get("currency")
-        ),
-        "USD",
-    )
     account = Account(
         account_id=raw["account"],
         region=raw.get("region", "sa-east-1"),
         period=raw.get("period", ""),
         lookback_days=raw.get("lookback_days", 90),
         generated_at=raw.get("generated_at", ""),
-        currency=account_currency,
+        # USD é a única moeda aceita; a AWS já reporta custo em USD.
+        currency="USD",
     )
     account.collection_health = [
         _pick(item, CollectionHealth)
         for item in raw.get("collection_health", [])
     ]
     ce = raw.get("cost_explorer", {})
-    account.services = [_service_cost(s) for s in ce.get("services", [])]
+    account.services = [
+        service
+        for service in (_service_cost(s) for s in ce.get("services", []))
+        if service is not None
+    ]
     account.glue_jobs = [_pick(j, GlueJob) for j in raw.get("glue_jobs", [])]
     account.interactive_sessions = [
         _pick(s, InteractiveSession) for s in raw.get("interactive_sessions", [])
@@ -101,6 +109,10 @@ def load_account(path: str | Path) -> Account:
     account.athena_queries = [_pick(q, AthenaQuery) for q in raw.get("athena_queries", [])]
     if raw.get("athena_coverage"):
         account.athena_coverage = _pick(raw["athena_coverage"], AthenaCoverage)
+    if raw.get("glue_cost_coverage"):
+        account.glue_cost_coverage = _pick(
+            raw["glue_cost_coverage"], GlueCostCoverage
+        )
     account.athena_actor_usage = [
         _pick(a, AthenaActorUsage) for a in raw.get("athena_actor_usage", [])
     ]
@@ -117,6 +129,8 @@ def load_account(path: str | Path) -> Account:
         _pick(p, ProducerCandidate) for p in gov.get("producer_candidates", [])
     ]
     account.previous_results = [
-        _previous_result(r) for r in gov.get("previous_results", [])
+        result
+        for result in (_previous_result(r) for r in gov.get("previous_results", []))
+        if result is not None
     ]
     return account

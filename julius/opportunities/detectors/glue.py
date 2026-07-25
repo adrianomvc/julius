@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from julius.config import Config
+from julius.config import UNATTRIBUTED_GLUE_BUCKETS, Config
 from julius.estimation import glue as glue_est
 from julius.inventory.model import Account, GlueJob
 from julius.opportunities.base import Opportunity
@@ -250,6 +250,24 @@ def detect(account: Account, config: Config, scan_id: str) -> list[Opportunity]:
     return out
 
 
+def _unattributed_buckets(account: Account) -> list[str]:
+    """Nomeia a cobrança que não é rateada a nenhum ativo coletado."""
+    coverage = account.glue_cost_coverage
+    if coverage is None:
+        return []
+    evidence = [
+        f"{bucket}={value:.2f} USD"
+        for bucket, value in sorted(coverage.buckets.items())
+        if bucket in UNATTRIBUTED_GLUE_BUCKETS and value
+    ]
+    if coverage.unknown_usage_types:
+        evidence.append(
+            "usage types não classificados: "
+            + ", ".join(coverage.unknown_usage_types)
+        )
+    return evidence
+
+
 def _unattributed_cost(
     account: Account,
     config: Config,
@@ -259,6 +277,7 @@ def _unattributed_cost(
     data_through: str,
 ) -> Opportunity:
     delta = max(0.0, billing_mtd - modeled_mtd)
+    buckets = _unattributed_buckets(account)
     return build(
         account=account.account_id,
         asset_type="glue_service",
@@ -282,6 +301,11 @@ def _unattributed_cost(
         why=(
             f"Cost Explorer MTD={billing_mtd:.2f} e modelo por processo="
             f"{modeled_mtd:.2f}; diferença={delta:.2f} {config.pricing.currency}."
+            + (
+                " Buckets sem rateio: " + "; ".join(buckets) + "."
+                if buckets
+                else " A cobrança por usage type ainda não foi coletada."
+            )
         ),
         recommended_action=(
             "Detalhar Cost Explorer/CUR por usage type, operação e tag de alocação"
@@ -298,7 +322,7 @@ def _unattributed_cost(
             f"Cost Explorer Glue MTD={billing_mtd:.2f}",
             f"modelo atribuído MTD={modeled_mtd:.2f}",
             f"data_through={data_through or 'não informada'}",
-        ],
+        ] + buckets,
         risks=["diferença pode conter atraso ou modalidades ainda não modeladas"],
         doc_links=[_DOC_COST_EXPLORER],
         data_sources=["Cost Explorer GetCostAndUsage", "modelo de processos Julius"],

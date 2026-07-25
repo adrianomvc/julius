@@ -15,6 +15,7 @@ from julius.aws import (
     databrew_collector,
     datawarm_collector,
     glue_collector,
+    glue_cost,
     glue_triggers_collector,
     schedules_collector,
     sessions_collector,
@@ -23,6 +24,7 @@ from julius.aws import (
     touches_collector,
 )
 from julius.aws.collection_health import CollectionRecorder, RequiredCollectionError
+from julius.config import DEFAULT_CONFIG, Config
 from julius.inventory.model import Account
 
 
@@ -36,6 +38,7 @@ def collect_account(
     athena_output: str | None = None,
     include_cloudtrail: bool = False,
     datawarm_job: str = "",
+    config: Config = DEFAULT_CONFIG,
 ) -> Account:
     health = CollectionRecorder()
     region = session.region_name or "us-east-1"
@@ -87,6 +90,7 @@ def collect_account(
         impact="sem inventário de jobs o scan Glue não é confiável",
         next_action="validar glue:GetJobs e glue:GetJobRuns",
     )
+    jobs_collection_complete = health.entries[-1].status == "ok"
     health.unavailable(
         "Glue Scripts",
         category="separate_stage_required",
@@ -215,6 +219,24 @@ def collect_account(
         data_through=_latest_data_through,
         impact="ociosidade e capacidade de sessões não são avaliadas",
         next_action="validar glue:ListSessions e glue:ListStatements",
+    )
+    # Custo Glue real por usage type, rateado pelo consumo já coletado.
+    # Depende de jobs, crawlers, sessions e DataBrew estarem no inventário.
+    account.glue_cost_coverage = health.capture(
+        "Glue Cost Explorer",
+        lambda: glue_cost.allocate_costs(
+            account,
+            glue_cost.collect_glue_costs(session.client("ce")),
+            config,
+            jobs_collection_complete=jobs_collection_complete,
+        ),
+        None,
+        count=lambda coverage: 1 if coverage and coverage.buckets else 0,
+        # Só é esperado haver cobrança quando existe job para atribuir.
+        expected=1 if account.glue_jobs else 0,
+        data_through=lambda coverage: coverage.data_through if coverage else "",
+        impact="custo Glue permanece modelado por tarifa, sem âncora na fatura",
+        next_action="validar ce:GetCostAndUsage com GroupBy USAGE_TYPE",
     )
     # Athena: coleta descritiva dos últimos 30 dias completos (UTC), read-only.
     athena_analysis = health.capture(

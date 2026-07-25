@@ -58,7 +58,9 @@ def build_process_costs(
 
     crawler_roots = _roots_by_crawler(account)
     for crawler in account.glue_crawlers:
-        crawler_rate = config.pricing.glue_dpu_hour
+        crawler_rate = _rate_from_allocation(
+            crawler.allocated_cost, crawler.dpu_hours_mtd
+        ) or config.pricing.glue_dpu_hour
         crawler_factor = _forecast_factor(
             crawler.cost_data_through or today.isoformat(), today
         )
@@ -100,19 +102,14 @@ def build_process_costs(
         session_factor = _forecast_factor(
             session.cost_data_through or today.isoformat(), today
         )
+        session_rate = _rate_from_allocation(
+            session.allocated_cost, session.dpu_hours
+        ) or config.pricing.glue_dpu_hour
         row.actual_dpu_hours += session.actual_dpu_hours_mtd
         row.estimated_dpu_hours += session.estimated_dpu_hours_mtd
-        row.actual_cost_mtd += (
-            session.actual_dpu_hours_mtd * config.pricing.glue_dpu_hour
-        )
-        row.estimated_cost_mtd += (
-            session.estimated_dpu_hours_mtd * config.pricing.glue_dpu_hour
-        )
-        row.forecast_cost_eom += (
-            session.dpu_hours
-            * config.pricing.glue_dpu_hour
-            * session_factor
-        )
+        row.actual_cost_mtd += session.actual_dpu_hours_mtd * session_rate
+        row.estimated_cost_mtd += session.estimated_dpu_hours_mtd * session_rate
+        row.forecast_cost_eom += session.dpu_hours * session_rate * session_factor
         row.component_names.append(session.session_id)
 
     for job in account.databrew_jobs:
@@ -128,13 +125,12 @@ def build_process_costs(
             today.isoformat(),
         )
         _inherit_owner(row, account, "databrew_job", job.name)
-        row.estimated_cost_mtd += (
-            job.estimated_node_hours_mtd * config.pricing.databrew_node_hour
-        )
+        databrew_rate = _rate_from_allocation(
+            job.allocated_cost, job.estimated_node_hours_mtd
+        ) or config.pricing.databrew_node_hour
+        row.estimated_cost_mtd += job.estimated_node_hours_mtd * databrew_rate
         row.forecast_cost_eom += (
-            job.estimated_node_hours_mtd
-            * config.pricing.databrew_node_hour
-            * databrew_factor
+            job.estimated_node_hours_mtd * databrew_rate * databrew_factor
         )
         row.component_names.append(job.name)
 
@@ -382,9 +378,22 @@ def _forecast_factor(data_through: str, today: date) -> float:
 
 
 def _job_rate(job, config: Config) -> float:
-    if job.capacity_unit == "M-DPU":
-        return config.pricing.glue_ray_mdpu_hour
-    return config.pricing.glue_rate(job.execution_class)
+    return _rate_from_allocation(job.allocated_cost, job.total_dpu_hours_mtd) or (
+        config.pricing.glue_ray_mdpu_hour
+        if job.capacity_unit == "M-DPU"
+        else config.pricing.glue_rate(job.execution_class)
+    )
+
+
+def _rate_from_allocation(allocated: float | None, consumption: float) -> float | None:
+    """Tarifa implícita na cobrança rateada; `None` mantém a tarifa de tabela.
+
+    Usar a tarifa observada faz o custo por processo somar exatamente o custo
+    alocado do Cost Explorer, sem duplicar a lógica de rateio aqui.
+    """
+    if allocated is None or consumption <= 0:
+        return None
+    return allocated / consumption
 
 
 def _account_date(account: Account) -> date:

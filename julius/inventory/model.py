@@ -6,7 +6,7 @@ import calendar
 from dataclasses import dataclass, field
 from datetime import date
 
-from julius.config import DPU_PER_WORKER
+from julius.config import DPU_PER_WORKER, UNATTRIBUTED_GLUE_BUCKETS
 
 
 @dataclass
@@ -63,6 +63,10 @@ class GlueJob:
     estimated_dpu_hours_mtd: float = 0.0
     current_month_runs: int = 0
     cost_data_through: str = ""
+    # Custo alocado por rateio da cobrança real do bucket no Cost Explorer.
+    # Nunca é fatura por job: o CE não expõe dimensão de recurso para Glue.
+    allocated_cost: float | None = None
+    cost_quality: str = "unavailable"
     trigger_names: list[str] = field(default_factory=list)
     run_ids_mtd: list[str] = field(default_factory=list)
     observed_runs: int = 0
@@ -155,6 +159,8 @@ class InteractiveSession:
     dpu_seconds_mtd: float | None = None
     estimated_dpu_hours_mtd: float = 0.0
     cost_data_through: str = ""
+    allocated_cost: float | None = None
+    cost_quality: str = "unavailable"
     last_activity_at: str = ""
     activity_evidence: bool = False
     statement_ids: list[str] = field(default_factory=list)
@@ -195,6 +201,8 @@ class GlueCrawler:
     crawl_ids_mtd: list[str] = field(default_factory=list)
     expected_runs_monthly: float | None = None
     cost_data_through: str = ""
+    allocated_cost: float | None = None
+    cost_quality: str = "unavailable"
     recrawl_behavior: str = "CRAWL_EVERYTHING"
 
 
@@ -227,6 +235,8 @@ class DataBrewJob:
     run_ids_mtd: list[str] = field(default_factory=list)
     expected_runs_monthly: float | None = None
     cost_data_through: str = ""
+    allocated_cost: float | None = None
+    cost_quality: str = "unavailable"
 
 
 @dataclass
@@ -370,6 +380,40 @@ class AthenaCoverage:
     net_cost: float | None = None
     currency: str = "USD"
     gaps: list[str] = field(default_factory=list)
+
+
+@dataclass
+class GlueCostCoverage:
+    """Cobertura da alocação do custo Glue vindo do Cost Explorer.
+
+    O Cost Explorer não expõe dimensão de recurso para Glue: a cobrança real
+    chega por `USAGE_TYPE`. O custo por job é rateio dessa cobrança pelas
+    DPU-horas coletadas, nunca fatura por job.
+    """
+
+    period_start: str = ""
+    data_through: str = ""
+    cost_metric: str = ""
+    currency: str = "USD"
+    net_cost: float | None = None
+    buckets: dict[str, float] = field(default_factory=dict)
+    unknown_usage_types: list[str] = field(default_factory=list)
+    cost_quality: str = "unavailable"
+    modeled_ratio: float | None = None
+    allocation_version: str = ""
+    gaps: list[str] = field(default_factory=list)
+
+    @property
+    def unattributed_cost(self) -> float:
+        """Buckets que não são rateados a nenhum ativo coletado."""
+        return round(
+            sum(
+                value
+                for name, value in self.buckets.items()
+                if name in UNATTRIBUTED_GLUE_BUCKETS
+            ),
+            2,
+        )
 
 
 @dataclass
@@ -556,6 +600,7 @@ class Account:
     currency: str = "USD"
     athena_coverage: AthenaCoverage | None = None
     athena_actor_usage: list[AthenaActorUsage] = field(default_factory=list)
+    glue_cost_coverage: GlueCostCoverage | None = None
 
     def job_by_name(self, name: str | None) -> GlueJob | None:
         if not name:

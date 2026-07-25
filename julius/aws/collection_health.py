@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from time import perf_counter
 from typing import Callable, TypeVar
 
+from julius.estimation.currency import UnsupportedCurrencyError
 from julius.inventory.model import CollectionHealth
 
 T = TypeVar("T")
@@ -121,6 +122,8 @@ class CollectionRecorder:
 
 def error_category(exc: Exception) -> str:
     """Mapeia exceções para categorias estáveis sem persistir mensagens."""
+    if isinstance(exc, UnsupportedCurrencyError):
+        return "unsupported_currency"
     response = getattr(exc, "response", None)
     code = ""
     if isinstance(response, dict):

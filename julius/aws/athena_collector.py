@@ -16,6 +16,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import Any, Iterable
 
+from julius.estimation.currency import non_usd_gap, usd_amount
 from julius.inventory.model import AthenaActorUsage, AthenaCoverage, AthenaQuery
 
 try:
@@ -765,6 +766,7 @@ def _reconcile_cloudwatch(coverage, client, workgroups, start, end):
 
 
 def _costs(client, start, end, gaps):
+    """Custo Athena diário em USD, a única moeda aceita."""
     if client is None:
         gaps.append("Cost Explorer não coletado")
         return {}, "", "USD", False
@@ -778,7 +780,6 @@ def _costs(client, start, end, gaps):
                 GroupBy=[{"Type": "DIMENSION", "Key": "USAGE_TYPE"}],
             )
             daily: dict[str, float] = {}
-            currency = "USD"
             isolated = True
             for period in response.get("ResultsByTime", []):
                 amount = 0.0
@@ -789,10 +790,13 @@ def _costs(client, start, end, gaps):
                         continue
                     if usage and not any(term in usage for term in ("bytes", "tb", "data", "query")):
                         isolated = False
-                    amount += float(value.get("Amount") or 0)
-                    currency = value.get("Unit") or currency
+                    reported = usd_amount(value.get("Amount"), value.get("Unit"))
+                    if reported is None:
+                        gaps.append(non_usd_gap(value.get("Unit")))
+                        return {}, "", str(value.get("Unit") or "USD"), False
+                    amount += reported
                 daily[period["TimePeriod"]["Start"]] = amount
-            return daily, metric, currency, isolated
+            return daily, metric, "USD", isolated
         except Exception as exc:
             gaps.append(f"Cost Explorer {metric}: {type(exc).__name__}")
     return {}, "", "USD", False

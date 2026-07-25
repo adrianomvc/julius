@@ -216,6 +216,28 @@
       </div>
     </div>
 
+    {% if r.glue_cost %}
+    <div style="margin-top:18px;border:1px solid #e2e4dc;border-radius:12px;overflow:hidden;">
+      <div style="display:flex;gap:22px;flex-wrap:wrap;padding:11px 16px;background:#f3f4ee;font-size:11.5px;color:#3a3f46;">
+        <span>cobrança Glue por usage type: <b>{{ r.glue_cost.cost_fmt }}</b></span>
+        <span>qualidade: <b>{{ r.glue_cost.cost_quality }}</b></span>
+        <span>métrica: <b>{{ r.glue_cost.cost_metric }}</b></span>
+        <span>consumo modelado / cobrança: <b>{{ r.glue_cost.ratio }}</b></span>
+        <span>sem rateio: <b>{{ r.glue_cost.unattributed_fmt }}</b></span>
+        <span class="mono" style="color:#8a9082;">{{ r.glue_cost.window }}</span>
+      </div>
+      {% for b in r.glue_cost.buckets %}
+      <div style="display:grid;grid-template-columns:1fr 120px;padding:9px 16px;border-top:1px solid #edeee8;align-items:center;">
+        <div class="mono" style="font-size:12px;color:#3a3f46;">{{ b.name }}</div>
+        <div class="mono" style="text-align:right;font-size:12px;">{{ b.cost_fmt }}</div>
+      </div>
+      {% endfor %}
+      <div class="mono" style="padding:9px 16px;border-top:1px solid #edeee8;font-size:10.5px;color:#8a9082;">O Cost Explorer não expõe dimensão de recurso para Glue: o custo por job é rateio desta cobrança pelas DPU-horas coletadas, não fatura por job.</div>
+      {% if r.glue_cost.unknown_usage_types %}<div style="padding:9px 16px;border-top:1px solid #edeee8;font-size:11.5px;color:#a07326;"><b>Usage types não classificados:</b> {{ r.glue_cost.unknown_usage_types | join(", ") }}</div>{% endif %}
+      {% if r.glue_cost.gaps %}<div style="padding:9px 16px;border-top:1px solid #edeee8;font-size:11.5px;color:#a07326;"><b>Lacunas:</b> {{ r.glue_cost.gaps | join("; ") }}</div>{% endif %}
+    </div>
+    {% endif %}
+
     {% if r.process_costs %}
     <div style="margin-top:18px;border:1px solid #e2e4dc;border-radius:12px;overflow:hidden;">
       <div style="display:grid;grid-template-columns:1.4fr 1fr 96px 96px 90px;padding:11px 16px;background:#f3f4ee;font-size:10.5px;text-transform:uppercase;letter-spacing:.07em;font-weight:600;color:#7c8374;">

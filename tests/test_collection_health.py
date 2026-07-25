@@ -13,7 +13,7 @@ from julius.aws.collection_health import (
 )
 from julius.ingest.dump import account_to_dataset
 from julius.ingest.loader import load_account
-from julius.inventory.model import Account, CollectionHealth
+from julius.inventory.model import Account, CollectionHealth, GlueJob
 from julius.pipeline import analyze
 from julius.report import renderer
 
@@ -133,7 +133,29 @@ def test_collect_account_records_sources_and_optional_disabled_do_not_degrade(
     assert by_source["Spark Event Logs"].error_category == "not_configured"
     assert by_source["Table Touches"].affects_status is False
     assert by_source["CloudTrail Ownership"].affects_status is False
+    # Sem job coletado não há custo Glue a atribuir; a fonte não degrada o scan.
+    assert by_source["Glue Cost Explorer"].status == "ok"
     assert account.collection_status == "ok"
+
+
+def test_missing_glue_billing_degrades_the_scan_when_there_are_jobs(monkeypatch):
+    _patch_empty_collectors(monkeypatch)
+    monkeypatch.setattr(
+        collect_module.glue_collector,
+        "collect_jobs",
+        lambda *_a, **_k: [GlueJob(name="etl", worker_type="G.1X", number_of_workers=2)],
+    )
+    account = collect_module.collect_account(FakeSession())
+
+    billing = next(
+        item
+        for item in account.collection_health
+        if item.source == "Glue Cost Explorer"
+    )
+    assert billing.status == "unavailable"
+    assert billing.error_category == "no_data"
+    assert "modelado por tarifa" in billing.impact
+    assert account.collection_status == "partial"
 
 
 def test_optional_failure_marks_scan_partial_and_glue_failure_blocks(monkeypatch):
