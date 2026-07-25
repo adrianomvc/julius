@@ -19,7 +19,12 @@ from julius.collection.models import (
 )
 from julius.collection.normalizers.loader import load_account
 from julius.collection.window import AnalysisWindow
-from julius.config import DATASET_SCHEMA_VERSION, DEFAULT_CONFIG
+from julius.config import (
+    ALLOCATED_GLUE_BUCKETS,
+    DATASET_SCHEMA_VERSION,
+    DEFAULT_CONFIG,
+    GLUE_USAGE_TYPE_MARKERS,
+)
 from julius.estimation import glue as glue_est
 from julius.estimation.process_cost import build_process_costs
 from julius.pipeline import analyze_account
@@ -98,7 +103,7 @@ def _job(name: str, dpu_hours: float, **kwargs) -> GlueJob:
     ],
 )
 def test_usage_types_are_classified_by_versioned_markers(usage_type, bucket):
-    assert glue_cost.classify_usage_type(usage_type) == bucket
+    assert glue_cost.classify_usage_type(usage_type, GLUE_USAGE_TYPE_MARKERS) == bucket
 
 
 def test_collection_keeps_unknown_usage_types_visible():
@@ -108,7 +113,7 @@ def test_collection_keeps_unknown_usage_types_visible():
             ("SAE1-Glue-TabelaNova", 7, "USD"),
         ]
     )
-    coverage = glue_cost.collect_glue_costs(ce, window=WINDOW)
+    coverage = glue_cost.collect_glue_costs(ce, window=WINDOW, markers=GLUE_USAGE_TYPE_MARKERS)
 
     assert coverage.buckets == {"etl_job": 440.0, "other": 7.0}
     # Usage type desconhecido nunca é descartado em silêncio.
@@ -126,7 +131,7 @@ def test_collection_falls_back_to_unblended_and_records_the_metric():
         [("SAE1-Glue-ETL-DPU-Hour", 100, "USD")],
         fail_metrics={"NetUnblendedCost"},
     )
-    coverage = glue_cost.collect_glue_costs(ce, window=WINDOW)
+    coverage = glue_cost.collect_glue_costs(ce, window=WINDOW, markers=GLUE_USAGE_TYPE_MARKERS)
 
     assert coverage.cost_metric == "UnblendedCost"
     assert any("NetUnblendedCost" in gap for gap in coverage.gaps)
@@ -156,7 +161,10 @@ def test_allocation_splits_each_bucket_by_measured_consumption():
         ]
     )
     coverage = glue_cost.allocate_costs(
-        account, glue_cost.collect_glue_costs(ce, window=WINDOW), DEFAULT_CONFIG
+        account,
+        glue_cost.collect_glue_costs(ce, window=WINDOW, markers=GLUE_USAGE_TYPE_MARKERS),
+        DEFAULT_CONFIG,
+        allocatable_buckets=ALLOCATED_GLUE_BUCKETS,
     )
 
     by_name = {job.name: job.allocated_cost for job in account.glue_jobs}
@@ -179,7 +187,10 @@ def test_quality_is_partial_when_runs_did_not_report_dpu_seconds():
     ce = FakeCE([("SAE1-Glue-ETL-DPU-Hour", 440, "USD")])
 
     coverage = glue_cost.allocate_costs(
-        account, glue_cost.collect_glue_costs(ce, window=WINDOW), DEFAULT_CONFIG
+        account,
+        glue_cost.collect_glue_costs(ce, window=WINDOW, markers=GLUE_USAGE_TYPE_MARKERS),
+        DEFAULT_CONFIG,
+        allocatable_buckets=ALLOCATED_GLUE_BUCKETS,
     )
 
     assert coverage.cost_quality == "partial"
@@ -195,7 +206,7 @@ def test_quality_is_partial_when_the_job_inventory_is_incomplete():
 
     coverage = glue_cost.allocate_costs(
         account,
-        glue_cost.collect_glue_costs(ce, window=WINDOW),
+        glue_cost.collect_glue_costs(ce, window=WINDOW, markers=GLUE_USAGE_TYPE_MARKERS),
         DEFAULT_CONFIG,
         jobs_collection_complete=False,
     )
@@ -210,7 +221,10 @@ def test_quality_is_partial_when_consumption_diverges_from_the_billing():
     ce = FakeCE([("SAE1-Glue-ETL-DPU-Hour", 900, "USD")])
 
     coverage = glue_cost.allocate_costs(
-        account, glue_cost.collect_glue_costs(ce, window=WINDOW), DEFAULT_CONFIG
+        account,
+        glue_cost.collect_glue_costs(ce, window=WINDOW, markers=GLUE_USAGE_TYPE_MARKERS),
+        DEFAULT_CONFIG,
+        allocatable_buckets=ALLOCATED_GLUE_BUCKETS,
     )
 
     assert coverage.cost_quality == "partial"
@@ -228,7 +242,10 @@ def test_bucket_without_collected_consumption_is_reported_not_distributed():
     )
 
     coverage = glue_cost.allocate_costs(
-        account, glue_cost.collect_glue_costs(ce, window=WINDOW), DEFAULT_CONFIG
+        account,
+        glue_cost.collect_glue_costs(ce, window=WINDOW, markers=GLUE_USAGE_TYPE_MARKERS),
+        DEFAULT_CONFIG,
+        allocatable_buckets=ALLOCATED_GLUE_BUCKETS,
     )
 
     assert any("bucket crawler cobrado sem consumo" in gap for gap in coverage.gaps)
@@ -246,7 +263,10 @@ def test_catalog_and_unknown_costs_stay_unattributed():
     account = _account(jobs=[_job("etl", 1000)])
 
     coverage = glue_cost.allocate_costs(
-        account, glue_cost.collect_glue_costs(ce, window=WINDOW), DEFAULT_CONFIG
+        account,
+        glue_cost.collect_glue_costs(ce, window=WINDOW, markers=GLUE_USAGE_TYPE_MARKERS),
+        DEFAULT_CONFIG,
+        allocatable_buckets=ALLOCATED_GLUE_BUCKETS,
     )
 
     # Catálogo, data quality e o usage type desconhecido não têm ativo a que
@@ -259,7 +279,7 @@ def test_nothing_is_attributed_before_allocation_runs():
     """A cobrança só deixa de ser 'não atribuída' quando alguém a atribui."""
     ce = FakeCE([("SAE1-Glue-ETL-DPU-Hour", 440, "USD")])
 
-    coverage = glue_cost.collect_glue_costs(ce, window=WINDOW)
+    coverage = glue_cost.collect_glue_costs(ce, window=WINDOW, markers=GLUE_USAGE_TYPE_MARKERS)
 
     assert coverage.allocated_buckets == []
     assert coverage.unattributed_cost == pytest.approx(440.0)
@@ -268,7 +288,7 @@ def test_nothing_is_attributed_before_allocation_runs():
 def test_billing_outside_usd_becomes_a_gap_instead_of_a_converted_number():
     """A AWS reporta custo em USD; outra moeda é anomalia, não conversão."""
     ce = FakeCE([("SAE1-Glue-ETL-DPU-Hour", 543, "BRL")])
-    coverage = glue_cost.collect_glue_costs(ce, window=WINDOW)
+    coverage = glue_cost.collect_glue_costs(ce, window=WINDOW, markers=GLUE_USAGE_TYPE_MARKERS)
 
     assert coverage.buckets == {}
     assert coverage.net_cost is None
@@ -283,7 +303,7 @@ def test_zero_cost_group_is_accepted_whatever_the_reported_unit():
             ("SAE1-Glue-Sem-Cobranca", 0, "N/A"),
         ]
     )
-    coverage = glue_cost.collect_glue_costs(ce, window=WINDOW)
+    coverage = glue_cost.collect_glue_costs(ce, window=WINDOW, markers=GLUE_USAGE_TYPE_MARKERS)
 
     # Zero não tem moeda: uma unidade estranha em grupo zerado não bloqueia.
     assert coverage.buckets["etl_job"] == pytest.approx(440.0)
@@ -322,7 +342,10 @@ def test_process_costs_sum_to_the_allocated_billing():
     account = _account(jobs=[_job("a", 750), _job("b", 250)])
     ce = FakeCE([("SAE1-Glue-ETL-DPU-Hour", 440, "USD")])
     glue_cost.allocate_costs(
-        account, glue_cost.collect_glue_costs(ce, window=WINDOW), DEFAULT_CONFIG
+        account,
+        glue_cost.collect_glue_costs(ce, window=WINDOW, markers=GLUE_USAGE_TYPE_MARKERS),
+        DEFAULT_CONFIG,
+        allocatable_buckets=ALLOCATED_GLUE_BUCKETS,
     )
 
     rows = build_process_costs(account, DEFAULT_CONFIG, today=TODAY)
@@ -340,7 +363,10 @@ def test_report_shows_the_glue_cost_quality_and_the_unattributed_buckets():
         ]
     )
     account.glue_cost_coverage = glue_cost.allocate_costs(
-        account, glue_cost.collect_glue_costs(ce, window=WINDOW), DEFAULT_CONFIG
+        account,
+        glue_cost.collect_glue_costs(ce, window=WINDOW, markers=GLUE_USAGE_TYPE_MARKERS),
+        DEFAULT_CONFIG,
+        allocatable_buckets=ALLOCATED_GLUE_BUCKETS,
     )
     account.services = [
         ServiceCost(

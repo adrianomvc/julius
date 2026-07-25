@@ -12,7 +12,7 @@ jobs, e o grafo de processos precisa dos schedules.
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -38,7 +38,6 @@ from julius.collection.collectors.glue import (
 from julius.collection.health import CollectionRecorder
 from julius.collection.models import Account, CollectionHealth
 from julius.collection.window import AnalysisWindow, BillingMonth
-from julius.config import Config
 
 
 @dataclass
@@ -49,7 +48,13 @@ class CollectionContext:
     window: AnalysisWindow
     billing: BillingMonth
     account: Account
-    config: Config
+    # Deliberadamente sem tipo: a coleta lê atributos nomeados da configuração
+    # e da taxonomia de domínio, mas não conhece as classes que os definem —
+    # é assim que a seta continua apontando só para baixo.
+    config: Any
+    glue_usage_markers: Sequence[tuple[str, str]] = ()
+    allocatable_glue_buckets: frozenset[str] = frozenset()
+    glue_cost_version: str = ""
     touches_table: str = ""
     athena_workgroup: str = "julius"
     athena_output: str | None = None
@@ -353,8 +358,14 @@ SOURCES: tuple[Source, ...] = (
         name="Glue Cost Explorer",
         collect=lambda ctx: glue_cost.allocate_costs(
             ctx.account,
-            glue_cost.collect_glue_costs(ctx.client("ce"), window=ctx.window),
+            glue_cost.collect_glue_costs(
+                ctx.client("ce"),
+                window=ctx.window,
+                markers=ctx.glue_usage_markers,
+                version=ctx.glue_cost_version,
+            ),
             ctx.config,
+            allocatable_buckets=ctx.allocatable_glue_buckets,
             jobs_collection_complete=ctx.flags.get("jobs_collection_complete", False),
         ),
         into="glue_cost_coverage",

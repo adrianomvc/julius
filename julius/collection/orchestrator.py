@@ -8,6 +8,7 @@ identidade e percorre `SOURCES`. Fonte nova é uma linha de dado em
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Any
 
 import boto3
 
@@ -16,12 +17,12 @@ from julius.collection.models import Account
 from julius.collection.settings import ANALYSIS_WINDOW_DAYS
 from julius.collection.sources import SOURCES, CollectionContext, run
 from julius.collection.window import AnalysisWindow, BillingMonth
-from julius.config import DEFAULT_CONFIG, Config
 
 
 def collect_account(
     session: boto3.Session,
     *,
+    config: Any,
     account_id: str | None = None,
     lookback_days: int = ANALYSIS_WINDOW_DAYS,
     touches_table: str = "",
@@ -29,9 +30,14 @@ def collect_account(
     athena_output: str | None = None,
     include_cloudtrail: bool = False,
     datawarm_job: str = "",
-    config: Config = DEFAULT_CONFIG,
     now: datetime | None = None,
 ) -> Account:
+    """Coleta uma conta. `config` chega de cima e não tem default aqui.
+
+    A camada de coleta não conhece a classe de configuração nem as tabelas de
+    domínio que ela carrega: recebe o objeto, lê atributos nomeados e repassa.
+    É o que mantém a seta apontando só para baixo.
+    """
     health = CollectionRecorder()
     # Duas janelas, construídas uma vez, ambas em UTC. Nenhum coletor volta a
     # decidir sozinho qual período está olhando.
@@ -60,6 +66,9 @@ def collect_account(
         athena_output=athena_output,
         include_cloudtrail=include_cloudtrail,
         datawarm_job=datawarm_job,
+        glue_usage_markers=config.glue_cost.usage_type_markers,
+        allocatable_glue_buckets=config.glue_cost.allocatable_buckets,
+        glue_cost_version=config.glue_cost.version,
     )
 
     for source in SOURCES:

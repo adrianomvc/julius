@@ -30,7 +30,7 @@ from julius.collection.targets import (
     verify_account_targets,
     write_verified_accounts,
 )
-from julius.config import ANALYSIS_WINDOW_DAYS
+from julius.config import ANALYSIS_WINDOW_DAYS, DEFAULT_CONFIG
 from julius.metrics import compute_kpis
 from julius.notification import (
     NotificationPolicy,
@@ -539,6 +539,7 @@ def collect(
     try:
         account = collect_account(
             session,
+            config=DEFAULT_CONFIG,
             lookback_days=lookback_days,
             touches_table=touches_table,
             athena_workgroup=athena_workgroup,

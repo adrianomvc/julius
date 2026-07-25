@@ -22,9 +22,8 @@ import pathlib
 
 ROOT = pathlib.Path(__file__).resolve().parents[1] / "julius"
 
-# `config` ainda mistura parâmetros de coleta com preços e limiares de domínio,
-# e os módulos de topo compõem tudo por natureza. A separação de `config` é a
-# fase 3; esta lista encolhe junto com ela.
+# `config` virou ponto de composição na fase 3: importa de baixo e ninguém de
+# baixo importa dele. Os módulos de topo compõem tudo por natureza.
 NEUTRAL = {"config", "pipeline", "portfolio", "cli"}
 
 # Acoplamentos cruzados que existem hoje entre as camadas de cima. Cada um é uma
@@ -87,6 +86,33 @@ def _reaching_up_from(package: str) -> list[str]:
 def test_collection_depends_on_nothing_above_it():
     """A camada base não conhece estimativa, detecção, relatório nem agente."""
     assert _reaching_up_from("collection") == []
+
+
+def test_collection_does_not_even_import_the_composition_root():
+    """Nem `config`: a coleta recebe configuração, não a busca.
+
+    A taxonomia de cobrança Glue é conhecimento de domínio de que a coleta
+    precisa. Ela chega pelo objeto de configuração, montado acima das duas
+    camadas — importá-la aqui reintroduziria a seta para cima com outro nome.
+    """
+    importers = [
+        path.relative_to(ROOT.parent).as_posix()
+        for path in sorted((ROOT / "collection").rglob("*.py"))
+        if "config" in _imported_packages(path)
+    ]
+    assert importers == []
+
+
+def test_knowledge_only_reads_the_inventory():
+    """Conhecimento lê o modelo coletado; nunca chama coletor nem relatório."""
+    allowed = {"collection"}
+    offenders = [
+        f"{path.relative_to(ROOT.parent).as_posix()} -> julius.{imported}"
+        for path in sorted((ROOT / "knowledge").rglob("*.py"))
+        for imported in sorted(_imported_packages(path))
+        if imported not in allowed | {"knowledge"} | NEUTRAL
+    ]
+    assert offenders == []
 
 
 def test_no_new_cross_layer_coupling():

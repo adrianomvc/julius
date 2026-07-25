@@ -15,7 +15,12 @@ from julius.collection.collectors.glue import jobs as glue_collector
 from julius.collection.models import Account, AthenaCoverage, AthenaQuery
 from julius.collection.normalizers.loader import UnsupportedDatasetVersionError, load_account
 from julius.collection.window import AnalysisWindow, BillingMonth
-from julius.config import DATASET_SCHEMA_VERSION, DEFAULT_CONFIG, MIN_DAYS_FOR_FORECAST
+from julius.config import (
+    DATASET_SCHEMA_VERSION,
+    DEFAULT_CONFIG,
+    GLUE_USAGE_TYPE_MARKERS,
+    MIN_DAYS_FOR_FORECAST,
+)
 from julius.opportunities.detectors import athena as athena_detector
 
 # 22h de Brasília no último dia de julho já é 1º de agosto em UTC. Era esse o
@@ -61,7 +66,9 @@ def test_glue_and_athena_costs_cover_the_same_days():
     glue_client = _RecordingCostExplorer()
     athena_client = _RecordingCostExplorer()
 
-    glue_cost.collect_glue_costs(glue_client, window=window)
+    glue_cost.collect_glue_costs(
+        glue_client, window=window, markers=GLUE_USAGE_TYPE_MARKERS
+    )
     athena_cost.costs(
         athena_client,
         window.start,
