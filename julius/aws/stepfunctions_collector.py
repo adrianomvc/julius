@@ -6,7 +6,6 @@ import json
 from datetime import datetime, timezone
 
 from julius.aws.window import AnalysisWindow
-
 from julius.inventory.model import StateMachine
 
 

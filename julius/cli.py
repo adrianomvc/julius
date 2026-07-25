@@ -10,7 +10,6 @@ from pathlib import Path
 
 import typer
 
-from julius.config import ANALYSIS_WINDOW_DAYS
 from julius.agent import (
     AgentOutputError,
     load_agent_context,
@@ -18,19 +17,21 @@ from julius.agent import (
     validate_result_file,
     write_validated_result,
 )
-from julius.aws.session import make_session
 from julius.aws.account_targets import (
     AccountTargetError,
     load_account_targets,
     verify_account_targets,
     write_verified_accounts,
 )
+from julius.aws.session import make_session
 from julius.aws.technical_artifacts import (
     IdentityMismatchError,
     collect_technical_artifacts,
     write_artifact_bundle,
 )
+from julius.config import ANALYSIS_WINDOW_DAYS
 from julius.ingest import load_account
+from julius.metrics import compute_kpis
 from julius.notification import (
     NotificationPolicy,
     NotificationService,
@@ -40,7 +41,6 @@ from julius.notification import (
     load_settings,
 )
 from julius.notification.transports import DryRunTransport, SmtpTransport
-from julius.metrics import compute_kpis
 from julius.opportunities.lifecycle import can_transition
 from julius.pipeline import analyze
 from julius.portfolio import analyze_portfolio, discover_inputs

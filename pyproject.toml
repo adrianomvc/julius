@@ -12,7 +12,7 @@ dependencies = [
 
 [project.optional-dependencies]
 aws = ["boto3>=1.34"]
-dev = ["pytest>=8", "moto>=5"]
+dev = ["pytest>=8", "moto>=5", "ruff>=0.16", "mypy>=1.11"]
 
 [project.scripts]
 julius = "julius.cli:app"
@@ -26,3 +26,49 @@ include = ["julius*"]
 
 [tool.setuptools.package-data]
 "julius.report" = ["templates/*.j2", "assets/*.png"]
+
+# A reestruturação move ~14 mil linhas entre pacotes. A suíte pega o que executa;
+# lint e tipos pegam o que existe — import morto, assinatura trocada e atributo
+# removido em arquivo que nenhum teste toca.
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+extend-exclude = [".worktrees", "data", "design"]
+
+[tool.ruff.lint]
+select = [
+    "F",    # pyflakes: import morto, variável não usada, f-string sem placeholder
+    "E9",   # erros de sintaxe e de runtime
+    "I",    # ordenação de imports — a fase de movimentação vive disso
+    "UP",   # sintaxe moderna coerente com requires-python
+    "B",    # bugbear: armadilhas comuns (default mutável, except amplo)
+    "TID",  # import relativo fora do padrão do projeto
+]
+ignore = [
+    "B008",   # typer declara opções como default de chamada; é o idioma da lib
+    "UP017",  # `datetime.UTC` sobre `timezone.utc`: 51 trocas mecânicas sem
+              # ganho, logo antes de mover 14 mil linhas entre pacotes
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Os testes montam fixtures grandes e importam sob demanda.
+"tests/*" = ["B011"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["julius"]
+
+# Modo permissivo por enquanto: o objetivo é pegar assinatura trocada durante a
+# movimentação, não converter o projeto a tipagem estrita de uma vez. O rigor
+# sobe por módulo, começando por onde os tipos carregam significado.
+[tool.mypy]
+python_version = "3.11"
+ignore_missing_imports = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+no_implicit_optional = true
+exclude = "(^|/)(\\.worktrees|data|design)/"
+
+[[tool.mypy.overrides]]
+module = ["julius.inventory.model", "julius.aws.window", "julius.opportunities.base"]
+disallow_untyped_defs = true
+check_untyped_defs = true

@@ -3,10 +3,8 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
 
 from julius.aws.window import AnalysisWindow
-
 from julius.inventory.model import ActorEvent
 
 _EVENT_TYPES = {

@@ -18,6 +18,7 @@ from julius.aws import (
     spark_event_logs_collector,
 )
 from julius.aws.schedule_frequency import expected_runs_per_month
+from julius.aws.window import AnalysisWindow
 from julius.config import DEFAULT_CONFIG
 from julius.estimation.process_cost import (
     apply_conservative_caps,
@@ -32,10 +33,9 @@ from julius.inventory.model import (
     Schedule,
     StateMachine,
 )
-from julius.opportunities.base import Estimation, Opportunity
 from julius.opportunities import prioritizer
+from julius.opportunities.base import Estimation, Opportunity
 from julius.opportunities.detectors import glue as glue_detector
-from julius.aws.window import AnalysisWindow
 
 
 def _glue_client():

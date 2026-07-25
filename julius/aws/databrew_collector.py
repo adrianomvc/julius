@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
+from julius.aws.schedule_frequency import expected_runs_per_month
 from julius.aws.window import AnalysisWindow
 from julius.inventory.model import DataBrewJob
-from julius.aws.schedule_frequency import expected_runs_per_month
 
 
 def collect_jobs(databrew_client, *, window: AnalysisWindow) -> list[DataBrewJob]:

@@ -9,7 +9,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from julius.config import Config, DEFAULT_CONFIG
+from julius.config import DEFAULT_CONFIG, Config
 from julius.pipeline import Analysis, analyze
 from julius.state import BacklogStore, HistoryStore
 

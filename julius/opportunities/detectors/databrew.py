@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-
 from julius.config import Config
 from julius.inventory.model import Account
 from julius.opportunities.base import Estimation, Opportunity

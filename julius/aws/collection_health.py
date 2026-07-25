@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import datetime, timezone
 from time import perf_counter
-from typing import Callable, TypeVar
+from typing import TypeVar
 
 from julius.estimation.currency import UnsupportedCurrencyError
 from julius.inventory.model import CollectionHealth

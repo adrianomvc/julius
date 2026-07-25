@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date, datetime, timezone
+from datetime import datetime, timezone
 
 import boto3
 import pytest
@@ -17,9 +17,9 @@ from julius.aws import (
     stepfunctions_collector,
     touches_collector,
 )
+from julius.aws.window import AnalysisWindow, BillingMonth
 from julius.estimation.currency import UnsupportedCurrencyError
 from julius.inventory.model import Account, GlueJob, Table
-from julius.aws.window import AnalysisWindow, BillingMonth
 
 
 def _client(service: str):

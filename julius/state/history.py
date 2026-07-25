@@ -493,7 +493,9 @@ class HistoryStore:
             [account, row[0]],
         )
         columns = [item[0] for item in cursor.description]
-        return [dict(zip(columns, values)) for values in cursor.fetchall()]
+        return [
+            dict(zip(columns, values, strict=True)) for values in cursor.fetchall()
+        ]
 
     def record_diff_events(self, scan_id: str, events: list[DiffEvent]) -> None:
         if not events:
@@ -635,7 +637,9 @@ class HistoryStore:
             [account, limit],
         )
         columns = [item[0] for item in cursor.description]
-        return [dict(zip(columns, values)) for values in cursor.fetchall()]
+        return [
+            dict(zip(columns, values, strict=True)) for values in cursor.fetchall()
+        ]
 
     def lifecycle_lead_times(self, account: str) -> LifecycleLeadTimes:
         row = self._db.execute(

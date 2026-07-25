@@ -16,7 +16,6 @@ from julius.opportunities.detectors import glue_code
 from julius.pipeline import analyze
 from julius.report import renderer
 
-
 SPARK_SCRIPT = """
 import boto3
 from awsglue.context import GlueContext

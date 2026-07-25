@@ -5,7 +5,6 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from urllib.parse import urlparse
 
-
 DEVIN_OUTPUT_SCHEMA: dict = {
     "type": "object",
     "additionalProperties": False,
