@@ -34,12 +34,13 @@ KNOWN_COUPLING = {
     ("graph", "opportunities"),
     # A calibração lê o histórico persistido para ajustar estimativas.
     ("estimation", "state"),
-    # A regra de código estático consome os artefatos analisados.
-    ("opportunities", "code_analysis"),
     # A validação de benefício calcula KPIs para comparar previsto × realizado.
     ("state", "metrics"),
     # O relatório embute a análise contextual produzida pelo agente.
     ("report", "agent"),
+    # `code_analysis` sobrou como fachada de topo depois que o scanner foi para
+    # `knowledge/rules/glue/code/`. Some quando o CLI passar a importar direto.
+    ("code_analysis", "knowledge"),
 }
 
 
@@ -103,9 +104,18 @@ def test_collection_does_not_even_import_the_composition_root():
     assert importers == []
 
 
-def test_knowledge_only_reads_the_inventory():
-    """Conhecimento lê o modelo coletado; nunca chama coletor nem relatório."""
-    allowed = {"collection"}
+def test_knowledge_reads_the_inventory_and_produces_findings():
+    """Conhecimento lê o inventário e devolve achados. Nada além disso.
+
+    `opportunities` é onde a entidade de achado mora hoje; a fase 4 a divide em
+    `findings/` e `scoring/`, e esta permissão acompanha o rename. O que a regra
+    proíbe é o que importa: conhecimento não chama coletor, não persiste e não
+    formata relatório.
+    """
+    # `estimation` guarda `build_gain`, que a fase 4 leva para `scoring/gain.py`.
+    # Quando isso acontecer a regra devolve só uma `Estimation` e quem a
+    # transforma em ganho é a camada de cima — esta permissão sai daqui.
+    allowed = {"collection", "opportunities", "estimation"}
     offenders = [
         f"{path.relative_to(ROOT.parent).as_posix()} -> julius.{imported}"
         for path in sorted((ROOT / "knowledge").rglob("*.py"))
@@ -121,6 +131,9 @@ def test_no_new_cross_layer_coupling():
         imported for _, imported in _edges()
     }
     downward = {
+        ("knowledge", "collection"),
+        ("knowledge", "opportunities"),
+        ("knowledge", "estimation"),
         ("graph", "collection"),
         ("governance", "collection"),
         ("estimation", "collection"),
@@ -179,3 +192,21 @@ def test_known_coupling_is_still_real():
     """Dívida que já foi paga sai da lista em vez de virar folclore."""
     stale = sorted(KNOWN_COUPLING - _edges())
     assert stale == []
+
+
+def test_the_rule_registry_is_the_only_way_rules_run():
+    """Regra nova é uma entrada de `REGISTRY`, não uma linha em `run_all`."""
+    import inspect
+
+    from julius.knowledge import rules
+
+    source = inspect.getsource(rules.run_all)
+    # `run_all` percorre o registro; não enumera famílias.
+    assert "REGISTRY" in source
+    assert "detect(" in source
+    assert source.count("detect(") == 1
+
+    services = {family.service for family in rules.REGISTRY}
+    assert {"glue", "athena", "sagemaker", "stepfunctions"} <= services
+    # Toda família diz de que parte do inventário depende.
+    assert all(family.requires for family in rules.REGISTRY)

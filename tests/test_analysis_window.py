@@ -21,7 +21,7 @@ from julius.config import (
     GLUE_USAGE_TYPE_MARKERS,
     MIN_DAYS_FOR_FORECAST,
 )
-from julius.opportunities.detectors import athena as athena_detector
+from julius.knowledge.rules.athena import queries as athena_detector
 
 # 22h de Brasília no último dia de julho já é 1º de agosto em UTC. Era esse o
 # horário em que a coleta se partia: o custo vinha do mês local e o consumo do

@@ -12,7 +12,7 @@ from julius.collection.collectors.glue.scripts import (
 )
 from julius.collection.models import Account, GlueJob
 from julius.config import DATASET_SCHEMA_VERSION, DEFAULT_CONFIG
-from julius.opportunities.detectors import glue_code
+from julius.knowledge.rules.glue.code import rules as glue_code
 from julius.pipeline import analyze
 from julius.report import renderer
 

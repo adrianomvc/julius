@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from julius.collection.models import Account
 from julius.config import Config
-from julius.estimation import interactive_sessions as sess_est
+from julius.knowledge.rules._build import build
+from julius.knowledge.rules.glue import sessions_estimation as sess_est
 from julius.opportunities.base import Estimation, Opportunity
-from julius.opportunities.detectors._build import build
 
 _DOC = "https://docs.aws.amazon.com/glue/latest/dg/interactive-sessions.html"
 

@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from julius.collection.models import Account
 from julius.config import Config
+from julius.knowledge.rules._build import build
 from julius.opportunities.base import Estimation, Opportunity
-from julius.opportunities.detectors._build import build
 
 _DOC = "https://docs.aws.amazon.com/databrew/latest/dg/jobs.html"
 

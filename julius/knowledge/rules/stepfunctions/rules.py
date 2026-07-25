@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from julius.collection.models import Account, StateMachine
 from julius.config import Config
-from julius.estimation import stepfunctions as sfn_est
+from julius.knowledge.rules._build import build
+from julius.knowledge.rules.stepfunctions import estimation as sfn_est
 from julius.opportunities.base import Opportunity
-from julius.opportunities.detectors._build import build
 
 _DOC_EXPRESS = "https://docs.aws.amazon.com/step-functions/latest/dg/concepts-standard-vs-express.html"
 _DOC_SYNC = "https://docs.aws.amazon.com/step-functions/latest/dg/connect-to-resource.html"

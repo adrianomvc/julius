@@ -23,9 +23,10 @@ from julius.estimation.process_cost import (
 )
 from julius.governance import compute_candidates
 from julius.graph import ProcessGraph, build_process_graph, enrich_opportunities
+from julius.knowledge.rules import run_all
+from julius.knowledge.rules.glue.code import rules as glue_code
 from julius.metrics import ProductKPIs, compute_kpis
 from julius.opportunities.base import Opportunity
-from julius.opportunities.detectors import glue_code, run_all
 from julius.opportunities.grouping import group_by_asset
 from julius.opportunities.lifecycle import transition
 from julius.opportunities.prioritizer import tiebreak_key

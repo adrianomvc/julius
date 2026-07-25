@@ -31,9 +31,9 @@ from julius.estimation.process_cost import (
     build_process_costs,
 )
 from julius.graph.ownership import resolve_owner
+from julius.knowledge.rules.glue import jobs as glue_detector
 from julius.opportunities import prioritizer
 from julius.opportunities.base import Estimation, Opportunity
-from julius.opportunities.detectors import glue as glue_detector
 
 
 def _glue_client():

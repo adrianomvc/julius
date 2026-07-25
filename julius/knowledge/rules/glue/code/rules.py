@@ -4,12 +4,16 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from julius.code_analysis import GlueCodeArtifact, scan_glue_script
+from julius.collection.artifacts import GlueCodeArtifact
 from julius.collection.models import Account, GlueJob
 from julius.config import Config
-from julius.estimation.glue import code_pattern_saving, python_shell_migration_saving
+from julius.knowledge.rules._build import build
+from julius.knowledge.rules.glue.code.scanner import scan_glue_script
+from julius.knowledge.rules.glue.estimation import (
+    code_pattern_saving,
+    python_shell_migration_saving,
+)
 from julius.opportunities.base import Opportunity
-from julius.opportunities.detectors._build import build
 
 _DOC_TUNING = "https://docs.aws.amazon.com/glue/latest/dg/tuning-aws-glue-for-apache-spark.html"
 _DOC_PUSHDOWN = "https://docs.aws.amazon.com/glue/latest/dg/aws-glue-programming-pushdown.html"
