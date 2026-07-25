@@ -26,12 +26,9 @@ from julius.knowledge.glue_cost import (
 )
 from julius.knowledge.pricing import (
     ATHENA_RECOVERY_RATES,
-    SAGEMAKER_HOURLY,
-    SAGEMAKER_HOURLY_DEFAULT,
     Pricing,
     RecoveryBand,
     is_gpu_instance,
-    sagemaker_hourly,
 )
 from julius.knowledge.thresholds import Thresholds
 
@@ -70,7 +67,7 @@ class GlueCostTaxonomy:
 
 @dataclass(frozen=True)
 class Config:
-    pricing: Pricing = field(default_factory=Pricing)
+    pricing: Pricing = field(default_factory=Pricing.for_region)
     thresholds: Thresholds = field(default_factory=Thresholds)
     weights: Weights = field(default_factory=Weights)
     glue_cost: GlueCostTaxonomy = field(default_factory=GlueCostTaxonomy)
@@ -101,8 +98,6 @@ __all__ = [
     "JULIUS_VERSION",
     "KNOWLEDGE_VERSION",
     "MIN_DAYS_FOR_FORECAST",
-    "SAGEMAKER_HOURLY",
-    "SAGEMAKER_HOURLY_DEFAULT",
     "UNATTRIBUTED_GLUE_BUCKETS",
     "Config",
     "Pricing",
@@ -110,5 +105,4 @@ __all__ = [
     "Thresholds",
     "Weights",
     "is_gpu_instance",
-    "sagemaker_hourly",
 ]

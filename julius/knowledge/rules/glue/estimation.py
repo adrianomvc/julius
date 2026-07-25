@@ -34,7 +34,7 @@ def billing_rate(job: GlueJob, pricing) -> tuple[float, str, str]:
     if measured is None:
         return (
             _rate(job, pricing),
-            f"tarifa versionada de {_rate(job, pricing):.4f} USD/DPU-h",
+            f"tarifa de {_rate(job, pricing):.4f} USD/DPU-h · {pricing.provenance}",
             "modeled",
         )
     quality = "allocated" if job.cost_quality == "reconciled" else "allocated_partial"

@@ -87,7 +87,7 @@
           "timeout 2880 min vs. duração média 40 min",
           "~0.3 execução travada/mês, janela limitada a 240 min",
           "alinhar o timeout corta a cobrança de um job pendurado mais cedo",
-          "tarifa versionada de 0.4400 USD/DPU-h",
+          "tarifa de 0.4400 USD/DPU-h · tabela sa-east-1 v2.0-usd (não conferida)",
           "economia esperada aplica fator conservador de realização de 70%",
           "economia limitada ao saldo não comprometido dos processos relacionados (178.57 USD)"
         ],

@@ -805,7 +805,7 @@
           "Glue cobra DPU-hora do compute até a falha (retries incluídos)",
           "compute médio até a falha ~20 min",
           "corrigir a causa recupera o desperdício",
-          "tarifa versionada de 0.4400 USD/DPU-h",
+          "tarifa de 0.4400 USD/DPU-h · tabela sa-east-1 v2.0-usd (não conferida)",
           "economia esperada aplica fator conservador de realização de 70%",
           "economia limitada ao saldo não comprometido dos processos relacionados (267.85 USD)"
         ],
@@ -919,7 +919,7 @@
           "timeout 2880 min vs. duração média 20 min",
           "~0.3 execução travada/mês, janela limitada a 240 min",
           "alinhar o timeout corta a cobrança de um job pendurado mais cedo",
-          "tarifa versionada de 0.4400 USD/DPU-h",
+          "tarifa de 0.4400 USD/DPU-h · tabela sa-east-1 v2.0-usd (não conferida)",
           "economia esperada aplica fator conservador de realização de 70%",
           "economia limitada ao saldo não comprometido dos processos relacionados (71.43 USD)"
         ],
@@ -1133,7 +1133,7 @@
           "timeout 2880 min vs. duração média 50 min",
           "~0.3 execução travada/mês, janela limitada a 240 min",
           "alinhar o timeout corta a cobrança de um job pendurado mais cedo",
-          "tarifa versionada de 0.4400 USD/DPU-h",
+          "tarifa de 0.4400 USD/DPU-h · tabela sa-east-1 v2.0-usd (não conferida)",
           "economia esperada aplica fator conservador de realização de 70%",
           "economia limitada ao saldo não comprometido dos processos relacionados (471.58 USD)"
         ],
@@ -1247,7 +1247,7 @@
           "timeout 2880 min vs. duração média 60 min",
           "~0.3 execução travada/mês, janela limitada a 240 min",
           "alinhar o timeout corta a cobrança de um job pendurado mais cedo",
-          "tarifa versionada de 0.4400 USD/DPU-h",
+          "tarifa de 0.4400 USD/DPU-h · tabela sa-east-1 v2.0-usd (não conferida)",
           "economia esperada aplica fator conservador de realização de 70%",
           "economia limitada ao saldo não comprometido dos processos relacionados (478.97 USD)"
         ],
@@ -1359,7 +1359,7 @@
           "timeout 2880 min vs. duração média 30 min",
           "~0.3 execução travada/mês, janela limitada a 240 min",
           "alinhar o timeout corta a cobrança de um job pendurado mais cedo",
-          "tarifa versionada de 0.4400 USD/DPU-h",
+          "tarifa de 0.4400 USD/DPU-h · tabela sa-east-1 v2.0-usd (não conferida)",
           "economia esperada aplica fator conservador de realização de 70%",
           "economia limitada ao saldo não comprometido dos processos relacionados (16.61 USD)"
         ],

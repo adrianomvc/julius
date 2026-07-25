@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from julius.collection.models import SageMakerApp, SageMakerEndpoint
-from julius.config import Config, sagemaker_hourly
+from julius.config import Config
 from julius.opportunities.base import Estimation
 
 _HOURS_MONTH = 730.0
@@ -12,7 +12,7 @@ _HOURS_MONTH = 730.0
 def idle_app_saving(app: SageMakerApp, config: Config) -> Estimation:
     """App Studio/Notebook ociosa cobra por hora enquanto está InService."""
     pricing = config.pricing
-    hourly = sagemaker_hourly(app.instance_type)
+    hourly = config.pricing.sagemaker_hourly(app.instance_type)
     idle_hours_month = app.idle_hours_per_day * app.active_days_per_month
     saving = idle_hours_month * hourly
     return Estimation(
@@ -33,7 +33,7 @@ def idle_app_saving(app: SageMakerApp, config: Config) -> Estimation:
 def unused_endpoint_saving(ep: SageMakerEndpoint, config: Config) -> Estimation:
     """Endpoint em tempo real sem invocações roda 24/7 pagando as instâncias."""
     pricing = config.pricing
-    hourly = sagemaker_hourly(ep.instance_type)
+    hourly = config.pricing.sagemaker_hourly(ep.instance_type)
     monthly = ep.instance_count * hourly * _HOURS_MONTH
     return Estimation(
         method="sm_unused_endpoint_v1",
