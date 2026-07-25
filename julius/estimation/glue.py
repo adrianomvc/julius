@@ -10,15 +10,48 @@ from julius.opportunities.base import Estimation
 
 
 def _rate(job: GlueJob, pricing, execution_class: str | None = None) -> float:
+    """Tarifa versionada de tabela (USD/DPU-hora)."""
     if job.capacity_unit == "M-DPU":
         return pricing.glue_ray_mdpu_hour
     return pricing.glue_rate(execution_class or job.execution_class)
 
 
-def _monthly_cost(
-    job: GlueJob, pricing, execution_class: str | None = None
-) -> float:
-    return job.monthly_dpu_hours * _rate(job, pricing, execution_class)
+def _measured_rate(job: GlueJob) -> float | None:
+    """USD/DPU-hora implícito na cobrança alocada do mês, quando existir."""
+    if job.allocated_cost is None or job.total_dpu_hours_mtd <= 0:
+        return None
+    return job.allocated_cost / job.total_dpu_hours_mtd
+
+
+def billing_rate(job: GlueJob, pricing) -> tuple[float, str, str]:
+    """Tarifa efetiva do job: fatura rateada quando há, tabela quando não há.
+
+    Devolve `(tarifa, premissa, baseline_quality)`. O custo alocado vem do
+    rateio do bucket do Cost Explorer pelas DPU-horas coletadas — é custo
+    alocado, nunca fatura por job.
+    """
+    measured = _measured_rate(job)
+    if measured is None:
+        return (
+            _rate(job, pricing),
+            f"tarifa versionada de {_rate(job, pricing):.4f} USD/DPU-h",
+            "modeled",
+        )
+    quality = "allocated" if job.cost_quality == "reconciled" else "allocated_partial"
+    return (
+        measured,
+        (
+            f"custo alocado do Cost Explorer ({measured:.4f} USD/DPU-h "
+            f"observado no mês, qualidade {job.cost_quality})"
+        ),
+        quality,
+    )
+
+
+def _baseline(job: GlueJob, pricing) -> tuple[float, str, str]:
+    """Custo mensal do job ancorado na fatura quando a alocação existe."""
+    rate, source, quality = billing_rate(job, pricing)
+    return job.monthly_dpu_hours * rate, source, quality
 
 
 def autoscaling_saving(job: GlueJob, config: Config) -> Estimation:
@@ -26,7 +59,7 @@ def autoscaling_saving(job: GlueJob, config: Config) -> Estimation:
     pricing = config.pricing
     util = job.avg_cpu_load if job.avg_cpu_load is not None else config.thresholds.low_cpu
     ratio = max(0.0, min(0.6, 1 - util / config.thresholds.utilization_target))
-    baseline = _monthly_cost(job, pricing)
+    baseline, source, quality = _baseline(job, pricing)
     saving = baseline * ratio
     return Estimation(
         method="glue_autoscaling_v1",
@@ -37,9 +70,11 @@ def autoscaling_saving(job: GlueJob, config: Config) -> Estimation:
             "mesmo volume e frequência de execução",
             f"utilização observada {util:.0%} vs. alvo {config.thresholds.utilization_target:.0%}",
             "Auto Scaling reduz workers ociosos (redução limitada a 60%)",
+            source,
         ],
         pricing_region=pricing.region,
         estimation_version=pricing.version,
+        baseline_quality=quality,
     )
 
 
@@ -50,7 +85,7 @@ def version_upgrade_saving(job: GlueJob, config: Config) -> Estimation:
     billed_old = max(10.0, exec_min)
     billed_new = max(1.0, exec_min)
     total_dpu = job.configured_dpu
-    rate = _rate(job, pricing)
+    rate, source, quality = billing_rate(job, pricing)
     per_run = (billed_old - billed_new) / 60.0 * total_dpu * rate
     saving = max(0.0, per_run * job.runs_per_month)
     baseline = billed_old / 60.0 * total_dpu * rate * job.runs_per_month
@@ -63,19 +98,27 @@ def version_upgrade_saving(job: GlueJob, config: Config) -> Estimation:
             f"GlueVersion {job.glue_version} fatura mín. 10 min; 2.0+ fatura mín. 1 min",
             f"duração média {exec_min:.1f} min · {job.runs_per_month} execuções/mês",
             "mesma configuração de workers",
+            source,
         ],
         pricing_region=pricing.region,
         estimation_version=pricing.version,
+        baseline_quality=quality,
     )
 
 
 def flex_saving(job: GlueJob, config: Config) -> Estimation:
-    """Compara as tarifas USD versionadas de STANDARD e FLEX."""
+    """Aplica ao custo do job a diferença tarifária versionada STANDARD→FLEX."""
     pricing = config.pricing
-    baseline = _monthly_cost(job, pricing, "STANDARD")
-    projected = _monthly_cost(job, pricing, "FLEX")
+    baseline, source, quality = _baseline(job, pricing)
+    standard = pricing.glue_rate("STANDARD")
+    # Ray fatura em M-DPU e não tem classe FLEX; sem desconto aplicável.
+    discount = (
+        0.0
+        if job.capacity_unit == "M-DPU" or not standard
+        else max(0.0, 1 - pricing.glue_rate("FLEX") / standard)
+    )
+    projected = baseline * (1 - discount)
     saving = max(0.0, baseline - projected)
-    discount = saving / baseline if baseline else 0.0
     return Estimation(
         method="glue_flex_v1",
         baseline_cost=round(baseline, 2),
@@ -89,16 +132,18 @@ def flex_saving(job: GlueJob, config: Config) -> Estimation:
             ),
             f"diferença tarifária modelada de {discount:.0%}",
             "tolera variação no tempo de início",
+            source,
         ],
         pricing_region=pricing.region,
         estimation_version=pricing.version,
+        baseline_quality=quality,
     )
 
 
 def bookmark_saving(job: GlueJob, config: Config, reprocess: float = 0.25) -> Estimation:
     """Job bookmarks evitam reprocessar dados já processados (processamento incremental)."""
     pricing = config.pricing
-    baseline = _monthly_cost(job, pricing)
+    baseline, source, quality = _baseline(job, pricing)
     saving = baseline * reprocess
     return Estimation(
         method="glue_bookmark_v1",
@@ -109,9 +154,11 @@ def bookmark_saving(job: GlueJob, config: Config, reprocess: float = 0.25) -> Es
             "job recorrente sem job bookmarks (reprocessa dados antigos)",
             f"processamento incremental evita ~{int(reprocess * 100)}% do trabalho",
             "fonte cresce de forma incremental",
+            source,
         ],
         pricing_region=pricing.region,
         estimation_version=pricing.version,
+        baseline_quality=quality,
     )
 
 
@@ -149,8 +196,9 @@ def timeout_guardrail_saving(
     pricing = config.pricing
     exec_min = (job.p95_execution_sec or job.avg_execution_sec) / 60.0
     total_dpu = job.configured_dpu
+    rate, source, quality = billing_rate(job, pricing)
     wasted_min = min(max(0.0, job.timeout_min - exec_min), detection_horizon_min)
-    wasted_per_hang = wasted_min / 60.0 * total_dpu * _rate(job, pricing)
+    wasted_per_hang = wasted_min / 60.0 * total_dpu * rate
     saving = wasted_per_hang * hangs_per_month
     return Estimation(
         method="glue_timeout_guardrail_v1",
@@ -161,9 +209,11 @@ def timeout_guardrail_saving(
             f"timeout {job.timeout_min} min vs. duração média {exec_min:.0f} min",
             f"~{hangs_per_month:.1f} execução travada/mês, janela limitada a {detection_horizon_min:.0f} min",
             "alinhar o timeout corta a cobrança de um job pendurado mais cedo",
+            source,
         ],
         pricing_region=pricing.region,
         estimation_version=pricing.version,
+        baseline_quality=quality,
     )
 
 
@@ -173,7 +223,7 @@ def worker_type_downgrade_saving(job: GlueJob, config: Config) -> tuple[Estimati
     new_type = _DOWNGRADE.get(job.worker_type, job.worker_type)
     cur_dpu = _TYPE_DPU.get(job.worker_type, job.dpu_per_worker)
     new_dpu = _TYPE_DPU.get(new_type, cur_dpu)
-    baseline = _monthly_cost(job, pricing)
+    baseline, source, quality = _baseline(job, pricing)
     ratio = (cur_dpu - new_dpu) / cur_dpu if cur_dpu else 0
     saving = baseline * ratio
     est = Estimation(
@@ -185,9 +235,11 @@ def worker_type_downgrade_saving(job: GlueJob, config: Config) -> tuple[Estimati
             f"worker type {job.worker_type} ({cur_dpu} DPU) → {new_type} ({new_dpu} DPU)",
             f"CPU média {(job.avg_cpu_load or 0):.0%} não justifica o type maior",
             "mesmo paralelismo (nº de workers) mantido",
+            source,
         ],
         pricing_region=pricing.region,
         estimation_version=pricing.version,
+        baseline_quality=quality,
     )
     return est, new_type
 
@@ -201,8 +253,9 @@ def failure_waste_saving(job: GlueJob, config: Config) -> Estimation:
     failed_runs = job.runs_per_month * job.failure_rate
     fail_exec = job.avg_failed_execution_sec or (job.avg_execution_sec * 0.5)
     total_dpu = job.configured_dpu
+    rate, source, quality = billing_rate(job, pricing)
     wasted_hours = failed_runs * total_dpu * (fail_exec / 3600.0)
-    baseline = wasted_hours * _rate(job, pricing)
+    baseline = wasted_hours * rate
     return Estimation(
         method="glue_failure_waste_v1",
         baseline_cost=round(baseline, 2),
@@ -213,9 +266,11 @@ def failure_waste_saving(job: GlueJob, config: Config) -> Estimation:
             "Glue cobra DPU-hora do compute até a falha (retries incluídos)",
             f"compute médio até a falha ~{fail_exec / 60:.0f} min",
             "corrigir a causa recupera o desperdício",
+            source,
         ],
         pricing_region=pricing.region,
         estimation_version=pricing.version,
+        baseline_quality=quality,
     )
 
 
@@ -229,7 +284,7 @@ def worker_reduction_saving(job: GlueJob, config: Config) -> Estimation:
         math.ceil(current_workers * util / config.thresholds.utilization_target),
     )
     recommended = min(recommended, current_workers)
-    baseline = _monthly_cost(job, pricing)
+    baseline, source, quality = _baseline(job, pricing)
     ratio = (current_workers - recommended) / current_workers if current_workers else 0
     saving = baseline * ratio
     return Estimation(
@@ -241,9 +296,11 @@ def worker_reduction_saving(job: GlueJob, config: Config) -> Estimation:
             "mesmo volume processado",
             f"workers {current_workers} → {recommended} (utilização {util:.0%})",
             "redução só é acionável com memória, disco e spill observados",
+            source,
         ],
         pricing_region=pricing.region,
         estimation_version=pricing.version,
+        baseline_quality=quality,
     )
 
 
@@ -257,7 +314,7 @@ def code_pattern_saving(
 ) -> Estimation:
     """Potencial conservador para antipadrão estático, pendente de benchmark."""
     pricing = config.pricing
-    baseline = _monthly_cost(job, pricing)
+    baseline, source, quality = _baseline(job, pricing)
     fraction = max(0.0, min(0.30, potential_fraction))
     saving = baseline * fraction
     return Estimation(
@@ -269,9 +326,11 @@ def code_pattern_saving(
             assumption,
             "potencial condicionado a benchmark A/B com o mesmo volume de entrada",
             "a recomendação permanece bloqueada até validar duração e resultado",
+            source,
         ],
         pricing_region=pricing.region,
         estimation_version=pricing.version,
+        baseline_quality=quality,
     )
 
 
@@ -282,7 +341,7 @@ def python_shell_migration_saving(job: GlueJob, config: Config) -> Estimation:
     bloqueada até um piloto confirmar runtime, memória, dependências e resultado.
     """
     pricing = config.pricing
-    baseline = _monthly_cost(job, pricing)
+    baseline, source, quality = _baseline(job, pricing)
     projected = (
         baseline * 0.0625 / job.configured_dpu
         if job.configured_dpu > 0
@@ -299,7 +358,9 @@ def python_shell_migration_saving(job: GlueJob, config: Config) -> Estimation:
             "Python Shell configurado com 0,0625 DPU",
             "duração inicialmente assumida igual à média atual",
             "piloto obrigatório para validar memória, dependências e duração",
+            source,
         ],
         pricing_region=pricing.region,
         estimation_version=pricing.version,
+        baseline_quality=quality,
     )

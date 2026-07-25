@@ -36,6 +36,7 @@ def is_gpu_instance(instance_type: str) -> bool:
 JULIUS_VERSION = "0.6.0"
 KNOWLEDGE_VERSION = "aws-glue-guidance-2026-07"
 ATHENA_RECOVERY_VERSION = "athena-recovery-1.0"
+GLUE_COST_VERSION = "glue-cost-allocation-1.0"
 
 
 @dataclass(frozen=True)
@@ -60,6 +61,33 @@ ATHENA_RECOVERY_RATES: dict[str, RecoveryBand] = {
     "small_files": RecoveryBand(0.0, 0.0, 0.0),
     "recurrent_failures": RecoveryBand(0.0, 0.0, 0.0),
 }
+
+# Classificação versionada de `USAGE_TYPE` do Cost Explorer em buckets de
+# cobrança Glue. A ordem importa: o primeiro marcador encontrado no usage type
+# normalizado (minúsculo, sem prefixo de região) define o bucket.
+GLUE_USAGE_TYPE_MARKERS: tuple[tuple[str, str], ...] = (
+    ("databrew", "databrew"),
+    ("dataquality", "data_quality"),
+    ("data-quality", "data_quality"),
+    ("crawler", "crawler"),
+    ("session", "interactive_session"),
+    ("notebook", "interactive_session"),
+    ("flex", "flex"),
+    ("objectstorage", "catalog"),
+    ("request", "catalog"),
+    ("catalog", "catalog"),
+    ("dpu-hour", "etl_job"),
+    ("dpu_hour", "etl_job"),
+    ("etl", "etl_job"),
+)
+
+# Buckets rateados a ativos coletados e buckets que permanecem sem atribuição.
+ALLOCATED_GLUE_BUCKETS: frozenset[str] = frozenset(
+    {"etl_job", "flex", "crawler", "interactive_session", "databrew"}
+)
+UNATTRIBUTED_GLUE_BUCKETS: frozenset[str] = frozenset(
+    {"catalog", "data_quality", "other"}
+)
 
 # DPU por worker type do Glue (Glue 2.0+).
 DPU_PER_WORKER: dict[str, float] = {
@@ -93,9 +121,8 @@ class Pricing:
     glue_ray_mdpu_hour: float = 0.44
     # DataBrew usa node-hour, não Glue DPU-hour.
     databrew_node_hour: float = 0.48
-    # USD/TB escaneado no Athena.
-    athena_per_tb: float = 5.0
-    # Fallback USD explícito usado pelos modelos Athena quando a query é USD.
+    # USD/TB escaneado no Athena (fallback versionado; a cobrança real vem do
+    # Cost Explorer quando a coleta é reconciliada).
     athena_per_tb_usd: float = 5.0
     # Step Functions: USD/state transition (Standard) e USD/request (Express).
     sfn_standard_per_transition: float = 0.000025
@@ -150,6 +177,13 @@ class Thresholds:
     high_job_frequency_monthly: int = 100
     # Estimativas conservadoras: parte do desperdício medido que esperamos capturar.
     conservative_realization: float = 0.70
+    # Alocação de custo Glue: fração máxima de DPU-hora apenas estimada (sem
+    # DPUSeconds reportado) tolerada para considerar a alocação reconciliada.
+    glue_estimated_dpu_tolerance: float = 0.05
+    # Banda aceita entre o consumo modelado e a cobrança do bucket no Cost
+    # Explorer (mesma disciplina da reconciliação Athena/CloudWatch).
+    glue_reconciliation_low: float = 0.95
+    glue_reconciliation_high: float = 1.05
     # Step Functions: volume/duração para avaliar Standard → Express.
     sfn_express_min_executions: int = 5000
     sfn_short_duration_sec: int = 300

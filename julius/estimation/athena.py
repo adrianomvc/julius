@@ -13,13 +13,9 @@ from julius.opportunities.base import Estimation
 _TB = 1024**4
 
 
-def _cost(bytes_scanned: int, pricing, currency: str) -> float:
-    rate = (
-        pricing.athena_per_tb_usd
-        if currency.upper() == "USD"
-        else pricing.athena_per_tb
-    )
-    return (bytes_scanned / _TB) * rate
+def _cost(bytes_scanned: int, pricing) -> float:
+    """Preço de tabela em USD; a conversão de moeda já ocorreu na ingestão."""
+    return (bytes_scanned / _TB) * pricing.athena_per_tb_usd
 
 
 def _baseline(query: AthenaQuery, pricing) -> tuple[float, str, str]:
@@ -31,7 +27,7 @@ def _baseline(query: AthenaQuery, pricing) -> tuple[float, str, str]:
         )
         return query.allocated_cost, "custo líquido alocado", quality
     return (
-        _cost(query.monthly_bytes_scanned, pricing, query.currency),
+        _cost(query.monthly_bytes_scanned, pricing),
         "preço de tabela aplicado aos bytes faturáveis",
         "modeled",
     )

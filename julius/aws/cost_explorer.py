@@ -5,6 +5,7 @@ from __future__ import annotations
 import calendar
 from datetime import date, timedelta
 
+from julius.estimation.currency import UnsupportedCurrencyError, usd_amount
 from julius.inventory.model import ServiceCost
 
 # Serviços que o Julius monitora (nomes do Cost Explorer → rótulo do relatório).
@@ -51,17 +52,20 @@ def collect_services(
     )
 
     totals: dict[str, float] = {}
-    currencies: dict[str, str] = {}
     estimated = False
     for result in resp.get("ResultsByTime", []):
         estimated = estimated or bool(result.get("Estimated", True))
         for group in result.get("Groups", []):
             name = group["Keys"][0]
-            amount = float(group["Metrics"]["UnblendedCost"]["Amount"])
-            currency = str(group["Metrics"]["UnblendedCost"].get("Unit") or "USD")
+            metric = group["Metrics"]["UnblendedCost"]
+            currency = str(metric.get("Unit") or "")
+            # A AWS reporta custo em USD mesmo quando a fatura é em outra
+            # moeda; outra unidade aqui é anomalia, não caso de conversão.
+            amount = usd_amount(metric["Amount"], currency)
+            if amount is None:
+                raise UnsupportedCurrencyError(currency)
             label = _SERVICE_LABEL.get(name, "Outros")
             totals[label] = totals.get(label, 0.0) + amount
-            currencies[label] = currency
 
     forecasts = (
         _forecast_by_service(ce_client, billing_end, totals)
@@ -72,34 +76,52 @@ def collect_services(
     for label in ("AWS Glue", "Amazon Athena", "Amazon S3", "Step Functions", "Amazon SageMaker"):
         if label in totals:
             services.append(
-                ServiceCost(
-                    name=label,
-                    monthly_cost=round(totals.pop(label), 2),
-                    subtitle=_SUBTITLE.get(label, ""),
-                    currency=currencies.get(label, "USD"),
-                    period_start=period["Start"],
-                    data_through=(billing_end - timedelta(days=1)).isoformat(),
-                    estimated=estimated,
-                    period_kind="month_to_date",
-                    cost_basis="cost_explorer_unblended",
-                    forecast_cost_eom=forecasts.get(label),
+                _service(
+                    label,
+                    totals.pop(label),
+                    _SUBTITLE.get(label, ""),
+                    period,
+                    billing_end,
+                    estimated,
+                    forecasts.get(label),
                 )
             )
     if totals:
         services.append(
-            ServiceCost(
-                name="Outros",
-                monthly_cost=round(sum(totals.values()), 2),
-                subtitle="demais serviços",
-                currency=next(iter(currencies.values()), "USD"),
-                period_start=period["Start"],
-                data_through=(billing_end - timedelta(days=1)).isoformat(),
-                estimated=estimated,
-                period_kind="month_to_date",
-                cost_basis="cost_explorer_unblended",
+            _service(
+                "Outros",
+                sum(totals.values()),
+                "demais serviços",
+                period,
+                billing_end,
+                estimated,
+                None,
             )
         )
     return services
+
+
+def _service(
+    label: str,
+    amount: float,
+    subtitle: str,
+    period: dict,
+    billing_end: date,
+    estimated: bool,
+    forecast: float | None,
+) -> ServiceCost:
+    return ServiceCost(
+        name=label,
+        monthly_cost=round(amount, 2),
+        subtitle=subtitle,
+        currency="USD",
+        period_start=period["Start"],
+        data_through=(billing_end - timedelta(days=1)).isoformat(),
+        estimated=estimated,
+        period_kind="month_to_date",
+        cost_basis="cost_explorer_unblended",
+        forecast_cost_eom=forecast,
+    )
 
 
 def _forecast_by_service(
@@ -125,9 +147,12 @@ def _forecast_by_service(
                     }
                 },
             )
-            remaining = float(
-                (response.get("Total") or {}).get("Amount", 0) or 0
-            )
+            total = response.get("Total") or {}
+            remaining = usd_amount(total.get("Amount", 0), str(total.get("Unit") or ""))
+            if remaining is None:
+                raise UnsupportedCurrencyError(str(total.get("Unit") or ""))
+        except UnsupportedCurrencyError:
+            raise
         except Exception:
             continue
         forecasts[label] = round(current_totals[label] + remaining, 2)

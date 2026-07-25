@@ -17,6 +17,7 @@ _DROP = {
     "historical_monthly_dpu_hours",
     "glue_version_num",
     "monthly_bytes_scanned",
+    "unattributed_cost",
 }
 
 
@@ -46,6 +47,8 @@ def account_to_dataset(account: Account) -> dict:
         "athena_coverage": _clean(asdict(account.athena_coverage))
         if account.athena_coverage else None,
         "athena_actor_usage": [_clean(asdict(a)) for a in account.athena_actor_usage],
+        "glue_cost_coverage": _clean(asdict(account.glue_cost_coverage))
+        if account.glue_cost_coverage else None,
         "state_machines": [_clean(asdict(s)) for s in account.state_machines],
         "sagemaker_apps": [_clean(asdict(a)) for a in account.sagemaker_apps],
         "sagemaker_endpoints": [_clean(asdict(e)) for e in account.sagemaker_endpoints],

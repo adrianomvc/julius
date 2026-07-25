@@ -345,6 +345,7 @@ class ReportViewModel:
     athena_queries: list[dict] = field(default_factory=list)
     athena_actors: list[dict] = field(default_factory=list)
     athena_gaps: list[str] = field(default_factory=list)
+    glue_cost: dict = field(default_factory=dict)
 
 
 def _recommendation(do_now: list[Opportunity], currency: str) -> str:
@@ -445,27 +446,46 @@ def _process_costs(account: Account) -> list[dict]:
 def _cost_reconciliation(account: Account) -> tuple[str, str, str, str]:
     glue = next((service for service in account.services if service.name == "AWS Glue"), None)
     process_total = sum(row.total_cost_mtd for row in account.process_costs)
-    process_currency = (
-        account.process_costs[0].currency if account.process_costs else "USD"
-    )
-    attributed = fmt.money(process_total, process_currency)
+    attributed = fmt.usd(process_total)
     if glue is None:
         return attributed, "—", "—", "Cost Explorer Glue não disponível."
-    explorer = fmt.money(glue.monthly_cost, glue.currency)
-    if glue.currency != process_currency:
-        return (
-            attributed,
-            explorer,
-            "—",
-            "Moedas diferentes; reconciliação não calculada sem taxa de câmbio versionada.",
-        )
+    explorer = fmt.usd(glue.monthly_cost)
     delta = glue.monthly_cost - process_total
     note = (
         f"Cost Explorer atualizado até {glue.data_through or 'data não informada'}; "
         "valor MTD de cobrança estimado pela AWS; a diferença reúne atraso, "
         "tarifas, arredondamento e consumo ainda não atribuído."
     )
-    return attributed, explorer, fmt.money(delta, glue.currency), note
+    coverage = account.glue_cost_coverage
+    if coverage is not None and coverage.unattributed_cost:
+        note += (
+            f" Buckets sem rateio somam {fmt.usd(coverage.unattributed_cost)}."
+        )
+    return attributed, explorer, fmt.usd(delta), note
+
+
+def _glue_cost_view(account: Account) -> dict:
+    """Qualidade e composição da cobrança Glue, ao lado do bloco Athena."""
+    coverage = account.glue_cost_coverage
+    if coverage is None:
+        return {}
+    return {
+        "window": f"{coverage.period_start} → {coverage.data_through}",
+        "cost_quality": coverage.cost_quality,
+        "cost_metric": coverage.cost_metric or "—",
+        "cost_fmt": fmt.usd(coverage.net_cost),
+        "unattributed_fmt": fmt.usd(coverage.unattributed_cost),
+        "ratio": f"{coverage.modeled_ratio * 100:.1f}%"
+        if coverage.modeled_ratio is not None else "—",
+        "buckets": [
+            {"name": name, "cost_fmt": fmt.usd(value)}
+            for name, value in sorted(
+                coverage.buckets.items(), key=lambda item: item[1], reverse=True
+            )
+        ],
+        "unknown_usage_types": list(coverage.unknown_usage_types),
+        "gaps": list(coverage.gaps),
+    }
 
 
 def _pareto_bar(pareto: Pareto, currency: str) -> list[dict]:
@@ -754,6 +774,7 @@ def build(
         athena_queries=athena_queries,
         athena_actors=athena_actors,
         athena_gaps=athena_gaps,
+        glue_cost=_glue_cost_view(account),
     )
 
 

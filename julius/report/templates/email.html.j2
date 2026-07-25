@@ -28,6 +28,7 @@
     <div style="margin-top:14px;font-size:13px;color:#b6bece;">{{ r.account_masked }} &middot; {{ r.period }} &middot; janela {{ r.lookback }}</div>
     <div style="margin-top:14px;font-size:17px;font-weight:700;color:#f4a95c;">Identificamos {{ r.identified_fmt }}/mês em oportunidades.</div>
     {% if r.athena_coverage %}<div style="margin-top:7px;font-size:12.5px;color:#b6bece;">Athena integrado: {{ r.athena_queries|length }} padrões · {{ r.athena_actors|length }} atores · workgroups {{ r.athena_coverage.workgroups }} · custo {{ r.athena_coverage.cost_quality }}.</div>{% endif %}
+    {% if r.glue_cost %}<div style="margin-top:4px;font-size:12.5px;color:#b6bece;">Glue: cobrança {{ r.glue_cost.cost_fmt }} por usage type · custo {{ r.glue_cost.cost_quality }} · sem rateio {{ r.glue_cost.unattributed_fmt }}.</div>{% endif %}
     <div style="margin-top:4px;font-size:12px;color:#8792a8;">alta confiança {{ r.high_conf_fmt }}/mês &middot; realizável no ano {{ r.realizable_year_fmt }}</div>
   </td></tr>
 

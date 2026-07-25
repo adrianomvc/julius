@@ -17,6 +17,7 @@ from julius.aws import (
     stepfunctions_collector,
     touches_collector,
 )
+from julius.estimation.currency import UnsupportedCurrencyError
 from julius.inventory.model import Account, GlueJob, Table
 
 
@@ -74,6 +75,57 @@ def test_cost_explorer_first_day_uses_a_valid_exclusive_end():
     )
     with stub:
         assert cost_explorer.collect_services(ce, today=date(2026, 7, 1)) == []
+
+
+def test_cost_explorer_rejects_a_response_outside_usd():
+    """A AWS reporta custo em USD mesmo com fatura em outra moeda."""
+    ce = _client("ce")
+    stub = Stubber(ce)
+    stub.add_response(
+        "get_cost_and_usage",
+        {
+            "ResultsByTime": [
+                {
+                    "Estimated": True,
+                    "Groups": [
+                        {
+                            "Keys": ["AWS Glue"],
+                            "Metrics": {"UnblendedCost": {"Amount": "543", "Unit": "BRL"}},
+                        }
+                    ],
+                }
+            ]
+        },
+    )
+    with stub, pytest.raises(UnsupportedCurrencyError):
+        cost_explorer.collect_services(ce)
+
+
+def test_cost_explorer_accepts_a_zero_amount_with_an_odd_unit():
+    """Zero não tem moeda; unidade estranha em grupo zerado não bloqueia."""
+    ce = _client("ce")
+    stub = Stubber(ce)
+    stub.add_response(
+        "get_cost_and_usage",
+        {
+            "ResultsByTime": [
+                {
+                    "Estimated": True,
+                    "Groups": [
+                        {
+                            "Keys": ["AWS Glue"],
+                            "Metrics": {"UnblendedCost": {"Amount": "0", "Unit": "N/A"}},
+                        }
+                    ],
+                }
+            ]
+        },
+    )
+    with stub:
+        services = cost_explorer.collect_services(ce)
+
+    assert services[0].monthly_cost == 0
+    assert services[0].currency == "USD"
 
 
 def test_glue_collector_jobs_and_failure_rate():
