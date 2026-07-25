@@ -2,25 +2,10 @@
 
 from __future__ import annotations
 
-import re
 from dataclasses import asdict, dataclass, field
 
+from julius.collection.redaction import redact_secrets
 from julius.pipeline import Analysis
-
-_SECRET_PATTERNS = (
-    re.compile(r"\bAKIA[A-Z0-9]{16}\b"),
-    re.compile(
-        r"(?i)\b(password|passwd|secret|token|api[_-]?key)\b\s*[:=]\s*(['\"]?)[^,\s;'\"]+\2"
-    ),
-    re.compile(r"(?i)\bBearer\s+[A-Za-z0-9._~+/=-]+"),
-)
-
-
-def redact_secrets(value: str) -> str:
-    redacted = value
-    for pattern in _SECRET_PATTERNS:
-        redacted = pattern.sub("[REDACTED]", redacted)
-    return redacted
 
 
 @dataclass(frozen=True)

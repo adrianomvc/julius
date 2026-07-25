@@ -8,6 +8,7 @@ from datetime import date, datetime, timezone
 import pytest
 
 from julius.collection.collectors.glue import cost as glue_cost
+from julius.collection.currency import usd_amount
 from julius.collection.models import (
     Account,
     DataBrewJob,
@@ -20,7 +21,6 @@ from julius.collection.normalizers.loader import load_account
 from julius.collection.window import AnalysisWindow
 from julius.config import DATASET_SCHEMA_VERSION, DEFAULT_CONFIG
 from julius.estimation import glue as glue_est
-from julius.estimation.currency import usd_amount
 from julius.estimation.process_cost import build_process_costs
 from julius.pipeline import analyze_account
 from julius.report import renderer
@@ -243,9 +243,26 @@ def test_catalog_and_unknown_costs_stay_unattributed():
             ("SAE1-Misterio", 5, "USD"),
         ]
     )
+    account = _account(jobs=[_job("etl", 1000)])
+
+    coverage = glue_cost.allocate_costs(
+        account, glue_cost.collect_glue_costs(ce, window=WINDOW), DEFAULT_CONFIG
+    )
+
+    # Catálogo, data quality e o usage type desconhecido não têm ativo a que
+    # ratear; a cobrança de ETL foi absorvida pelo job.
+    assert coverage.allocated_buckets == ["etl_job"]
+    assert coverage.unattributed_cost == pytest.approx(25.0)
+
+
+def test_nothing_is_attributed_before_allocation_runs():
+    """A cobrança só deixa de ser 'não atribuída' quando alguém a atribui."""
+    ce = FakeCE([("SAE1-Glue-ETL-DPU-Hour", 440, "USD")])
+
     coverage = glue_cost.collect_glue_costs(ce, window=WINDOW)
 
-    assert coverage.unattributed_cost == pytest.approx(25.0)
+    assert coverage.allocated_buckets == []
+    assert coverage.unattributed_cost == pytest.approx(440.0)
 
 
 def test_billing_outside_usd_becomes_a_gap_instead_of_a_converted_number():

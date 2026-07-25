@@ -15,9 +15,9 @@ from julius.collection.collectors import schedules as schedules_collector
 from julius.collection.collectors import stepfunctions as stepfunctions_collector
 from julius.collection.collectors import touches as touches_collector
 from julius.collection.collectors.glue import jobs as glue_collector
+from julius.collection.currency import UnsupportedCurrencyError
 from julius.collection.models import Account, GlueJob, Table
 from julius.collection.window import AnalysisWindow, BillingMonth
-from julius.estimation.currency import UnsupportedCurrencyError
 
 
 def _client(service: str):

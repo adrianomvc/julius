@@ -9,8 +9,8 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 from julius.collection.models import InteractiveSession
+from julius.collection.settings import DPU_PER_WORKER
 from julius.collection.window import AnalysisWindow
-from julius.config import DPU_PER_WORKER
 
 
 def collect_sessions(

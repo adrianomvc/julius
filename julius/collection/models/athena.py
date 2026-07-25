@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from julius.config import ANALYSIS_WINDOW_DAYS
+from julius.collection.settings import ANALYSIS_WINDOW_DAYS
 
 
 @dataclass

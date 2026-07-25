@@ -8,8 +8,8 @@ from __future__ import annotations
 from collections import defaultdict
 
 from julius.collection.collectors.athena.evidence import AthenaExecutionEvidence
+from julius.collection.currency import non_usd_gap, usd_amount
 from julius.collection.models import AthenaCoverage
-from julius.estimation.currency import non_usd_gap, usd_amount
 
 
 def reconcile_cloudwatch(coverage, client, workgroups, start, end):

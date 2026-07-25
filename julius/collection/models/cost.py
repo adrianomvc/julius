@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from julius.collection.models.window_math import monthly_factor
-from julius.config import ANALYSIS_WINDOW_DAYS, UNATTRIBUTED_GLUE_BUCKETS
+from julius.collection.settings import ANALYSIS_WINDOW_DAYS
 
 
 @dataclass
@@ -79,6 +79,10 @@ class GlueCostCoverage:
     currency: str = "USD"
     net_cost: float | None = None
     buckets: dict[str, float] = field(default_factory=dict)
+    # Buckets que a alocação de fato rateou a algum ativo coletado. É registro
+    # do que aconteceu, não a tabela de classificação: a cobertura sabe o que
+    # ela mesma atribuiu, sem consultar conhecimento de domínio.
+    allocated_buckets: list[str] = field(default_factory=list)
     unknown_usage_types: list[str] = field(default_factory=list)
     cost_quality: str = "unavailable"
     modeled_ratio: float | None = None
@@ -87,12 +91,13 @@ class GlueCostCoverage:
 
     @property
     def unattributed_cost(self) -> float:
-        """Buckets que não são rateados a nenhum ativo coletado."""
+        """Cobrança que não foi rateada a nenhum ativo coletado."""
+        rateados = set(self.allocated_buckets)
         return round(
             sum(
                 value
                 for name, value in self.buckets.items()
-                if name in UNATTRIBUTED_GLUE_BUCKETS
+                if name not in rateados
             ),
             2,
         )

@@ -9,7 +9,7 @@ from __future__ import annotations
 from dataclasses import asdict
 
 from julius.collection.models import Account
-from julius.config import DATASET_SCHEMA_VERSION
+from julius.collection.settings import DATASET_SCHEMA_VERSION
 
 # Campos internos (properties/derivados) que não fazem parte do schema exportado.
 _DROP = {

@@ -5,10 +5,10 @@ from __future__ import annotations
 import calendar
 from datetime import date, timedelta
 
+from julius.collection.currency import UnsupportedCurrencyError, usd_amount
 from julius.collection.models import ServiceCost
+from julius.collection.settings import MIN_DAYS_FOR_FORECAST
 from julius.collection.window import BillingMonth
-from julius.config import MIN_DAYS_FOR_FORECAST
-from julius.estimation.currency import UnsupportedCurrencyError, usd_amount
 
 # Serviços que o Julius monitora (nomes do Cost Explorer → rótulo do relatório).
 _SERVICE_LABEL = {

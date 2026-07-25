@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from julius.config import ANALYSIS_WINDOW_DAYS, DAYS_PER_MONTH
+from julius.collection.settings import ANALYSIS_WINDOW_DAYS, DAYS_PER_MONTH
 
 
 def monthly_factor(window_days: int) -> float:

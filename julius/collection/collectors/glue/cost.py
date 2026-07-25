@@ -12,6 +12,7 @@ dependência administrativa fora da coleta read-only.
 
 from __future__ import annotations
 
+from julius.collection.currency import non_usd_gap, usd_amount
 from julius.collection.models import Account, GlueCostCoverage
 from julius.collection.window import AnalysisWindow
 from julius.config import (
@@ -20,7 +21,6 @@ from julius.config import (
     GLUE_USAGE_TYPE_MARKERS,
     Config,
 )
-from julius.estimation.currency import non_usd_gap, usd_amount
 
 _METRICS = ("NetUnblendedCost", "UnblendedCost")
 
@@ -126,6 +126,7 @@ def allocate_costs(
             coverage.gaps.append(f"bucket {bucket} sem regra de rateio definida")
 
     quality = _quality(account, coverage, config, jobs_collection_complete)
+    allocated: list[str] = []
     for bucket, assets, consumption in pools:
         cost = coverage.buckets.get(bucket, 0.0)
         if not cost:
@@ -140,7 +141,11 @@ def allocate_costs(
             share = max(0.0, consumption(asset)) / total
             asset.allocated_cost = round(cost * share, 6)
             asset.cost_quality = quality
+        allocated.append(bucket)
 
+    # A cobertura registra o que foi rateado de fato — um bucket cobrado sem
+    # consumo para ratear continua contando como não atribuído.
+    coverage.allocated_buckets = sorted(allocated)
     coverage.cost_quality = quality
     return coverage
 

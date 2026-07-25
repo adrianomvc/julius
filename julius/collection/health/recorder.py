@@ -7,8 +7,8 @@ from datetime import datetime, timezone
 from time import perf_counter
 from typing import TypeVar
 
+from julius.collection.currency import UnsupportedCurrencyError
 from julius.collection.models import CollectionHealth
-from julius.estimation.currency import UnsupportedCurrencyError
 
 T = TypeVar("T")
 

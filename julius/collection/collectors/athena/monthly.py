@@ -16,8 +16,8 @@ from julius.collection.collectors.athena import aggregate, catalog, cost
 from julius.collection.collectors.athena import executions as executions_step
 from julius.collection.collectors.athena.evidence import _DDL, AthenaExecutionEvidence
 from julius.collection.models import AthenaActorUsage, AthenaCoverage, AthenaQuery
+from julius.collection.settings import ANALYSIS_WINDOW_DAYS
 from julius.collection.window import AnalysisWindow
-from julius.config import ANALYSIS_WINDOW_DAYS
 
 
 @dataclass

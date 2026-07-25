@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from julius.collection.models.window_math import monthly_factor
-from julius.config import ANALYSIS_WINDOW_DAYS, DPU_PER_WORKER
+from julius.collection.settings import ANALYSIS_WINDOW_DAYS, DPU_PER_WORKER
 
 
 @dataclass

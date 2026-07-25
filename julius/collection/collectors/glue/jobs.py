@@ -16,8 +16,8 @@ from datetime import datetime, timezone
 from statistics import mean, median, pstdev
 
 from julius.collection.models import GlueJob, Table
+from julius.collection.settings import DPU_PER_WORKER
 from julius.collection.window import AnalysisWindow
-from julius.config import DPU_PER_WORKER
 
 _FAILED_STATES = {"FAILED", "TIMEOUT", "ERROR"}
 

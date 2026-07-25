@@ -32,7 +32,7 @@ from julius.collection.models.glue import (
     InteractiveSession,
 )
 from julius.collection.models.health import CollectionHealth
-from julius.config import ANALYSIS_WINDOW_DAYS
+from julius.collection.settings import ANALYSIS_WINDOW_DAYS
 
 
 @dataclass

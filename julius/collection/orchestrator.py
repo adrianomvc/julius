@@ -13,9 +13,10 @@ import boto3
 
 from julius.collection.health import CollectionRecorder, RequiredCollectionError
 from julius.collection.models import Account
+from julius.collection.settings import ANALYSIS_WINDOW_DAYS
 from julius.collection.sources import SOURCES, CollectionContext, run
 from julius.collection.window import AnalysisWindow, BillingMonth
-from julius.config import ANALYSIS_WINDOW_DAYS, DEFAULT_CONFIG, Config
+from julius.config import DEFAULT_CONFIG, Config
 
 
 def collect_account(

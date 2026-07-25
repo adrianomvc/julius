@@ -9,8 +9,8 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from urllib.parse import urlparse
 
-from julius.agent.context import redact_secrets
 from julius.collection.models import Account
+from julius.collection.redaction import redact_secrets
 
 
 class IdentityMismatchError(RuntimeError):

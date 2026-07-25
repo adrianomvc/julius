@@ -32,7 +32,7 @@ from julius.collection.models import (
     StateMachine,
     Table,
 )
-from julius.config import ANALYSIS_WINDOW_DAYS, DATASET_SCHEMA_VERSION
+from julius.collection.settings import ANALYSIS_WINDOW_DAYS, DATASET_SCHEMA_VERSION
 
 
 def _pick(d: dict, cls):
