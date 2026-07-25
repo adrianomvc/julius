@@ -14,9 +14,9 @@ _DOC_INCREMENTAL = "https://docs.aws.amazon.com/glue/latest/dg/incremental-crawl
 def detect(account: Account, config: Config, scan_id: str) -> list[Opportunity]:
     out: list[Opportunity] = []
     for crawler in account.glue_crawlers:
-        baseline = crawler.dpu_hours_mtd * config.pricing.glue_dpu_hour
-        if crawler.failures_mtd > 0 and crawler.runs_mtd > 0:
-            ratio = crawler.failures_mtd / crawler.runs_mtd
+        baseline = crawler.dpu_hours_window * config.pricing.glue_dpu_hour
+        if crawler.failures_in_window > 0 and crawler.runs_in_window > 0:
+            ratio = crawler.failures_in_window / crawler.runs_in_window
             out.append(
                 _opportunity(
                     account,
@@ -29,8 +29,8 @@ def detect(account: Account, config: Config, scan_id: str) -> list[Opportunity]:
                     baseline,
                     baseline * ratio,
                     [
-                        f"{crawler.failures_mtd}/{crawler.runs_mtd} crawls falharam",
-                        f"{crawler.dpu_hours_mtd:.2f} DPU-h no mês",
+                        f"{crawler.failures_in_window}/{crawler.runs_in_window} crawls falharam",
+                        f"{crawler.dpu_hours_window:.2f} DPU-h no mês",
                     ],
                 )
             )
@@ -39,7 +39,7 @@ def detect(account: Account, config: Config, scan_id: str) -> list[Opportunity]:
             + crawler.tables_updated
             + crawler.tables_deleted
         )
-        if crawler.runs_mtd >= 4 and changes == 0 and baseline > 0:
+        if crawler.runs_in_window >= 4 and changes == 0 and baseline > 0:
             out.append(
                 _opportunity(
                     account,
@@ -52,13 +52,13 @@ def detect(account: Account, config: Config, scan_id: str) -> list[Opportunity]:
                     baseline,
                     baseline * 0.5,
                     [
-                        f"{crawler.runs_mtd} crawls no mês",
+                        f"{crawler.runs_in_window} crawls no mês",
                         "0 tabelas criadas/atualizadas/excluídas",
                     ],
                 )
             )
         if (
-            crawler.runs_mtd >= 4
+            crawler.runs_in_window >= 4
             and crawler.recrawl_behavior == "CRAWL_EVERYTHING"
         ):
             out.append(
@@ -77,7 +77,7 @@ def detect(account: Account, config: Config, scan_id: str) -> list[Opportunity]:
                     0.0,
                     [
                         "RecrawlBehavior=CRAWL_EVERYTHING",
-                        f"{crawler.runs_mtd} crawls no mês",
+                        f"{crawler.runs_in_window} crawls no mês",
                         (
                             f"{changes} alterações de catálogo observadas"
                         ),
@@ -152,9 +152,9 @@ def _opportunity(
         risks=["mudança de frequência pode atrasar descoberta de schema"],
         doc_links=[doc_link],
         data_sources=["Glue GetCrawlers", "GetCrawlerMetrics", "ListCrawls"],
-        observed_runs=crawler.runs_mtd,
+        observed_runs=crawler.runs_in_window,
         coverage_days=min(account.lookback_days, 31),
-        has_optional_metrics=crawler.dpu_hours_mtd > 0,
+        has_optional_metrics=crawler.dpu_hours_window > 0,
         owner_tag=crawler.owner_tag,
         config=config,
         scan_id=scan_id,

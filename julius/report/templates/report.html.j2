@@ -247,7 +247,7 @@
       <div style="display:grid;grid-template-columns:1.4fr 1fr 96px 96px 90px;padding:12px 16px;border-top:1px solid #edeee8;align-items:center;">
         <div><div style="font-size:13px;font-weight:600;color:#12233f;">{{ p.name }}</div><div class="mono" style="font-size:10.5px;color:#8a9082;">{{ p.root_type }} · {{ p.components }} · {{ p.allocation }}</div></div>
         <div><div style="font-size:12px;color:#3a3f46;">{{ p.owner }}</div><div class="mono" style="font-size:10px;color:#8a9082;">{{ p.owner_source }} · {{ p.owner_event_time }}</div></div>
-        <div class="mono" style="text-align:right;font-size:12px;">{{ p.cost_mtd }}</div>
+        <div class="mono" style="text-align:right;font-size:12px;">{{ p.cost_window }}</div>
         <div class="mono" style="text-align:right;font-size:12px;font-weight:600;color:#e8730c;">{{ p.forecast_eom }}</div>
         <div class="mono" style="text-align:right;font-size:10.5px;color:#5b6169;">{{ p.dpu_actual }} reportada<br>{{ p.dpu_estimated }} estimada</div>
       </div>
@@ -373,7 +373,7 @@
               <div style="flex:1;"><div class="kicker">Até dez</div><div style="font-weight:700;font-size:20px;color:#12233f;margin-top:2px;">{{ o.year_fmt }}</div></div>
             </div>
             <div style="font-size:11px;color:#8a9082;margin-bottom:14px;">faixa provável {{ o.band_fmt }}</div>
-            <div class="mono" style="font-size:11px;color:#5b6169;margin-bottom:14px;">custo do processo: {{ o.process_cost_fmt }} MTD · {{ o.process_forecast_fmt }} projetado · dados até {{ o.cost_data_through }}</div>
+            <div class="mono" style="font-size:11px;color:#5b6169;margin-bottom:14px;">custo do processo: {{ o.process_cost_fmt }} MTD · {{ o.process_forecast_fmt }} projetado · dados até {{ o.window_end }}</div>
             <div style="font-size:11px;color:#8a9082;margin-bottom:14px;">custo baseline {{ o.baseline_fmt }} ({{ o.baseline_quality_label }}) · qualidade da economia estimada (SAVE): {{ o.saving_quality_label }}</div>
             <div style="display:flex;gap:7px;flex-wrap:wrap;margin-bottom:14px;">
               <span class="chip" style="color:{{ o.diff_fg }};background:{{ o.diff_bg }};">Dif {{ o.difficulty }}/5</span>

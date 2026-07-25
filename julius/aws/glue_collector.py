@@ -111,10 +111,10 @@ def _build_job(
         avg_cpu_load=None,  # requer CloudWatch (coletor à parte)
         observed_runs=total,
         coverage_days=int(months * 30),
-        dpu_seconds_mtd=round(dpu_seconds, 3),
-        estimated_dpu_hours_mtd=round(estimated_dpu_hours, 4),
-        current_month_runs=len(mtd_runs),
-        cost_data_through=now.date().isoformat(),
+        dpu_seconds_window=round(dpu_seconds, 3),
+        estimated_dpu_hours_window=round(estimated_dpu_hours, 4),
+        runs_in_window=len(mtd_runs),
+        window_end=now.date().isoformat(),
         trigger_names=sorted(
             {
                 str(r["TriggerName"])
@@ -122,7 +122,7 @@ def _build_job(
                 if r.get("TriggerName")
             }
         ),
-        run_ids_mtd=sorted(
+        run_ids_in_window=sorted(
             str(r["Id"]) for r in mtd_runs if r.get("Id")
         ),
         owner_tag=(job.get("Tags", {}) or {}).get("Owner"),

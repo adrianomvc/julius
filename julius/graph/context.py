@@ -54,13 +54,13 @@ def enrich_opportunities(
             )
         ]
         if process_rows:
-            opportunity.process_cost_mtd = round(
-                sum(row.total_cost_mtd for row in process_rows), 2
+            opportunity.process_cost_window = round(
+                sum(row.total_cost_window for row in process_rows), 2
             )
             opportunity.process_forecast_eom = round(
                 sum(row.forecast_cost_eom for row in process_rows), 2
             )
-            opportunity.cost_data_through = max(
+            opportunity.window_end = max(
                 row.data_through for row in process_rows
             )
         opportunity.evidence_refs = _evidence_refs(account, opportunity)
@@ -139,16 +139,16 @@ def _evidence_refs(account: Account, opportunity: Opportunity) -> list[dict]:
                 {
                     **common,
                     "source": "Glue GetJobRuns",
-                    "run_ids": job.run_ids_mtd,
-                    "data_through": job.cost_data_through,
-                    "actual_dpu_hours": job.actual_dpu_hours_mtd,
-                    "estimated_dpu_hours": job.estimated_dpu_hours_mtd,
+                    "run_ids": job.run_ids_in_window,
+                    "data_through": job.window_end,
+                    "actual_dpu_hours": job.actual_dpu_hours_window,
+                    "estimated_dpu_hours": job.estimated_dpu_hours_window,
                 }
             ]
     collections = {
         "glue_session": (account.interactive_sessions, "session_id", "statement_ids"),
-        "glue_crawler": (account.glue_crawlers, "name", "crawl_ids_mtd"),
-        "databrew_job": (account.databrew_jobs, "name", "run_ids_mtd"),
+        "glue_crawler": (account.glue_crawlers, "name", "crawl_ids_in_window"),
+        "databrew_job": (account.databrew_jobs, "name", "run_ids_in_window"),
     }
     spec = collections.get(opportunity.asset_type)
     if spec is None:

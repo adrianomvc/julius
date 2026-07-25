@@ -92,22 +92,22 @@ def test_job_cost_separates_reported_and_estimated_dpu_hours():
         job = glue_collector.collect_jobs(glue, now=now)[0]
 
     assert job.job_mode == "VISUAL"
-    assert job.actual_dpu_hours_mtd == 1.0
-    assert job.estimated_dpu_hours_mtd == 1.0
-    assert job.run_ids_mtd == ["jr-estimated", "jr-reported"]
+    assert job.actual_dpu_hours_window == 1.0
+    assert job.estimated_dpu_hours_window == 1.0
+    assert job.run_ids_in_window == ["jr-estimated", "jr-reported"]
 
 
 def test_usd_is_canonical_and_mtd_is_forecast_before_monthly_savings():
     job = GlueJob(
         name="processa",
-        dpu_seconds_mtd=36000,
-        cost_data_through="2026-07-10",
+        dpu_seconds_window=36000,
+        window_end="2026-07-10",
     )
 
     assert DEFAULT_CONFIG.pricing.currency == "USD"
-    assert job.total_dpu_hours_mtd == 10.0
+    assert job.total_dpu_hours_window == 10.0
     assert job.forecast_dpu_hours_eom == pytest.approx(31.0)
-    assert job.monthly_dpu_hours == pytest.approx(31.0)
+    assert job.window_dpu_hours == pytest.approx(31.0)
 
 
 def test_flex_requires_supported_spark_batch_job():
@@ -190,8 +190,8 @@ def test_process_cost_allocation_does_not_duplicate_shared_job():
         name="compartilhado",
         worker_type="G.1X",
         number_of_workers=2,
-        dpu_seconds_mtd=7200,
-        cost_data_through="2026-07-24",
+        dpu_seconds_window=7200,
+        window_end="2026-07-24",
     )
     account = Account(
         account_id="123",
@@ -421,7 +421,7 @@ def test_collects_crawler_dpu_and_glue_trigger_lineage():
     crawler = crawlers_collector.collect_crawlers(client, now=now)[0]
     trigger = glue_triggers_collector.collect_triggers(client)[0]
 
-    assert crawler.dpu_hours_mtd == 0.25
+    assert crawler.dpu_hours_window == 0.25
     assert crawler.tables_updated == 2
     assert trigger.job_names == ["processa"]
     assert trigger.crawler_names == ["catalogo"]
@@ -482,8 +482,8 @@ def test_databrew_cost_keeps_node_hours_separate_from_dpu_hours():
     now = datetime(2026, 7, 24, tzinfo=timezone.utc)
     job = databrew_collector.collect_jobs(_DataBrew(now), now=now)[0]
 
-    assert job.execution_hours_mtd == 1.0
-    assert job.estimated_node_hours_mtd == 10.0
+    assert job.execution_hours_window == 1.0
+    assert job.estimated_node_hours_window == 10.0
     assert job.schedule_names == ["diario"]
     assert job.expected_runs_monthly == 30.0
 

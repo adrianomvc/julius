@@ -34,17 +34,17 @@ def collect_jobs(databrew_client, *, now: datetime | None = None) -> list[DataBr
                         for schedule_name, schedule in schedules.items()
                         if name in schedule["jobs"]
                     ),
-                    runs_mtd=len(runs),
-                    failures_mtd=sum(
+                    runs_in_window=len(runs),
+                    failures_in_window=sum(
                         1
                         for run in runs
                         if str(run.get("State") or "") in {"FAILED", "TIMEOUT"}
                     ),
-                    execution_hours_mtd=round(execution_hours, 4),
+                    execution_hours_window=round(execution_hours, 4),
                     # A API informa capacidade máxima, não utilização por node.
-                    estimated_node_hours_mtd=round(execution_hours * capacity, 4),
+                    estimated_node_hours_window=round(execution_hours * capacity, 4),
                     owner_tag=(raw.get("Tags", {}) or {}).get("Owner"),
-                    run_ids_mtd=sorted(
+                    run_ids_in_window=sorted(
                         str(run["RunId"]) for run in runs if run.get("RunId")
                     ),
                     expected_runs_monthly=sum(
@@ -53,7 +53,7 @@ def collect_jobs(databrew_client, *, now: datetime | None = None) -> list[DataBr
                         if name in schedule["jobs"]
                     )
                     or None,
-                    cost_data_through=now.date().isoformat(),
+                    window_end=now.date().isoformat(),
                 )
             )
     return out

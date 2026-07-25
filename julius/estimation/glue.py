@@ -18,9 +18,9 @@ def _rate(job: GlueJob, pricing, execution_class: str | None = None) -> float:
 
 def _measured_rate(job: GlueJob) -> float | None:
     """USD/DPU-hora implícito na cobrança alocada do mês, quando existir."""
-    if job.allocated_cost is None or job.total_dpu_hours_mtd <= 0:
+    if job.allocated_cost is None or job.total_dpu_hours_window <= 0:
         return None
-    return job.allocated_cost / job.total_dpu_hours_mtd
+    return job.allocated_cost / job.total_dpu_hours_window
 
 
 def billing_rate(job: GlueJob, pricing) -> tuple[float, str, str]:
@@ -51,7 +51,7 @@ def billing_rate(job: GlueJob, pricing) -> tuple[float, str, str]:
 def _baseline(job: GlueJob, pricing) -> tuple[float, str, str]:
     """Custo mensal do job ancorado na fatura quando a alocação existe."""
     rate, source, quality = billing_rate(job, pricing)
-    return job.monthly_dpu_hours * rate, source, quality
+    return job.window_dpu_hours * rate, source, quality
 
 
 def autoscaling_saving(job: GlueJob, config: Config) -> Estimation:

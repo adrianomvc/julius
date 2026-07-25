@@ -16,9 +16,9 @@ _DOC = "https://docs.aws.amazon.com/databrew/latest/dg/jobs.html"
 def detect(account: Account, config: Config, scan_id: str) -> list[Opportunity]:
     out: list[Opportunity] = []
     for job in account.databrew_jobs:
-        if job.runs_mtd and job.failures_mtd:
-            baseline = job.estimated_node_hours_mtd * config.pricing.databrew_node_hour
-            ratio = job.failures_mtd / job.runs_mtd
+        if job.runs_in_window and job.failures_in_window:
+            baseline = job.estimated_node_hours_window * config.pricing.databrew_node_hour
+            ratio = job.failures_in_window / job.runs_in_window
             saving = baseline * ratio
             estimation = Estimation(
                 method="databrew_failure_waste_v1",
@@ -41,18 +41,18 @@ def detect(account: Account, config: Config, scan_id: str) -> list[Opportunity]:
                 difficulty=2,
                 estimation=estimation,
                 finding="DataBrew Job falha no mês atual",
-                why=f"{job.failures_mtd}/{job.runs_mtd} execuções falharam.",
+                why=f"{job.failures_in_window}/{job.runs_in_window} execuções falharam.",
                 recommended_action="Corrigir a causa das falhas e revisar retries",
                 how_to_apply="Revisar logs e configuração; mudança somente após aprovação.",
                 how_to_validate="Comparar falhas e node-hours no mês seguinte.",
                 evidence=[
-                    f"{job.failures_mtd}/{job.runs_mtd} falhas",
-                    f"{job.estimated_node_hours_mtd:.2f} node-h estimadas",
+                    f"{job.failures_in_window}/{job.runs_in_window} falhas",
+                    f"{job.estimated_node_hours_window:.2f} node-h estimadas",
                 ],
                 risks=["capacidade real por node não está disponível na evidência"],
                 doc_links=[_DOC],
                 data_sources=["DataBrew ListJobs", "ListJobRuns"],
-                observed_runs=job.runs_mtd,
+                observed_runs=job.runs_in_window,
                 coverage_days=min(account.lookback_days, 31),
                 has_optional_metrics=False,
                 owner_tag=job.owner_tag,
@@ -61,8 +61,8 @@ def detect(account: Account, config: Config, scan_id: str) -> list[Opportunity]:
                 blocked=True,
             ))
         if job.expected_runs_monthly:
-            expected_mtd = job.expected_runs_monthly * _month_progress(account)
-            deviation = abs(job.runs_mtd - expected_mtd) / max(1.0, expected_mtd)
+            expected_in_window = job.expected_runs_monthly * _month_progress(account)
+            deviation = abs(job.runs_in_window - expected_in_window) / max(1.0, expected_in_window)
             if deviation >= 0.5:
                 out.append(
                     build(
@@ -81,20 +81,20 @@ def detect(account: Account, config: Config, scan_id: str) -> list[Opportunity]:
                         ),
                         finding="DataBrew runs divergem do schedule",
                         why=(
-                            f"Schedule prevê ~{expected_mtd:.1f} até a data; "
-                            f"{job.runs_mtd} foram observadas."
+                            f"Schedule prevê ~{expected_in_window:.1f} até a data; "
+                            f"{job.runs_in_window} foram observadas."
                         ),
                         recommended_action="Reconciliar cron, falhas e disparos manuais",
                         how_to_apply="Revisar schedule e histórico sem alterar o recurso.",
                         how_to_validate="Confirmar a contagem no próximo período.",
                         evidence=[
-                            f"esperadas até a data ~{expected_mtd:.1f}",
-                            f"observadas {job.runs_mtd}",
+                            f"esperadas até a data ~{expected_in_window:.1f}",
+                            f"observadas {job.runs_in_window}",
                         ],
                         risks=["mês parcial pode explicar parte da diferença"],
                         doc_links=[_DOC],
                         data_sources=["DataBrew ListSchedules", "ListJobRuns"],
-                        observed_runs=job.runs_mtd,
+                        observed_runs=job.runs_in_window,
                         coverage_days=min(account.lookback_days, 31),
                         has_optional_metrics=True,
                         owner_tag=job.owner_tag,

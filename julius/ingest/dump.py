@@ -13,7 +13,7 @@ from julius.inventory.model import Account
 # Campos internos (properties/derivados) que não fazem parte do schema exportado.
 _DROP = {
     "dpu_per_worker",
-    "monthly_dpu_hours",
+    "window_dpu_hours",
     "historical_monthly_dpu_hours",
     "glue_version_num",
     "monthly_bytes_scanned",

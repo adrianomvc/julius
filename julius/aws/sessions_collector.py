@@ -45,7 +45,7 @@ def collect_sessions(
             created_on = _dt(s.get("CreatedOn"))
             completed_on = _dt(s.get("CompletedOn"))
             reported_seconds = float(s.get("DPUSeconds", 0) or 0)
-            fully_observed_mtd = (
+            fully_observed_window = (
                 created_on is not None
                 and created_on >= month_start
                 and (completed_on is None or completed_on <= now)
@@ -53,10 +53,10 @@ def collect_sessions(
             overlap_seconds = _interval_overlap_seconds(
                 created_on, completed_on, month_start, now
             )
-            reported_mtd = reported_seconds if fully_observed_mtd else 0.0
-            estimated_mtd = (
+            reported_window = reported_seconds if fully_observed_window else 0.0
+            estimated_window = (
                 0.0
-                if fully_observed_mtd and reported_seconds > 0
+                if fully_observed_window and reported_seconds > 0
                 else overlap_seconds * dpu / 3600.0
             )
             out.append(
@@ -75,9 +75,9 @@ def collect_sessions(
                     completed_on=_iso(s.get("CompletedOn")),
                     execution_time_sec=float(s.get("ExecutionTime", 0) or 0),
                     dpu_seconds=reported_seconds,
-                    dpu_seconds_mtd=reported_mtd,
-                    estimated_dpu_hours_mtd=round(estimated_mtd, 4),
-                    cost_data_through=now.date().isoformat(),
+                    dpu_seconds_window=reported_window,
+                    estimated_dpu_hours_window=round(estimated_window, 4),
+                    window_end=now.date().isoformat(),
                     observed_runs=activity["statement_count"],
                     coverage_days=activity["coverage_days"],
                     last_activity_at=activity["last_activity_at"],

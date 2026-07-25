@@ -226,7 +226,7 @@ def detect(account: Account, config: Config, scan_id: str) -> list[Opportunity]:
         (item for item in account.services if item.name == "AWS Glue"),
         None,
     )
-    modeled = sum(row.total_cost_mtd for row in account.process_costs)
+    modeled = sum(row.total_cost_window for row in account.process_costs)
     modeled_currency = (
         account.process_costs[0].currency if account.process_costs else config.pricing.currency
     )
@@ -272,11 +272,11 @@ def _unattributed_cost(
     account: Account,
     config: Config,
     scan_id: str,
-    billing_mtd: float,
-    modeled_mtd: float,
+    billing_window: float,
+    modeled_window: float,
     data_through: str,
 ) -> Opportunity:
-    delta = max(0.0, billing_mtd - modeled_mtd)
+    delta = max(0.0, billing_window - modeled_window)
     buckets = _unattributed_buckets(account)
     return build(
         account=account.account_id,
@@ -299,8 +299,8 @@ def _unattributed_cost(
         ),
         finding="Cobrança Glue relevante ainda não atribuída aos processos",
         why=(
-            f"Cost Explorer MTD={billing_mtd:.2f} e modelo por processo="
-            f"{modeled_mtd:.2f}; diferença={delta:.2f} {config.pricing.currency}."
+            f"Cost Explorer MTD={billing_window:.2f} e modelo por processo="
+            f"{modeled_window:.2f}; diferença={delta:.2f} {config.pricing.currency}."
             + (
                 " Buckets sem rateio: " + "; ".join(buckets) + "."
                 if buckets
@@ -319,8 +319,8 @@ def _unattributed_cost(
             "Data Quality e table optimizers até explicar a diferença."
         ),
         evidence=[
-            f"Cost Explorer Glue MTD={billing_mtd:.2f}",
-            f"modelo atribuído MTD={modeled_mtd:.2f}",
+            f"Cost Explorer Glue MTD={billing_window:.2f}",
+            f"modelo atribuído MTD={modeled_window:.2f}",
             f"data_through={data_through or 'não informada'}",
         ] + buckets,
         risks=["diferença pode conter atraso ou modalidades ainda não modeladas"],
@@ -592,7 +592,7 @@ def _autoscaling(
             f"utilização média {_utilization(job):.0%} em {job.observed_runs} execuções",
             f"workers={job.number_of_workers} fixos ({job.worker_type})",
             "sem --enable-auto-scaling",
-            f"~{job.monthly_dpu_hours:.0f} DPU-h/mês (GetJobRuns)",
+            f"~{job.window_dpu_hours:.0f} DPU-h/mês (GetJobRuns)",
         ],
         risks=["reprocessamento", "picos de partição em estágio único"],
         doc_links=[_DOC_AUTOSCALING],

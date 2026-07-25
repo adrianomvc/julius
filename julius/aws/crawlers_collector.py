@@ -47,21 +47,21 @@ def collect_crawlers(glue_client, *, now: datetime | None = None) -> list[GlueCr
                 tables_deleted=history_changes.get(
                     "deleted", int(metric.get("TablesDeleted", 0) or 0)
                 ),
-                runs_mtd=len(histories),
-                failures_mtd=sum(
+                runs_in_window=len(histories),
+                failures_in_window=sum(
                     1 for item in histories if item.get("State") == "FAILED"
                 ),
-                dpu_hours_mtd=round(
+                dpu_hours_window=round(
                     sum(float(item.get("DPUHour", 0) or 0) for item in histories), 4
                 ),
                 owner_tag=(raw.get("Tags", {}) or {}).get("Owner"),
-                crawl_ids_mtd=sorted(
+                crawl_ids_in_window=sorted(
                     str(item["CrawlId"]) for item in histories if item.get("CrawlId")
                 ),
                 expected_runs_monthly=expected_runs_per_month(
                     str(schedule.get("ScheduleExpression") or "")
                 ),
-                cost_data_through=now.date().isoformat(),
+                window_end=now.date().isoformat(),
                 recrawl_behavior=str(
                     (raw.get("RecrawlPolicy") or {}).get("RecrawlBehavior")
                     or "CRAWL_EVERYTHING"

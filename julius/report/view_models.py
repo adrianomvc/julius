@@ -66,7 +66,7 @@ class OpportunityVM:
     source_process: str | None
     process_cost_fmt: str
     process_forecast_fmt: str
-    cost_data_through: str
+    window_end: str
     traceability: str
     ai_diagnosis: str = ""
     ai_recommendation: str = ""
@@ -257,8 +257,8 @@ def _opp_vm(o: Opportunity, currency: str) -> OpportunityVM:
         is_strategic=g.is_strategic,
         source_process=o.source_process,
         process_cost_fmt=(
-            fmt.money(o.process_cost_mtd, currency)
-            if o.process_cost_mtd is not None
+            fmt.money(o.process_cost_window, currency)
+            if o.process_cost_window is not None
             else "—"
         ),
         process_forecast_fmt=(
@@ -266,7 +266,7 @@ def _opp_vm(o: Opportunity, currency: str) -> OpportunityVM:
             if o.process_forecast_eom is not None
             else "—"
         ),
-        cost_data_through=o.cost_data_through or "—",
+        window_end=o.window_end or "—",
         traceability="; ".join(trace_parts) or "sem IDs de execução disponíveis",
     )
 
@@ -386,7 +386,7 @@ def _services(account: Account, opportunities: list[Opportunity]) -> tuple[list[
             if o.estimation is not None:
                 saving_currency_by_service[svc] = o.estimation.currency
 
-    total = account.total_cost_mtd or 1.0
+    total = account.total_cost_window or 1.0
     rows = []
     for s in account.services:
         saving = saving_by_service.get(s.name, 0.0)
@@ -425,11 +425,11 @@ def _process_costs(account: Account) -> list[dict]:
             "owner_source": row.owner_source,
             "owner_event_time": row.owner_event_time or "—",
             "owner_event_name": row.owner_event_name or "—",
-            "cost_mtd": fmt.money(row.total_cost_mtd, row.currency),
+            "cost_window": fmt.money(row.total_cost_window, row.currency),
             "forecast_eom": fmt.money(row.forecast_cost_eom, row.currency),
-            "actual_cost_mtd_value": row.actual_cost_mtd,
-            "estimated_cost_mtd_value": row.estimated_cost_mtd,
-            "total_cost_mtd_value": row.total_cost_mtd,
+            "actual_cost_mtd_value": row.actual_cost_window,
+            "estimated_cost_mtd_value": row.estimated_cost_window,
+            "total_cost_mtd_value": row.total_cost_window,
             "forecast_cost_eom_value": row.forecast_cost_eom,
             "currency": row.currency,
             "period_start": row.period_start,
@@ -445,7 +445,7 @@ def _process_costs(account: Account) -> list[dict]:
 
 def _cost_reconciliation(account: Account) -> tuple[str, str, str, str]:
     glue = next((service for service in account.services if service.name == "AWS Glue"), None)
-    process_total = sum(row.total_cost_mtd for row in account.process_costs)
+    process_total = sum(row.total_cost_window for row in account.process_costs)
     attributed = fmt.usd(process_total)
     if glue is None:
         return attributed, "—", "—", "Cost Explorer Glue não disponível."
@@ -720,7 +720,7 @@ def build(
         scan_id=manifest_val(manifest, "scan_id"),
         generated_at=account.generated_at,
         currency=account_currency,
-        total_cost_fmt=fmt.money(account.total_cost_mtd, account_currency),
+        total_cost_fmt=fmt.money(account.total_cost_window, account_currency),
         identified_fmt=fmt.money(identified, saving_currency),
         high_conf_fmt=fmt.money(high_conf, saving_currency),
         realizable_year_fmt=fmt.money(realizable_year, saving_currency),
@@ -738,16 +738,16 @@ def build(
         executable_count=len(pareto.executable_focus),
         months_remaining=months_remaining_in_year(),
         services=services,
-        account_total_fmt=fmt.money(account.total_cost_mtd, account_currency),
+        account_total_fmt=fmt.money(account.total_cost_window, account_currency),
         account_saving_fmt=fmt.money(identified, saving_currency),
         account_saving_pct=(
-            f"{round(identified / account.total_cost_mtd * 100)}%"
-            if account.total_cost_mtd and account_saving_comparable
+            f"{round(identified / account.total_cost_window * 100)}%"
+            if account.total_cost_window and account_saving_comparable
             else "—"
         ),
         account_bar_w=(
-            f"{identified / account.total_cost_mtd * 100:.1f}%"
-            if account.total_cost_mtd and account_saving_comparable
+            f"{identified / account.total_cost_window * 100:.1f}%"
+            if account.total_cost_window and account_saving_comparable
             else "0%"
         ),
         process_costs=_process_costs(account),

@@ -72,8 +72,8 @@ def _account(**kwargs) -> Account:
 def _job(name: str, dpu_hours: float, **kwargs) -> GlueJob:
     return GlueJob(
         name=name,
-        dpu_seconds_mtd=_hours(dpu_hours),
-        cost_data_through=TODAY.isoformat(),
+        dpu_seconds_window=_hours(dpu_hours),
+        window_end=TODAY.isoformat(),
         worker_type="G.1X",
         number_of_workers=10,
         **kwargs,
@@ -136,11 +136,11 @@ def test_allocation_splits_each_bucket_by_measured_consumption():
             _job("flexivel", 100, execution_class="FLEX"),
         ],
         crawlers=[
-            GlueCrawler(name="c1", dpu_hours_mtd=3.0),
-            GlueCrawler(name="c2", dpu_hours_mtd=1.0),
+            GlueCrawler(name="c1", dpu_hours_window=3.0),
+            GlueCrawler(name="c2", dpu_hours_window=1.0),
         ],
-        sessions=[InteractiveSession(session_id="s1", dpu_seconds_mtd=_hours(20))],
-        databrew=[DataBrewJob(name="d1", estimated_node_hours_mtd=10.0)],
+        sessions=[InteractiveSession(session_id="s1", dpu_seconds_window=_hours(20))],
+        databrew=[DataBrewJob(name="d1", estimated_node_hours_window=10.0)],
     )
     ce = FakeCE(
         [
@@ -170,7 +170,7 @@ def test_allocation_splits_each_bucket_by_measured_consumption():
 
 def test_quality_is_partial_when_runs_did_not_report_dpu_seconds():
     job = _job("estimado", 500)
-    job.estimated_dpu_hours_mtd = 500.0  # metade da DPU-hora é duração estimada
+    job.estimated_dpu_hours_window = 500.0  # metade da DPU-hora é duração estimada
     account = _account(jobs=[job])
     ce = FakeCE([("SAE1-Glue-ETL-DPU-Hour", 440, "USD")])
 
@@ -307,7 +307,7 @@ def test_process_costs_sum_to_the_allocated_billing():
     rows = build_process_costs(account, DEFAULT_CONFIG, today=TODAY)
 
     # O custo por processo herda a cobrança rateada, sem recalcular por tarifa.
-    assert sum(row.total_cost_mtd for row in rows) == pytest.approx(440.0, abs=0.01)
+    assert sum(row.total_cost_window for row in rows) == pytest.approx(440.0, abs=0.01)
 
 
 def test_report_shows_the_glue_cost_quality_and_the_unattributed_buckets():

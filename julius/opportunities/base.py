@@ -83,9 +83,9 @@ class Opportunity:
 
     # Processo gerador (linhagem) que pode ser pausado/desligado — quando aplicável.
     source_process: str | None = None
-    process_cost_mtd: float | None = None
+    process_cost_window: float | None = None
     process_forecast_eom: float | None = None
-    cost_data_through: str | None = None
+    window_end: str | None = None
     downstream_consumers: int = 0
     process_criticality: float = 0.0
     calibration_factor: float = 1.0

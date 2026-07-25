@@ -14,7 +14,7 @@ def unused_output_saving(table: Table, writer: GlueJob, config: Config) -> Estim
     descomissionar o processo). Assume que a tabela é o destino principal do job.
     """
     pricing = config.pricing
-    baseline = writer.monthly_dpu_hours * pricing.glue_dpu_hour
+    baseline = writer.window_dpu_hours * pricing.glue_dpu_hour
     return Estimation(
         method="data_unused_output_v1",
         baseline_cost=round(baseline, 2),
@@ -36,7 +36,7 @@ def low_use_saving(table: Table, writer: GlueJob, config: Config, recover: float
     recuperada (descomissionar/consolidar) ou o produto formalizado. Conservador:
     metade do custo do job (a decisão é de negócio)."""
     pricing = config.pricing
-    baseline = writer.monthly_dpu_hours * pricing.glue_dpu_hour
+    baseline = writer.window_dpu_hours * pricing.glue_dpu_hour
     saving = baseline * recover
     return Estimation(
         method="data_low_use_v1",

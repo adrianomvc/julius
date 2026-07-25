@@ -24,10 +24,10 @@ def build_process_costs(
     for job in account.glue_jobs:
         roots = roots_by_job.get(job.name) or [("glue_job", job.name)]
         share = 1.0 / len(roots)
-        actual_dpu = job.actual_dpu_hours_mtd * share
-        estimated_dpu = job.estimated_dpu_hours_mtd * share
+        actual_dpu = job.actual_dpu_hours_window * share
+        estimated_dpu = job.estimated_dpu_hours_window * share
         rate = _job_rate(job, config)
-        current_job_cost = job.total_dpu_hours_mtd * rate
+        current_job_cost = job.total_dpu_hours_window * rate
         historical_job_cost = (
             job.historical_monthly_dpu_hours * rate
         )
@@ -42,13 +42,13 @@ def build_process_costs(
                 root_type,
                 root_name,
                 period_start,
-                job.cost_data_through or today.isoformat(),
+                job.window_end or today.isoformat(),
             )
             _inherit_owner(row, account, "glue_job", job.name)
             row.actual_dpu_hours += actual_dpu
             row.estimated_dpu_hours += estimated_dpu
-            row.actual_cost_mtd += actual_dpu * rate
-            row.estimated_cost_mtd += estimated_dpu * rate
+            row.actual_cost_window += actual_dpu * rate
+            row.estimated_cost_window += estimated_dpu * rate
             row.forecast_cost_eom += forecast_job_cost * share
             row.allocation_method = (
                 "direct" if len(roots) == 1 else "equal_share_across_processes"
@@ -59,10 +59,10 @@ def build_process_costs(
     crawler_roots = _roots_by_crawler(account)
     for crawler in account.glue_crawlers:
         crawler_rate = _rate_from_allocation(
-            crawler.allocated_cost, crawler.dpu_hours_mtd
+            crawler.allocated_cost, crawler.dpu_hours_window
         ) or config.pricing.glue_dpu_hour
         crawler_factor = _forecast_factor(
-            crawler.cost_data_through or today.isoformat(), today
+            crawler.window_end or today.isoformat(), today
         )
         roots = crawler_roots.get(crawler.name) or [("glue_crawler", crawler.name)]
         share = 1.0 / len(roots)
@@ -76,12 +76,12 @@ def build_process_costs(
                 today.isoformat(),
             )
             _inherit_owner(row, account, "glue_crawler", crawler.name)
-            row.actual_dpu_hours += crawler.dpu_hours_mtd * share
-            row.actual_cost_mtd += (
-                crawler.dpu_hours_mtd * crawler_rate * share
+            row.actual_dpu_hours += crawler.dpu_hours_window * share
+            row.actual_cost_window += (
+                crawler.dpu_hours_window * crawler_rate * share
             )
             row.forecast_cost_eom += (
-                crawler.dpu_hours_mtd
+                crawler.dpu_hours_window
                 * crawler_rate
                 * crawler_factor
                 * share
@@ -100,21 +100,21 @@ def build_process_costs(
         )
         _inherit_owner(row, account, "glue_session", session.session_id)
         session_factor = _forecast_factor(
-            session.cost_data_through or today.isoformat(), today
+            session.window_end or today.isoformat(), today
         )
         session_rate = _rate_from_allocation(
             session.allocated_cost, session.dpu_hours
         ) or config.pricing.glue_dpu_hour
-        row.actual_dpu_hours += session.actual_dpu_hours_mtd
-        row.estimated_dpu_hours += session.estimated_dpu_hours_mtd
-        row.actual_cost_mtd += session.actual_dpu_hours_mtd * session_rate
-        row.estimated_cost_mtd += session.estimated_dpu_hours_mtd * session_rate
+        row.actual_dpu_hours += session.actual_dpu_hours_window
+        row.estimated_dpu_hours += session.estimated_dpu_hours_window
+        row.actual_cost_window += session.actual_dpu_hours_window * session_rate
+        row.estimated_cost_window += session.estimated_dpu_hours_window * session_rate
         row.forecast_cost_eom += session.dpu_hours * session_rate * session_factor
         row.component_names.append(session.session_id)
 
     for job in account.databrew_jobs:
         databrew_factor = _forecast_factor(
-            job.cost_data_through or today.isoformat(), today
+            job.window_end or today.isoformat(), today
         )
         row = _row(
             rows,
@@ -126,25 +126,25 @@ def build_process_costs(
         )
         _inherit_owner(row, account, "databrew_job", job.name)
         databrew_rate = _rate_from_allocation(
-            job.allocated_cost, job.estimated_node_hours_mtd
+            job.allocated_cost, job.estimated_node_hours_window
         ) or config.pricing.databrew_node_hour
-        row.estimated_cost_mtd += job.estimated_node_hours_mtd * databrew_rate
+        row.estimated_cost_window += job.estimated_node_hours_window * databrew_rate
         row.forecast_cost_eom += (
-            job.estimated_node_hours_mtd * databrew_rate * databrew_factor
+            job.estimated_node_hours_window * databrew_rate * databrew_factor
         )
         row.component_names.append(job.name)
 
     for row in rows.values():
         row.currency = config.pricing.currency
-        row.actual_cost_mtd = round(row.actual_cost_mtd, 2)
-        row.estimated_cost_mtd = round(row.estimated_cost_mtd, 2)
+        row.actual_cost_window = round(row.actual_cost_window, 2)
+        row.estimated_cost_window = round(row.estimated_cost_window, 2)
         row.actual_dpu_hours = round(row.actual_dpu_hours, 4)
         row.estimated_dpu_hours = round(row.estimated_dpu_hours, 4)
         row.forecast_cost_eom = round(
-            max(row.total_cost_mtd, row.forecast_cost_eom), 2
+            max(row.total_cost_window, row.forecast_cost_eom), 2
         )
         row.component_names.sort()
-    return sorted(rows.values(), key=lambda row: row.total_cost_mtd, reverse=True)
+    return sorted(rows.values(), key=lambda row: row.total_cost_window, reverse=True)
 
 
 def apply_conservative_caps(
@@ -378,7 +378,7 @@ def _forecast_factor(data_through: str, today: date) -> float:
 
 
 def _job_rate(job, config: Config) -> float:
-    return _rate_from_allocation(job.allocated_cost, job.total_dpu_hours_mtd) or (
+    return _rate_from_allocation(job.allocated_cost, job.total_dpu_hours_window) or (
         config.pricing.glue_ray_mdpu_hour
         if job.capacity_unit == "M-DPU"
         else config.pricing.glue_rate(job.execution_class)

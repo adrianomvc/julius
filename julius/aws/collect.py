@@ -367,7 +367,7 @@ def _enrich_return(fn, value):
 
 def _latest_data_through(items) -> str:
     values = [
-        str(getattr(item, "data_through", "") or getattr(item, "cost_data_through", ""))
+        str(getattr(item, "data_through", "") or getattr(item, "window_end", ""))
         for item in items
     ]
     return max((value for value in values if value), default="")

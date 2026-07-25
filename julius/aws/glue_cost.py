@@ -106,9 +106,9 @@ def allocate_costs(
     flex_jobs = [job for job in account.glue_jobs if _is_flex(job)]
     standard_jobs = [job for job in account.glue_jobs if not _is_flex(job)]
     pools = (
-        ("etl_job", standard_jobs, lambda job: job.total_dpu_hours_mtd),
-        ("flex", flex_jobs, lambda job: job.total_dpu_hours_mtd),
-        ("crawler", account.glue_crawlers, lambda item: item.dpu_hours_mtd),
+        ("etl_job", standard_jobs, lambda job: job.total_dpu_hours_window),
+        ("flex", flex_jobs, lambda job: job.total_dpu_hours_window),
+        ("crawler", account.glue_crawlers, lambda item: item.dpu_hours_window),
         (
             "interactive_session",
             account.interactive_sessions,
@@ -117,7 +117,7 @@ def allocate_costs(
         (
             "databrew",
             account.databrew_jobs,
-            lambda item: item.estimated_node_hours_mtd,
+            lambda item: item.estimated_node_hours_window,
         ),
     )
 
@@ -163,7 +163,7 @@ def _quality(
         coverage.buckets.get(bucket, 0.0) for bucket in ("etl_job", "flex")
     )
     modeled = sum(
-        job.total_dpu_hours_mtd * _rate(job, config) for job in account.glue_jobs
+        job.total_dpu_hours_window * _rate(job, config) for job in account.glue_jobs
     )
     if compute_cost > 0:
         coverage.modeled_ratio = round(modeled / compute_cost, 4)
@@ -197,9 +197,9 @@ def _quality(
 def _estimated_share(account: Account) -> float:
     """Fração das DPU-horas do mês que veio de duração estimada, não medida."""
     estimated = sum(
-        max(0.0, job.estimated_dpu_hours_mtd) for job in account.glue_jobs
+        max(0.0, job.estimated_dpu_hours_window) for job in account.glue_jobs
     )
-    total = sum(job.total_dpu_hours_mtd for job in account.glue_jobs)
+    total = sum(job.total_dpu_hours_window for job in account.glue_jobs)
     if total <= 0:
         return 1.0 if estimated else 0.0
     return estimated / total

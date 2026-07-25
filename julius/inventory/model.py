@@ -59,16 +59,16 @@ class GlueJob:
     spark_event_log_evidence_complete: bool = False
     spark_event_logs_path: str | None = None
     incremental_source_evidence: bool = False
-    dpu_seconds_mtd: float = 0.0
-    estimated_dpu_hours_mtd: float = 0.0
-    current_month_runs: int = 0
-    cost_data_through: str = ""
+    dpu_seconds_window: float = 0.0
+    estimated_dpu_hours_window: float = 0.0
+    runs_in_window: int = 0
+    window_end: str = ""
     # Custo alocado por rateio da cobrança real do bucket no Cost Explorer.
     # Nunca é fatura por job: o CE não expõe dimensão de recurso para Glue.
     allocated_cost: float | None = None
     cost_quality: str = "unavailable"
     trigger_names: list[str] = field(default_factory=list)
-    run_ids_mtd: list[str] = field(default_factory=list)
+    run_ids_in_window: list[str] = field(default_factory=list)
     observed_runs: int = 0
     coverage_days: int = 0
     owner_tag: str | None = None
@@ -107,27 +107,27 @@ class GlueJob:
         return "M-DPU" if self.command_type == "glueray" else "DPU"
 
     @property
-    def actual_dpu_hours_mtd(self) -> float:
-        return max(0.0, self.dpu_seconds_mtd / 3600.0)
+    def actual_dpu_hours_window(self) -> float:
+        return max(0.0, self.dpu_seconds_window / 3600.0)
 
     @property
-    def total_dpu_hours_mtd(self) -> float:
-        return self.actual_dpu_hours_mtd + max(0.0, self.estimated_dpu_hours_mtd)
+    def total_dpu_hours_window(self) -> float:
+        return self.actual_dpu_hours_window + max(0.0, self.estimated_dpu_hours_window)
 
     @property
-    def monthly_dpu_hours(self) -> float:
+    def window_dpu_hours(self) -> float:
         """DPU-hora projetada para o mês, sem chamar MTD de mensal."""
         return self.forecast_dpu_hours_eom
 
     @property
     def forecast_dpu_hours_eom(self) -> float:
-        if self.total_dpu_hours_mtd > 0:
+        if self.total_dpu_hours_window > 0:
             try:
-                observed = date.fromisoformat(self.cost_data_through)
+                observed = date.fromisoformat(self.window_end)
             except (TypeError, ValueError):
-                return self.total_dpu_hours_mtd
+                return self.total_dpu_hours_window
             days = calendar.monthrange(observed.year, observed.month)[1]
-            return self.total_dpu_hours_mtd * days / max(1, observed.day)
+            return self.total_dpu_hours_window * days / max(1, observed.day)
         hours = self.avg_execution_sec / 3600.0
         return self.runs_per_month * self.configured_dpu * hours
 
@@ -156,9 +156,9 @@ class InteractiveSession:
     completed_on: str = ""
     execution_time_sec: float = 0.0
     dpu_seconds: float = 0.0
-    dpu_seconds_mtd: float | None = None
-    estimated_dpu_hours_mtd: float = 0.0
-    cost_data_through: str = ""
+    dpu_seconds_window: float | None = None
+    estimated_dpu_hours_window: float = 0.0
+    window_end: str = ""
     allocated_cost: float | None = None
     cost_quality: str = "unavailable"
     last_activity_at: str = ""
@@ -166,17 +166,17 @@ class InteractiveSession:
     statement_ids: list[str] = field(default_factory=list)
 
     @property
-    def actual_dpu_hours_mtd(self) -> float:
+    def actual_dpu_hours_window(self) -> float:
         seconds = (
             self.dpu_seconds
-            if self.dpu_seconds_mtd is None
-            else self.dpu_seconds_mtd
+            if self.dpu_seconds_window is None
+            else self.dpu_seconds_window
         )
         return max(0.0, seconds / 3600.0)
 
     @property
     def dpu_hours(self) -> float:
-        return self.actual_dpu_hours_mtd + max(0.0, self.estimated_dpu_hours_mtd)
+        return self.actual_dpu_hours_window + max(0.0, self.estimated_dpu_hours_window)
 
 
 @dataclass
@@ -194,13 +194,13 @@ class GlueCrawler:
     tables_created: int = 0
     tables_updated: int = 0
     tables_deleted: int = 0
-    runs_mtd: int = 0
-    failures_mtd: int = 0
-    dpu_hours_mtd: float = 0.0
+    runs_in_window: int = 0
+    failures_in_window: int = 0
+    dpu_hours_window: float = 0.0
     owner_tag: str | None = None
-    crawl_ids_mtd: list[str] = field(default_factory=list)
+    crawl_ids_in_window: list[str] = field(default_factory=list)
     expected_runs_monthly: float | None = None
-    cost_data_through: str = ""
+    window_end: str = ""
     allocated_cost: float | None = None
     cost_quality: str = "unavailable"
     recrawl_behavior: str = "CRAWL_EVERYTHING"
@@ -227,14 +227,14 @@ class DataBrewJob:
     timeout_min: int = 2880
     max_retries: int = 0
     schedule_names: list[str] = field(default_factory=list)
-    runs_mtd: int = 0
-    failures_mtd: int = 0
-    execution_hours_mtd: float = 0.0
-    estimated_node_hours_mtd: float = 0.0
+    runs_in_window: int = 0
+    failures_in_window: int = 0
+    execution_hours_window: float = 0.0
+    estimated_node_hours_window: float = 0.0
     owner_tag: str | None = None
-    run_ids_mtd: list[str] = field(default_factory=list)
+    run_ids_in_window: list[str] = field(default_factory=list)
     expected_runs_monthly: float | None = None
-    cost_data_through: str = ""
+    window_end: str = ""
     allocated_cost: float | None = None
     cost_quality: str = "unavailable"
 
@@ -249,8 +249,8 @@ class ProcessCost:
     owner_confidence: float = 0.0
     owner_event_time: str = ""
     owner_event_name: str = ""
-    actual_cost_mtd: float = 0.0
-    estimated_cost_mtd: float = 0.0
+    actual_cost_window: float = 0.0
+    estimated_cost_window: float = 0.0
     forecast_cost_eom: float = 0.0
     actual_dpu_hours: float = 0.0
     estimated_dpu_hours: float = 0.0
@@ -261,8 +261,8 @@ class ProcessCost:
     component_names: list[str] = field(default_factory=list)
 
     @property
-    def total_cost_mtd(self) -> float:
-        return self.actual_cost_mtd + self.estimated_cost_mtd
+    def total_cost_window(self) -> float:
+        return self.actual_cost_window + self.estimated_cost_window
 
 
 @dataclass
@@ -608,17 +608,17 @@ class Account:
         return next((j for j in self.glue_jobs if j.name == name), None)
 
     @property
-    def total_cost_mtd(self) -> float:
+    def total_cost_window(self) -> float:
         return sum(s.monthly_cost for s in self.services)
 
     @property
     def total_monthly_cost(self) -> float:
         """Compatibilidade: os custos de serviço atuais representam cobrança MTD."""
-        return self.total_cost_mtd
+        return self.total_cost_window
 
     def process_cost_for_asset(self, asset_name: str) -> float | None:
         matches = [
-            p.total_cost_mtd
+            p.total_cost_window
             for p in self.process_costs
             if asset_name in p.component_names or p.process_name == asset_name
         ]
