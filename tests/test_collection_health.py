@@ -6,7 +6,7 @@ import json
 
 import pytest
 
-from julius.collection import orchestrator as collect_module
+from julius.collection import sources as collect_module
 from julius.collection.health.recorder import (
     CollectionRecorder,
     RequiredCollectionError,
@@ -14,6 +14,9 @@ from julius.collection.health.recorder import (
 from julius.collection.models import Account, CollectionHealth, GlueJob
 from julius.collection.normalizers.dump import account_to_dataset
 from julius.collection.normalizers.loader import load_account
+from julius.collection.orchestrator import collect_account
+from julius.collection.window import AnalysisWindow, BillingMonth
+from julius.config import DEFAULT_CONFIG
 from julius.pipeline import analyze
 from julius.report import renderer
 
@@ -70,7 +73,7 @@ def _patch_empty_collectors(monkeypatch):
         collect_module.sessions, "collect_sessions", lambda *_a, **_k: []
     )
     monkeypatch.setattr(
-        collect_module.athena_monthly, "collect_queries", lambda *_a, **_k: []
+        collect_module.athena, "collect_queries", lambda *_a, **_k: []
     )
     monkeypatch.setattr(
         collect_module.stepfunctions,
@@ -125,7 +128,7 @@ def test_collect_account_records_sources_and_optional_disabled_do_not_degrade(
     monkeypatch,
 ):
     _patch_empty_collectors(monkeypatch)
-    account = collect_module.collect_account(FakeSession())
+    account = collect_account(FakeSession())
 
     by_source = {item.source: item for item in account.collection_health}
     assert by_source["AWS identity"].status == "ok"
@@ -145,7 +148,7 @@ def test_missing_glue_billing_degrades_the_scan_when_there_are_jobs(monkeypatch)
         "collect_jobs",
         lambda *_a, **_k: [GlueJob(name="etl", worker_type="G.1X", number_of_workers=2)],
     )
-    account = collect_module.collect_account(FakeSession())
+    account = collect_account(FakeSession())
 
     billing = next(
         item
@@ -165,7 +168,7 @@ def test_optional_failure_marks_scan_partial_and_glue_failure_blocks(monkeypatch
         "collect_services",
         lambda *_a, **_k: (_ for _ in ()).throw(AwsLikeError()),
     )
-    account = collect_module.collect_account(FakeSession())
+    account = collect_account(FakeSession())
     assert account.collection_status == "partial"
     cost = next(
         item for item in account.collection_health if item.source == "Cost Explorer"
@@ -178,7 +181,7 @@ def test_optional_failure_marks_scan_partial_and_glue_failure_blocks(monkeypatch
         lambda *_a, **_k: (_ for _ in ()).throw(AwsLikeError()),
     )
     with pytest.raises(RequiredCollectionError, match="Glue Jobs"):
-        collect_module.collect_account(FakeSession())
+        collect_account(FakeSession())
 
 
 def test_health_roundtrip_and_report_json(tmp_path):
@@ -219,3 +222,80 @@ def test_health_roundtrip_and_report_json(tmp_path):
     assert payload["collection_health"]["status"] == "partial"
     assert payload["collection_health"]["sources"][1]["coverage"] == "50%"
     assert "Saúde da coleta" in renderer.render_html(analysis.vm)
+
+
+def test_every_source_declares_impact_and_next_action():
+    """A saúde só é acionável se toda fonte disser o que quebra e o que fazer."""
+    incomplete = [
+        source.name
+        for source in collect_module.SOURCES
+        if not source.impact.strip() or not source.next_action.strip()
+    ]
+    assert incomplete == []
+
+    # Fonte opcional precisa dizer também o que significa estar desligada.
+    optional_without_reason = [
+        source.name
+        for source in collect_module.SOURCES
+        if source.enabled is not None
+        and not (source.disabled_impact or source.impact).strip()
+    ]
+    assert optional_without_reason == []
+
+
+def test_a_new_source_runs_without_touching_the_orchestrator():
+    """Fonte nova é dado: nada em `collect_account` precisa mudar por causa dela."""
+    recorder = CollectionRecorder()
+    account = Account(account_id="123456789012")
+    context = collect_module.CollectionContext(
+        session=FakeSession(),
+        window=AnalysisWindow.trailing(),
+        billing=BillingMonth.current(),
+        account=account,
+        config=DEFAULT_CONFIG,
+    )
+    novel = collect_module.Source(
+        name="Amazon Redshift",
+        collect=lambda ctx: ["cluster-a", "cluster-b"],
+        into="state_machines",
+        count=len,
+        impact="clusters não avaliados",
+        next_action="validar redshift:DescribeClusters",
+    )
+
+    collect_module.run(novel, context, recorder)
+
+    assert account.state_machines == ["cluster-a", "cluster-b"]
+    entry = recorder.entries[-1]
+    assert entry.source == "Amazon Redshift"
+    assert entry.status == "ok"
+    assert entry.collected == 2
+
+
+def test_a_disabled_source_is_reported_instead_of_disappearing():
+    recorder = CollectionRecorder()
+    context = collect_module.CollectionContext(
+        session=FakeSession(),
+        window=AnalysisWindow.trailing(),
+        billing=BillingMonth.current(),
+        account=Account(account_id="123456789012"),
+        config=DEFAULT_CONFIG,
+    )
+    off = collect_module.Source(
+        name="Amazon Redshift",
+        collect=lambda ctx: [],
+        enabled=lambda ctx: False,
+        disabled_category="not_enabled",
+        disabled_impact="clusters não classificados",
+        disabled_next_action="usar --redshift quando houver cluster na conta",
+        impact="clusters não avaliados",
+        next_action="validar redshift:DescribeClusters",
+    )
+
+    collect_module.run(off, context, recorder)
+
+    entry = recorder.entries[-1]
+    assert entry.status == "unavailable"
+    assert entry.error_category == "not_enabled"
+    assert entry.impact == "clusters não classificados"
+    assert entry.affects_status is False
