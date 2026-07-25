@@ -12,10 +12,15 @@ from julius.collection.currency import non_usd_gap, usd_amount
 from julius.collection.models import AthenaCoverage
 
 
-def reconcile_cloudwatch(coverage, client, workgroups, start, end):
+def reconcile_cloudwatch(coverage, client, workgroups, start, end, telemetry):
     if client is None:
-        coverage.gaps.append("CloudWatch não coletado")
+        telemetry.unavailable(
+            "Athena CloudWatch",
+            category="not_configured",
+            detail="cliente não fornecido",
+        )
         return
+    telemetry.used("Athena CloudWatch")
     total = 0.0
     complete = True
     for workgroup in workgroups:
@@ -32,18 +37,23 @@ def reconcile_cloudwatch(coverage, client, workgroups, start, end):
             total += sum(float(point.get("Sum") or 0) for point in response.get("Datapoints", []))
         except Exception as exc:
             complete = False
-            coverage.gaps.append(f"CloudWatch {workgroup}: {type(exc).__name__}")
+            telemetry.failed("Athena CloudWatch", exc, detail=f"{workgroup}")
     if complete:
         coverage.cloudwatch_bytes = int(total)
         if coverage.api_scanned_bytes:
             coverage.reconciliation_ratio = round(total / coverage.api_scanned_bytes, 4)
 
 
-def costs(client, start, end, gaps):
+def costs(client, start, end, telemetry):
     """Custo Athena diário em USD, a única moeda aceita."""
     if client is None:
-        gaps.append("Cost Explorer não coletado")
+        telemetry.unavailable(
+            "Athena Cost Explorer",
+            category="not_configured",
+            detail="cliente não fornecido",
+        )
         return {}, "", "USD", False
+    telemetry.used("Athena Cost Explorer")
     for metric in ("NetUnblendedCost", "UnblendedCost"):
         try:
             response = client.get_cost_and_usage(
@@ -66,30 +76,31 @@ def costs(client, start, end, gaps):
                         isolated = False
                     reported = usd_amount(value.get("Amount"), value.get("Unit"))
                     if reported is None:
-                        gaps.append(non_usd_gap(value.get("Unit")))
+                        telemetry.unavailable(
+                            "Athena Cost Explorer",
+                            category="unsupported_currency",
+                            detail=non_usd_gap(value.get("Unit")),
+                        )
                         return {}, "", str(value.get("Unit") or "USD"), False
                     amount += reported
                 daily[period["TimePeriod"]["Start"]] = amount
             return daily, metric, "USD", isolated
         except Exception as exc:
-            gaps.append(f"Cost Explorer {metric}: {type(exc).__name__}")
+            telemetry.failed("Athena Cost Explorer", exc, detail=metric)
     return {}, "", "USD", False
 
 
-def reconciled(coverage: AthenaCoverage) -> bool:
-    blocking = (
-        "list_work_groups",
-        "list_query_executions",
-        "get_work_group",
-        "execuções não processadas",
-        "CloudWatch",
-        "métricas CloudWatch desabilitadas",
-    )
+def reconciled(coverage: AthenaCoverage, telemetry) -> bool:
+    """Cobertura completa e nenhuma fonte bloqueante em falha.
+
+    A checagem era uma busca por trechos de texto dentro dos gaps; agora
+    pergunta à telemetria quais fontes falharam.
+    """
     return (
         coverage.workgroups_total > 0
         and coverage.workgroups_covered == coverage.workgroups_total
         and not coverage.truncated
-        and not any(any(marker in gap for marker in blocking) for gap in coverage.gaps)
+        and not telemetry.blocked()
         and coverage.reconciliation_ratio is not None
         and 0.95 <= coverage.reconciliation_ratio <= 1.05
     )

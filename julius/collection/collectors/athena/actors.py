@@ -39,9 +39,12 @@ def resolve_actor(event: dict[str, Any] | None) -> tuple[str, str, str, str, str
     return "desconhecido", "unknown", "unknown", "low", None
 
 
-def enrich_actors(items, cloudtrail, identitystore, start, end, gaps):
+def enrich_actors(items, cloudtrail, identitystore, start, end, telemetry):
     if cloudtrail is None:
         return
+    telemetry.used("Athena CloudTrail")
+    if identitystore is not None:
+        telemetry.used("Athena Identity Center")
     by_id = {item.query_execution_id: item for item in items}
     try:
         paginator = cloudtrail.get_paginator("lookup_events")
@@ -63,16 +66,16 @@ def enrich_actors(items, cloudtrail, identitystore, start, end, gaps):
                 actor, kind, source, confidence, email = resolve_actor(event)
                 if source == "identity_center" and identitystore is not None:
                     actor, email, confidence = describe_identity(
-                        identitystore, event, actor, gaps
+                        identitystore, event, actor, telemetry
                     )
                 item.actor, item.actor_type = actor, kind
                 item.identity_source, item.identity_confidence = source, confidence
                 item.actor_email = email
     except Exception as exc:
-        gaps.append(f"CloudTrail: {type(exc).__name__}")
+        telemetry.failed("Athena CloudTrail", exc)
 
 
-def describe_identity(client, event, user_id, gaps):
+def describe_identity(client, event, user_id, telemetry):
     identity = event.get("userIdentity") or {}
     session = identity.get("sessionContext") or {}
     on_behalf = identity.get("onBehalfOf") or session.get("onBehalfOf") or {}
@@ -89,5 +92,5 @@ def describe_identity(client, event, user_id, gaps):
         email = next((entry.get("Value") for entry in emails if entry.get("Primary")), None)
         return str(name), email, "high"
     except Exception as exc:
-        gaps.append(f"IdentityStore: {type(exc).__name__}")
+        telemetry.failed("Athena Identity Center", exc)
         return user_id, None, "medium"

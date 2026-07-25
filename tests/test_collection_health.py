@@ -73,7 +73,7 @@ def _patch_empty_collectors(monkeypatch):
         collect_module.sessions, "collect_sessions", lambda *_a, **_k: []
     )
     monkeypatch.setattr(
-        collect_module.athena, "collect_queries", lambda *_a, **_k: []
+        collect_module.athena, "collect_analysis", lambda *_a, **_k: None
     )
     monkeypatch.setattr(
         collect_module.stepfunctions,

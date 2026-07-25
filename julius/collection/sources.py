@@ -58,6 +58,9 @@ class CollectionContext:
     # Sinais que uma fonte deixa para a seguinte — o rateio de custo só se
     # considera reconciliado quando o inventário de jobs veio íntegro.
     flags: dict[str, Any] = field(default_factory=dict)
+    # Entradas de saúde produzidas dentro de um coletor: o Athena consulta sete
+    # dependências e cada uma vira fonte própria no relatório.
+    pending_health: list[CollectionHealth] = field(default_factory=list)
 
     def client(self, service: str) -> Any:
         return self.session.client(service)
@@ -120,6 +123,9 @@ def run(source: Source, ctx: CollectionContext, recorder: CollectionRecorder) ->
         source.apply(ctx, result)
     if source.after is not None:
         source.after(ctx, result, recorder.entries[-1])
+    if ctx.pending_health:
+        recorder.entries.extend(ctx.pending_health)
+        ctx.pending_health.clear()
 
 
 def _latest_data_through(items: Any) -> str:
@@ -169,6 +175,19 @@ def _apply_athena_analysis(ctx: CollectionContext, analysis: Any) -> None:
     ctx.account.athena_coverage = analysis.coverage
     if analysis.coverage.cost_metric:
         ctx.account.currency = analysis.coverage.currency or ctx.account.currency
+
+
+def _publish_athena_dependencies(
+    ctx: CollectionContext, analysis: Any, _entry: CollectionHealth
+) -> None:
+    """As dependências internas do Athena entram na saúde como fontes próprias.
+
+    Sem isso, uma falha de CloudTrail e uma permissão faltando no Glue Catalog
+    ficavam indistinguíveis dentro de uma única linha chamada "Athena Queries".
+    """
+    if analysis is None:
+        return
+    ctx.pending_health.extend(analysis.health)
 
 
 def _apply_touches(ctx: CollectionContext, stats: dict) -> None:
@@ -361,6 +380,7 @@ SOURCES: tuple[Source, ...] = (
         ),
         default=lambda: None,
         apply=_apply_athena_analysis,
+        after=_publish_athena_dependencies,
         count=lambda analysis: len(analysis.queries) if analysis else 0,
         impact="linhagem de leitura e oportunidades Athena ficam incompletas",
         next_action="validar permissões read-only do Athena",

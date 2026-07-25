@@ -22,9 +22,12 @@ _WIDE_TABLE_COLUMNS = 50
 _PARTITION_PROJECTION_MIN_PARTITIONS = 1000
 
 
-def enrich_catalog(items: list[AthenaExecutionEvidence], glue, s3, gaps: list[str]) -> None:
+def enrich_catalog(items: list[AthenaExecutionEvidence], glue, s3, telemetry) -> None:
     if glue is None:
         return
+    telemetry.used("Athena Glue Catalog")
+    if s3 is not None:
+        telemetry.used("Athena S3")
     cache: dict[str, dict[str, Any]] = {}
     for item in items:
         for name in item.reads_tables:
@@ -64,7 +67,7 @@ def enrich_catalog(items: list[AthenaExecutionEvidence], glue, s3, gaps: list[st
                         ),
                     }
                 except Exception as exc:
-                    gaps.append(f"Glue {name}: {type(exc).__name__}")
+                    telemetry.failed("Athena Glue Catalog", exc, detail=name)
                     continue
             evidence = cache[name]
             keys = evidence["keys"]

@@ -612,3 +612,80 @@ def test_requested_rules_are_grouped_by_pattern_and_actor():
     assert account.athena_actor_usage[0].opportunity_refs == [
         athena_opportunities[0].opportunity_id
     ]
+
+
+def test_each_athena_dependency_reports_its_own_health():
+    """CloudTrail caindo e Glue Catalog sem permissão são falhas distintas.
+
+    Antes, as duas viravam texto livre dentro de uma única entrada chamada
+    "Athena Queries", e nenhuma podia ser agregada ou alertada.
+    """
+
+    class _BrokenCloudTrail:
+        def get_paginator(self, name):
+            raise PermissionError("acesso negado")
+
+    class _BrokenGlue:
+        def get_table(self, **kwargs):
+            raise PermissionError("acesso negado")
+
+    executions = [
+        {
+            "QueryExecutionId": "q-1",
+            "WorkGroup": "one",
+            "Query": "SELECT id FROM db.sales",
+            "Status": {
+                "State": "SUCCEEDED",
+                "SubmissionDateTime": datetime.now(timezone.utc) - timedelta(days=1),
+            },
+            "Statistics": {"DataScannedInBytes": 20 * MB},
+            "StatementType": "DML",
+        }
+    ]
+
+    analysis = collect_analysis(
+        _Athena(executions),
+        cloudtrail_client=_BrokenCloudTrail(),
+        glue_client=_BrokenGlue(),
+    )
+
+    by_source = {item.source: item for item in analysis.health}
+    assert by_source["Athena API"].status == "ok"
+    assert by_source["Athena CloudTrail"].status == "unavailable"
+    assert by_source["Athena CloudTrail"].error_category == "permission_denied"
+    assert by_source["Athena Glue Catalog"].error_category == "permission_denied"
+    # Fonte não consultada não inventa entrada.
+    assert "Athena Identity Center" not in by_source
+
+    # Cada fonte diz o que quebra e o que fazer, como o resto da coleta.
+    for entry in analysis.health:
+        if entry.status == "unavailable":
+            assert entry.impact and entry.next_action
+
+    # E nenhuma mensagem de exceção vaza para o dataset.
+    assert "acesso negado" not in json.dumps(
+        [item.__dict__ for item in analysis.health], ensure_ascii=False
+    )
+
+
+def test_reconciliation_asks_telemetry_instead_of_matching_gap_text():
+    """A trava de reconciliação olha fontes, não trechos de string."""
+    from julius.collection.collectors.athena.cost import reconciled
+    from julius.collection.collectors.athena.telemetry import AthenaTelemetry
+    from julius.collection.models import AthenaCoverage
+
+    coverage = AthenaCoverage(
+        workgroups_total=1, workgroups_covered=1, reconciliation_ratio=1.0
+    )
+    telemetry = AthenaTelemetry(coverage)
+    assert reconciled(coverage, telemetry) is True
+
+    telemetry.failed("Athena CloudWatch", PermissionError("x"))
+    assert reconciled(coverage, telemetry) is False
+
+    # Falha numa fonte não bloqueante não impede reconciliar o volume.
+    other = AthenaTelemetry(
+        AthenaCoverage(workgroups_total=1, workgroups_covered=1, reconciliation_ratio=1.0)
+    )
+    other.failed("Athena Identity Center", PermissionError("x"))
+    assert reconciled(other.coverage, other) is True

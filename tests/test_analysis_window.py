@@ -9,6 +9,7 @@ import pytest
 
 from julius.collection.collectors import cost_explorer
 from julius.collection.collectors.athena import cost as athena_cost
+from julius.collection.collectors.athena.telemetry import AthenaTelemetry
 from julius.collection.collectors.glue import cost as glue_cost
 from julius.collection.collectors.glue import jobs as glue_collector
 from julius.collection.models import Account, AthenaCoverage, AthenaQuery
@@ -61,7 +62,12 @@ def test_glue_and_athena_costs_cover_the_same_days():
     athena_client = _RecordingCostExplorer()
 
     glue_cost.collect_glue_costs(glue_client, window=window)
-    athena_cost.costs(athena_client, window.start, window.end, [])
+    athena_cost.costs(
+        athena_client,
+        window.start,
+        window.end,
+        AthenaTelemetry(AthenaCoverage()),
+    )
 
     assert glue_client.periods == athena_client.periods
     assert glue_client.periods[0] == {

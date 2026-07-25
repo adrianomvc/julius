@@ -38,7 +38,7 @@ _NONDETERMINISTIC_FUNCTIONS = {
 }
 
 
-def workgroups(client, coverage: AthenaCoverage) -> tuple[list[str], dict[str, dict]]:
+def workgroups(client, coverage: AthenaCoverage, telemetry) -> tuple[list[str], dict[str, dict]]:
     names: list[str] = []
     configs: dict[str, dict] = {}
     try:
@@ -46,7 +46,7 @@ def workgroups(client, coverage: AthenaCoverage) -> tuple[list[str], dict[str, d
         for page in paginator.paginate():
             names.extend(item["Name"] for item in page.get("WorkGroups", []) if item.get("Name"))
     except Exception as exc:
-        coverage.gaps.append(f"list_work_groups: {type(exc).__name__}")
+        telemetry.failed("Athena API", exc, detail="list_work_groups")
         names = ["primary"]  # compatibilidade com mocks e permissões legadas
     names = list(dict.fromkeys(names))
     coverage.workgroups = names
@@ -56,13 +56,13 @@ def workgroups(client, coverage: AthenaCoverage) -> tuple[list[str], dict[str, d
             configs[name] = client.get_work_group(WorkGroup=name).get("WorkGroup", {})
             cfg = configs[name].get("Configuration", {})
             if not cfg.get("PublishCloudWatchMetricsEnabled", False):
-                coverage.gaps.append(f"{name}: métricas CloudWatch desabilitadas")
+                telemetry.unavailable("Athena CloudWatch", category="not_configured", detail=f"{name}: métricas desabilitadas no workgroup")
         except Exception as exc:
-            coverage.gaps.append(f"{name}: get_work_group {type(exc).__name__}")
+            telemetry.failed("Athena API", exc, detail=f"{name}: get_work_group")
     return names, configs
 
 
-def execution_ids(client, workgroup: str, *, max_ids: int | None, gaps: list[str]):
+def execution_ids(client, workgroup: str, *, max_ids: int | None, telemetry):
     ids: list[str] = []
     truncated = False
     try:
@@ -79,25 +79,25 @@ def execution_ids(client, workgroup: str, *, max_ids: int | None, gaps: list[str
                 break
         return ids, truncated
     except Exception as exc:
-        gaps.append(f"{workgroup}: list_query_executions {type(exc).__name__}")
+        telemetry.failed("Athena API", exc, detail=f"{workgroup}: list_query_executions")
         return None, False
 
 
-def query_executions(client, ids: list[str], gaps: list[str]):
+def query_executions(client, ids: list[str], telemetry):
     for index in range(0, len(ids), 50):
         chunk = ids[index : index + 50]
         try:
             response = client.batch_get_query_execution(QueryExecutionIds=chunk)
             yield from response.get("QueryExecutions", [])
             if response.get("UnprocessedQueryExecutionIds"):
-                gaps.append(f"{len(response['UnprocessedQueryExecutionIds'])} execuções não processadas")
+                telemetry.unavailable("Athena API", category="partial_data", detail=f"{len(response['UnprocessedQueryExecutionIds'])} execuções não processadas")
         except Exception:
             # Alguns ambientes autorizam Get mas não BatchGet.
             for query_id in chunk:
                 try:
                     yield client.get_query_execution(QueryExecutionId=query_id)["QueryExecution"]
                 except Exception as exc:
-                    gaps.append(f"get_query_execution: {type(exc).__name__}")
+                    telemetry.failed("Athena API", exc, detail="get_query_execution")
 
 
 def execution(qe: dict, workgroup: dict) -> AthenaExecutionEvidence | None:
