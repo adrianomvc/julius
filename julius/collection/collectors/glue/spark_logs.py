@@ -4,15 +4,13 @@ from __future__ import annotations
 
 import gzip
 import json
-from datetime import datetime, timezone
-from urllib.parse import urlparse
 
+from julius.collection.collectors.s3_evidence import list_objects, parse_location
 from julius.collection.models import GlueJob
 from julius.collection.window import AnalysisWindow
 
 _MAX_OBJECTS_PER_JOB = 20
 _MAX_OBJECT_BYTES = 10 * 1024 * 1024
-_MAX_LIST_PAGES = 5
 
 
 def enrich_glue_shuffle(
@@ -21,13 +19,18 @@ def enrich_glue_shuffle(
     *,
     window: AnalysisWindow,
 ) -> None:
-    cutoff = window.start
     for job in jobs:
-        location = _s3_location(job.spark_event_logs_path)
+        location = parse_location(job.spark_event_logs_path)
         if location is None:
             continue
         bucket, prefix = location
-        objects, listing_complete = _objects(s3_client, bucket, prefix, cutoff)
+        objects, listing_complete = list_objects(
+            s3_client,
+            bucket,
+            prefix,
+            modified_after=window.start,
+            max_objects=_MAX_OBJECTS_PER_JOB,
+        )
         spill = 0.0
         shuffle_read = 0.0
         shuffle_write = 0.0
@@ -59,55 +62,6 @@ def enrich_glue_shuffle(
             job.spark_event_log_evidence_complete = (
                 listing_complete and complete_objects == len(objects)
             )
-
-
-def _s3_location(value: str | None) -> tuple[str, str] | None:
-    if not value:
-        return None
-    parsed = urlparse(value)
-    if parsed.scheme != "s3" or not parsed.netloc:
-        return None
-    prefix = parsed.path.lstrip("/")
-    if not prefix:
-        return None
-    return parsed.netloc, prefix.rstrip("/") + "/"
-
-
-def _objects(
-    s3_client, bucket: str, prefix: str, cutoff: datetime
-) -> tuple[list[dict], bool]:
-    candidates = []
-    token = None
-    listing_complete = True
-    for _ in range(_MAX_LIST_PAGES):
-        kwargs = {"Bucket": bucket, "Prefix": prefix, "MaxKeys": 1000}
-        if token:
-            kwargs["ContinuationToken"] = token
-        try:
-            response = s3_client.list_objects_v2(**kwargs)
-        except Exception:
-            return [], False
-        for item in response.get("Contents", []):
-            modified = item.get("LastModified")
-            if isinstance(modified, datetime):
-                normalized = modified.replace(tzinfo=modified.tzinfo or timezone.utc)
-                if normalized < cutoff:
-                    continue
-            candidates.append(item)
-        token = response.get("NextContinuationToken")
-        if not response.get("IsTruncated") or not token:
-            break
-    else:
-        listing_complete = False
-    candidates.sort(
-        key=lambda item: item.get("LastModified")
-        if isinstance(item.get("LastModified"), datetime)
-        else datetime.min.replace(tzinfo=timezone.utc),
-        reverse=True,
-    )
-    if len(candidates) > _MAX_OBJECTS_PER_JOB:
-        listing_complete = False
-    return candidates[:_MAX_OBJECTS_PER_JOB], listing_complete
 
 
 def _parse(payload: bytes) -> dict[str, float]:

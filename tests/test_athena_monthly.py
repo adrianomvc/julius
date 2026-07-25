@@ -3,16 +3,18 @@ from __future__ import annotations
 import json
 from datetime import datetime, timedelta, timezone
 
-from julius.collection.collectors.athena.monthly import (
-    _has_partition_predicate,
-    _result_reuse_eligible,
-    _small_file_evidence,
+from julius.collection.collectors.athena.actors import resolve_actor
+from julius.collection.collectors.athena.catalog import (
+    has_partition_predicate,
+    small_file_evidence,
+)
+from julius.collection.collectors.athena.evidence import (
     billable_bytes,
-    collect_analysis,
     fingerprints,
     recurrence,
-    resolve_actor,
 )
+from julius.collection.collectors.athena.executions import result_reuse_eligible
+from julius.collection.collectors.athena.monthly import collect_analysis
 from julius.collection.models import Account, AthenaQuery
 from julius.collection.normalizers.dump import account_to_dataset
 from julius.config import DEFAULT_CONFIG
@@ -52,8 +54,8 @@ def test_partition_ast_respects_aliases_joins_and_ctes():
         )
         SELECT * FROM filtered
     """
-    assert _has_partition_predicate(sql, "db.sales", "dt") is True
-    assert _has_partition_predicate(sql, "db.people", "dt") is False
+    assert has_partition_predicate(sql, "db.sales", "dt") is True
+    assert has_partition_predicate(sql, "db.people", "dt") is False
 
 
 def test_small_files_requires_complete_s3_size_evidence():
@@ -64,7 +66,7 @@ def test_small_files_requires_complete_s3_size_evidence():
                 lambda **_: [{"Contents": [{"Key": f"k-{i}", "Size": MB} for i in range(100)]}]
             )
 
-    count, average, confirmed = _small_file_evidence(S3(), "s3://bucket/prefix")
+    count, average, confirmed = small_file_evidence(S3(), "s3://bucket/prefix")
     assert (count, average, confirmed) == (100, MB, True)
 
 
@@ -98,13 +100,13 @@ def test_identity_precedence_and_automation_classification():
 
 
 def test_result_reuse_gate_rejects_nondeterministic_queries():
-    assert _result_reuse_eligible(
+    assert result_reuse_eligible(
         "SELECT customer_id FROM db.sales", "DML", "on_demand"
     )
-    assert not _result_reuse_eligible(
+    assert not result_reuse_eligible(
         "SELECT random() FROM db.sales", "DML", "on_demand"
     )
-    assert not _result_reuse_eligible(
+    assert not result_reuse_eligible(
         "SELECT customer_id FROM db.sales", "DML", "federated"
     )
 
