@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from datetime import datetime, timedelta, timezone
 
-from julius.aws.athena_collector import (
+from julius.collection.collectors.athena.monthly import (
     _has_partition_predicate,
     _result_reuse_eligible,
     _small_file_evidence,
@@ -13,10 +13,10 @@ from julius.aws.athena_collector import (
     recurrence,
     resolve_actor,
 )
+from julius.collection.models import Account, AthenaQuery
+from julius.collection.normalizers.dump import account_to_dataset
 from julius.config import DEFAULT_CONFIG
 from julius.estimation import athena as athena_estimation
-from julius.ingest.dump import account_to_dataset
-from julius.inventory.model import Account, AthenaQuery
 from julius.opportunities.detectors import athena as athena_detector
 from julius.pipeline import analyze_account
 from julius.report import renderer

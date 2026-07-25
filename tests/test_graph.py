@@ -5,22 +5,22 @@ from __future__ import annotations
 import json
 from datetime import datetime, timezone
 
-from julius.aws.cloudtrail_collector import collect_actor_events
-from julius.aws.window import AnalysisWindow
-from julius.graph import (
-    AssetKey,
-    EdgeType,
-    build_process_graph,
-    resolve_actor,
-    resolve_owner,
-)
-from julius.inventory.model import (
+from julius.collection.collectors.cloudtrail import collect_actor_events
+from julius.collection.models import (
     Account,
     ActorEvent,
     GlueJob,
     Schedule,
     StateMachine,
     Table,
+)
+from julius.collection.window import AnalysisWindow
+from julius.graph import (
+    AssetKey,
+    EdgeType,
+    build_process_graph,
+    resolve_actor,
+    resolve_owner,
 )
 from julius.pipeline import analyze_account
 

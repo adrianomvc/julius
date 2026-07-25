@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from datetime import date, datetime, timezone
 from pathlib import Path
 
-from julius.inventory.model import Account
+from julius.collection.models import Account
 from julius.opportunities.base import Opportunity
 from julius.opportunities.lifecycle import LifecycleEvent
 from julius.state.diff import DiffEvent

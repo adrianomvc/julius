@@ -4,11 +4,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from julius.collection.models import Account, Table
 from julius.graph.assets import Asset, AssetKey
 from julius.graph.edges import Edge, EdgeType
 from julius.graph.lineage import build_lineage
 from julius.graph.ownership import resolve_owner
-from julius.inventory.model import Account, Table
 
 
 @dataclass

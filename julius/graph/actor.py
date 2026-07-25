@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from julius.collection.models import Account
 from julius.graph.ownership import asset_owner_tag
-from julius.inventory.model import Account
 
 
 @dataclass(frozen=True)

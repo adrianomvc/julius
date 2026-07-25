@@ -7,14 +7,8 @@ from datetime import date, datetime, timezone
 
 import pytest
 
-from julius.aws import glue_cost
-from julius.aws.window import AnalysisWindow
-from julius.config import DATASET_SCHEMA_VERSION, DEFAULT_CONFIG
-from julius.estimation import glue as glue_est
-from julius.estimation.currency import usd_amount
-from julius.estimation.process_cost import build_process_costs
-from julius.ingest.loader import load_account
-from julius.inventory.model import (
+from julius.collection.collectors.glue import cost as glue_cost
+from julius.collection.models import (
     Account,
     DataBrewJob,
     GlueCrawler,
@@ -22,6 +16,12 @@ from julius.inventory.model import (
     InteractiveSession,
     ServiceCost,
 )
+from julius.collection.normalizers.loader import load_account
+from julius.collection.window import AnalysisWindow
+from julius.config import DATASET_SCHEMA_VERSION, DEFAULT_CONFIG
+from julius.estimation import glue as glue_est
+from julius.estimation.currency import usd_amount
+from julius.estimation.process_cost import build_process_costs
 from julius.pipeline import analyze_account
 from julius.report import renderer
 

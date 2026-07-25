@@ -10,10 +10,10 @@ from __future__ import annotations
 
 from datetime import date
 
+from julius.collection.models import Account, ProcessCost
 from julius.config import Config
 from julius.estimation.project import build_gain
 from julius.graph.ownership import resolve_owner
-from julius.inventory.model import Account, ProcessCost
 from julius.opportunities import impact, prioritizer
 from julius.opportunities.base import Opportunity
 

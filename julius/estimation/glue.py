@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import math
 
+from julius.collection.models import GlueJob
 from julius.config import Config
-from julius.inventory.model import GlueJob
 from julius.opportunities.base import Estimation
 
 

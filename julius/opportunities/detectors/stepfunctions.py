@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
+from julius.collection.models import Account, StateMachine
 from julius.config import Config
 from julius.estimation import stepfunctions as sfn_est
-from julius.inventory.model import Account, StateMachine
 from julius.opportunities.base import Opportunity
 from julius.opportunities.detectors._build import build
 

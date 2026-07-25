@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
+from julius.collection.models import Account, GlueJob
 from julius.config import UNATTRIBUTED_GLUE_BUCKETS, Config
 from julius.estimation import glue as glue_est
-from julius.inventory.model import Account, GlueJob
 from julius.opportunities.base import Estimation, Opportunity
 from julius.opportunities.detectors._build import build
 

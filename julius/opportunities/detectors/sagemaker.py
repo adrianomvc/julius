@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
+from julius.collection.models import Account, SageMakerApp, SageMakerEndpoint
 from julius.config import Config, is_gpu_instance
 from julius.estimation import sagemaker as sm_est
-from julius.inventory.model import Account, SageMakerApp, SageMakerEndpoint
 from julius.opportunities.base import Opportunity
 from julius.opportunities.detectors._build import build
 

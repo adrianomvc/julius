@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
+from julius.collection.models import GlueJob, Table
 from julius.config import Config
-from julius.inventory.model import GlueJob, Table
 from julius.opportunities.base import Estimation
 
 

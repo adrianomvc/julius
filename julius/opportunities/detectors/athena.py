@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
+from julius.collection.models import Account, AthenaQuery
 from julius.config import Config
 from julius.estimation import athena as athena_est
-from julius.inventory.model import Account, AthenaQuery
 from julius.opportunities.base import Opportunity
 from julius.opportunities.detectors._build import build
 

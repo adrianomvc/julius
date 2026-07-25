@@ -8,14 +8,14 @@ import json
 import pytest
 
 from julius.agent import prepare_agent_workspace
-from julius.aws.technical_artifacts import (
+from julius.collection.collectors.glue.scripts import (
     ArtifactBundle,
     IdentityMismatchError,
     TechnicalArtifact,
     collect_technical_artifacts,
     write_artifact_bundle,
 )
-from julius.inventory.model import Account, AthenaQuery, GlueJob, StateMachine
+from julius.collection.models import Account, AthenaQuery, GlueJob, StateMachine
 from julius.pipeline import analyze
 
 

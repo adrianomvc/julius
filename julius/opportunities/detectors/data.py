@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
+from julius.collection.models import Account, Table
 from julius.config import Config
 from julius.estimation import data as data_est
-from julius.inventory.model import Account, Table
 from julius.opportunities.base import Opportunity
 from julius.opportunities.detectors._build import build
 

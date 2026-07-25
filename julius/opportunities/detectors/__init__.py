@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
+from julius.collection.models import Account
 from julius.config import Config
-from julius.inventory.model import Account
 from julius.opportunities.base import Opportunity
 from julius.opportunities.detectors import (
     athena,

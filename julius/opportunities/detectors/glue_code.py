@@ -5,9 +5,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from julius.code_analysis import GlueCodeArtifact, scan_glue_script
+from julius.collection.models import Account, GlueJob
 from julius.config import Config
 from julius.estimation.glue import code_pattern_saving, python_shell_migration_saving
-from julius.inventory.model import Account, GlueJob
 from julius.opportunities.base import Opportunity
 from julius.opportunities.detectors._build import build
 

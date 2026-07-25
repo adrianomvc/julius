@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import re
 
+from julius.collection.models import Account
 from julius.graph.assets import AssetKey
 from julius.graph.edges import Edge, EdgeType
-from julius.inventory.model import Account
 
 
 def build_lineage(account: Account) -> list[Edge]:

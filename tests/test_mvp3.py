@@ -7,9 +7,9 @@ from pathlib import Path
 
 import pytest
 
+from julius.collection.normalizers import load_account
 from julius.config import DEFAULT_CONFIG
 from julius.estimation.calibration import apply_calibrations
-from julius.ingest import load_account
 from julius.opportunities.base import EstimatedGain, Estimation, Opportunity
 from julius.opportunities.lifecycle import can_transition
 from julius.pipeline import analyze_account

@@ -17,20 +17,20 @@ from julius.agent import (
     validate_result_file,
     write_validated_result,
 )
-from julius.aws.account_targets import (
+from julius.collection.collectors.glue.scripts import (
+    IdentityMismatchError,
+    collect_technical_artifacts,
+    write_artifact_bundle,
+)
+from julius.collection.normalizers import load_account
+from julius.collection.session import make_session
+from julius.collection.targets import (
     AccountTargetError,
     load_account_targets,
     verify_account_targets,
     write_verified_accounts,
 )
-from julius.aws.session import make_session
-from julius.aws.technical_artifacts import (
-    IdentityMismatchError,
-    collect_technical_artifacts,
-    write_artifact_bundle,
-)
 from julius.config import ANALYSIS_WINDOW_DAYS
-from julius.ingest import load_account
 from julius.metrics import compute_kpis
 from julius.notification import (
     NotificationPolicy,
@@ -531,9 +531,9 @@ def collect(
     output: str = typer.Option("data/collected/account.json", "--output", "-o"),
 ) -> None:
     """Coleta em sa-east-1 com o perfil SSO selecionado e grava o dataset."""
-    from julius.aws.collect import collect_account
-    from julius.aws.collection_health import RequiredCollectionError
-    from julius.ingest.dump import account_to_dataset
+    from julius.collection.health.recorder import RequiredCollectionError
+    from julius.collection.normalizers.dump import account_to_dataset
+    from julius.collection.orchestrator import collect_account
 
     session = make_session(sso_profile or None, "sa-east-1")
     try:

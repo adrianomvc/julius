@@ -6,14 +6,14 @@ import json
 
 import pytest
 
-from julius.aws import collect as collect_module
-from julius.aws.collection_health import (
+from julius.collection import orchestrator as collect_module
+from julius.collection.health.recorder import (
     CollectionRecorder,
     RequiredCollectionError,
 )
-from julius.ingest.dump import account_to_dataset
-from julius.ingest.loader import load_account
-from julius.inventory.model import Account, CollectionHealth, GlueJob
+from julius.collection.models import Account, CollectionHealth, GlueJob
+from julius.collection.normalizers.dump import account_to_dataset
+from julius.collection.normalizers.loader import load_account
 from julius.pipeline import analyze
 from julius.report import renderer
 
@@ -44,41 +44,41 @@ def _patch_empty_collectors(monkeypatch):
         collect_module.cost_explorer, "collect_services", lambda *_a, **_k: []
     )
     monkeypatch.setattr(
-        collect_module.glue_collector, "collect_jobs", lambda *_a, **_k: []
+        collect_module.jobs, "collect_jobs", lambda *_a, **_k: []
     )
     monkeypatch.setattr(
-        collect_module.glue_collector, "collect_tables", lambda *_a, **_k: []
+        collect_module.jobs, "collect_tables", lambda *_a, **_k: []
     )
     monkeypatch.setattr(
-        collect_module.crawlers_collector, "collect_crawlers", lambda *_a, **_k: []
+        collect_module.glue_crawlers, "collect_crawlers", lambda *_a, **_k: []
     )
     monkeypatch.setattr(
-        collect_module.glue_triggers_collector, "collect_triggers", lambda *_a, **_k: []
+        collect_module.triggers, "collect_triggers", lambda *_a, **_k: []
     )
     monkeypatch.setattr(
-        collect_module.databrew_collector, "collect_jobs", lambda *_a, **_k: []
+        collect_module.databrew, "collect_jobs", lambda *_a, **_k: []
     )
     monkeypatch.setattr(
-        collect_module.cloudwatch_collector, "enrich_glue_cpu", lambda *_a, **_k: None
+        collect_module.cloudwatch, "enrich_glue_cpu", lambda *_a, **_k: None
     )
     monkeypatch.setattr(
-        collect_module.cloudwatch_collector,
+        collect_module.cloudwatch,
         "enrich_glue_observability",
         lambda *_a, **_k: None,
     )
     monkeypatch.setattr(
-        collect_module.sessions_collector, "collect_sessions", lambda *_a, **_k: []
+        collect_module.sessions, "collect_sessions", lambda *_a, **_k: []
     )
     monkeypatch.setattr(
-        collect_module.athena_collector, "collect_queries", lambda *_a, **_k: []
+        collect_module.athena_monthly, "collect_queries", lambda *_a, **_k: []
     )
     monkeypatch.setattr(
-        collect_module.stepfunctions_collector,
+        collect_module.stepfunctions,
         "collect_state_machines",
         lambda *_a, **_k: [],
     )
     monkeypatch.setattr(
-        collect_module.schedules_collector, "collect_schedules", lambda *_a, **_k: []
+        collect_module.schedules, "collect_schedules", lambda *_a, **_k: []
     )
 
 
@@ -141,7 +141,7 @@ def test_collect_account_records_sources_and_optional_disabled_do_not_degrade(
 def test_missing_glue_billing_degrades_the_scan_when_there_are_jobs(monkeypatch):
     _patch_empty_collectors(monkeypatch)
     monkeypatch.setattr(
-        collect_module.glue_collector,
+        collect_module.jobs,
         "collect_jobs",
         lambda *_a, **_k: [GlueJob(name="etl", worker_type="G.1X", number_of_workers=2)],
     )
@@ -173,7 +173,7 @@ def test_optional_failure_marks_scan_partial_and_glue_failure_blocks(monkeypatch
     assert cost.error_category == "permission_denied"
 
     monkeypatch.setattr(
-        collect_module.glue_collector,
+        collect_module.jobs,
         "collect_jobs",
         lambda *_a, **_k: (_ for _ in ()).throw(AwsLikeError()),
     )
