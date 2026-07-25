@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import calendar
-from datetime import date
 
 from julius.config import Config
 from julius.inventory.model import Account
@@ -53,7 +51,7 @@ def detect(account: Account, config: Config, scan_id: str) -> list[Opportunity]:
                 doc_links=[_DOC],
                 data_sources=["DataBrew ListJobs", "ListJobRuns"],
                 observed_runs=job.runs_in_window,
-                coverage_days=min(account.lookback_days, 31),
+                coverage_days=job.window_days,
                 has_optional_metrics=False,
                 owner_tag=job.owner_tag,
                 config=config,
@@ -61,7 +59,7 @@ def detect(account: Account, config: Config, scan_id: str) -> list[Opportunity]:
                 blocked=True,
             ))
         if job.expected_runs_monthly:
-            expected_in_window = job.expected_runs_monthly * _month_progress(account)
+            expected_in_window = job.expected_runs_in_window or 0.0
             deviation = abs(job.runs_in_window - expected_in_window) / max(1.0, expected_in_window)
             if deviation >= 0.5:
                 out.append(
@@ -81,21 +79,21 @@ def detect(account: Account, config: Config, scan_id: str) -> list[Opportunity]:
                         ),
                         finding="DataBrew runs divergem do schedule",
                         why=(
-                            f"Schedule prevê ~{expected_in_window:.1f} até a data; "
+                            f"Schedule prevê ~{expected_in_window:.1f} na janela; "
                             f"{job.runs_in_window} foram observadas."
                         ),
                         recommended_action="Reconciliar cron, falhas e disparos manuais",
                         how_to_apply="Revisar schedule e histórico sem alterar o recurso.",
                         how_to_validate="Confirmar a contagem no próximo período.",
                         evidence=[
-                            f"esperadas até a data ~{expected_in_window:.1f}",
+                            f"esperadas na janela ~{expected_in_window:.1f}",
                             f"observadas {job.runs_in_window}",
                         ],
-                        risks=["mês parcial pode explicar parte da diferença"],
+                        risks=["disparo manual ou pausa recente pode explicar parte da diferença"],
                         doc_links=[_DOC],
                         data_sources=["DataBrew ListSchedules", "ListJobRuns"],
                         observed_runs=job.runs_in_window,
-                        coverage_days=min(account.lookback_days, 31),
+                        coverage_days=job.window_days,
                         has_optional_metrics=True,
                         owner_tag=job.owner_tag,
                         config=config,
@@ -105,11 +103,3 @@ def detect(account: Account, config: Config, scan_id: str) -> list[Opportunity]:
                 )
     return out
 
-
-def _month_progress(account: Account) -> float:
-    try:
-        current = date.fromisoformat(account.generated_at[:10])
-    except (TypeError, ValueError):
-        current = date.today()
-    days = calendar.monthrange(current.year, current.month)[1]
-    return min(1.0, current.day / days)

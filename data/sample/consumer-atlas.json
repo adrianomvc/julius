@@ -1,15 +1,48 @@
 {
+  "dataset_schema_version": 2,
   "account": "consumer-atlas",
   "region": "sa-east-1",
   "period": "jul/2026",
-  "lookback_days": 90,
+  "lookback_days": 30,
   "generated_at": "2026-07-23",
   "cost_explorer": {
     "services": [
-      { "name": "AWS Glue", "subtitle": "Jobs, sessions e crawlers", "monthly_cost": 1969.23, "currency": "USD", "period_kind": "month_to_date", "data_through": "2026-07-22", "estimated": true },
-      { "name": "Amazon Athena", "subtitle": "queries + workgroups", "monthly_cost": 476.92, "currency": "USD", "period_kind": "month_to_date", "data_through": "2026-07-22", "estimated": true },
-      { "name": "Amazon S3", "subtitle": "armazenamento + requests", "monthly_cost": 400.00, "currency": "USD", "period_kind": "month_to_date", "data_through": "2026-07-22", "estimated": true },
-      { "name": "Outros", "subtitle": "CloudWatch, KMS, transfer", "monthly_cost": 276.92, "currency": "USD", "period_kind": "month_to_date", "data_through": "2026-07-22", "estimated": true }
+      {
+        "name": "AWS Glue",
+        "subtitle": "Jobs, sessions e crawlers",
+        "monthly_cost": 1969.23,
+        "currency": "USD",
+        "period_kind": "month_to_date",
+        "data_through": "2026-07-22",
+        "estimated": true
+      },
+      {
+        "name": "Amazon Athena",
+        "subtitle": "queries + workgroups",
+        "monthly_cost": 476.92,
+        "currency": "USD",
+        "period_kind": "month_to_date",
+        "data_through": "2026-07-22",
+        "estimated": true
+      },
+      {
+        "name": "Amazon S3",
+        "subtitle": "armazenamento + requests",
+        "monthly_cost": 400.0,
+        "currency": "USD",
+        "period_kind": "month_to_date",
+        "data_through": "2026-07-22",
+        "estimated": true
+      },
+      {
+        "name": "Outros",
+        "subtitle": "CloudWatch, KMS, transfer",
+        "monthly_cost": 276.92,
+        "currency": "USD",
+        "period_kind": "month_to_date",
+        "data_through": "2026-07-22",
+        "estimated": true
+      }
     ]
   },
   "glue_jobs": [
@@ -22,7 +55,7 @@
       "execution_class": "STANDARD",
       "job_bookmark": true,
       "time_sensitive": true,
-      "runs_per_month": 30,
+      "runs_in_window": 30,
       "avg_execution_sec": 2400,
       "avg_cpu_load": 0.31,
       "observed_runs": 28,
@@ -49,8 +82,34 @@
   ],
   "governance": {
     "producer_candidates": [
-      { "name": "base_pedidos_consolidada", "candidate_score": 71, "readiness_score": 58 }
+      {
+        "name": "base_pedidos_consolidada",
+        "candidate_score": 71,
+        "readiness_score": 58
+      }
     ],
     "previous_results": []
+  },
+  "window": {
+    "start": "",
+    "end": "2026-07-23",
+    "days": 30
+  },
+  "glue_cost_coverage": {
+    "period_start": "",
+    "data_through": "2026-07-23",
+    "cost_metric": "NetUnblendedCost",
+    "currency": "USD",
+    "net_cost": 1969.2,
+    "buckets": {
+      "etl_job": 1520.0,
+      "crawler": 210.3,
+      "catalog": 130.0,
+      "other": 108.9
+    },
+    "unknown_usage_types": [],
+    "cost_quality": "partial",
+    "allocation_version": "glue-cost-allocation-1.0",
+    "gaps": []
   }
 }

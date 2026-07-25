@@ -5,6 +5,8 @@ from __future__ import annotations
 import calendar
 from datetime import date, timedelta
 
+from julius.aws.window import BillingMonth
+from julius.config import MIN_DAYS_FOR_FORECAST
 from julius.estimation.currency import UnsupportedCurrencyError, usd_amount
 from julius.inventory.model import ServiceCost
 
@@ -27,21 +29,15 @@ _SUBTITLE = {
 def collect_services(
     ce_client,
     *,
-    months: int = 1,
-    today: date | None = None,
+    billing: BillingMonth,
     include_forecast: bool = False,
 ) -> list[ServiceCost]:
     """GetCostAndUsage agrupado por serviço → cobrança MTD em USD.
 
     Serviços fora do escopo do Julius são somados em "Outros".
     """
-    today = today or date.today()
-    # Janela: início do mês corrente até hoje (mês parcial) — simples e suficiente
-    # para reconciliação; ajuste para meses fechados conforme a necessidade.
-    month_start = today.replace(day=1)
-    # O fim do Cost Explorer é exclusivo. No primeiro dia, avançar um dia evita
-    # a janela inválida Start == End; nesse caso a cobrança inclui o dia atual.
-    billing_end = today if today > month_start else today + timedelta(days=1)
+    month_start = billing.month_start
+    billing_end = billing.end_exclusive
     period = {"Start": month_start.isoformat(), "End": billing_end.isoformat()}
 
     resp = ce_client.get_cost_and_usage(
@@ -67,9 +63,11 @@ def collect_services(
             label = _SERVICE_LABEL.get(name, "Outros")
             totals[label] = totals.get(label, 0.0) + amount
 
+    # Com poucos dias fechados a projeção da AWS ainda oscila demais para ser
+    # exibida como número; nesse caso o painel mostra apenas o MTD.
     forecasts = (
         _forecast_by_service(ce_client, billing_end, totals)
-        if include_forecast
+        if include_forecast and billing.observed_days >= MIN_DAYS_FOR_FORECAST
         else {}
     )
     services: list[ServiceCost] = []

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
 
 import boto3
 
@@ -24,7 +24,8 @@ from julius.aws import (
     touches_collector,
 )
 from julius.aws.collection_health import CollectionRecorder, RequiredCollectionError
-from julius.config import DEFAULT_CONFIG, Config
+from julius.aws.window import AnalysisWindow, BillingMonth
+from julius.config import ANALYSIS_WINDOW_DAYS, DEFAULT_CONFIG, Config
 from julius.inventory.model import Account
 
 
@@ -32,16 +33,21 @@ def collect_account(
     session: boto3.Session,
     *,
     account_id: str | None = None,
-    lookback_days: int = 90,
+    lookback_days: int = ANALYSIS_WINDOW_DAYS,
     touches_table: str = "",
     athena_workgroup: str = "julius",
     athena_output: str | None = None,
     include_cloudtrail: bool = False,
     datawarm_job: str = "",
     config: Config = DEFAULT_CONFIG,
+    now: datetime | None = None,
 ) -> Account:
     health = CollectionRecorder()
     region = session.region_name or "us-east-1"
+    # Duas janelas, construídas uma vez, ambas em UTC. Nenhum coletor volta a
+    # decidir sozinho qual período está olhando.
+    window = AnalysisWindow.trailing(days=lookback_days, now=now)
+    billing = BillingMonth.current(now=now)
     actual_id = health.capture(
         "AWS identity",
         lambda: str(session.client("sts").get_caller_identity()["Account"]),
@@ -57,20 +63,23 @@ def collect_account(
         health.entries[-1].error_category = "identity_mismatch"
         raise RequiredCollectionError("AWS identity", "identity_mismatch")
     ident = account_id or actual_id
-    period = date.today().strftime("%b/%Y")
+    period = window.label
 
     glue = session.client("glue")
     account = Account(
         account_id=ident,
         region=region,
         period=period,
-        lookback_days=lookback_days,
-        generated_at=date.today().isoformat(),
+        lookback_days=window.days,
+        generated_at=window.end.date().isoformat(),
+        window_start=window.start_date.isoformat(),
+        window_end=window.data_through.isoformat(),
+        window_days=window.days,
     )
     account.services = health.capture(
         "Cost Explorer",
         lambda: cost_explorer.collect_services(
-            session.client("ce"), include_forecast=True
+            session.client("ce"), billing=billing, include_forecast=True
         ),
         [],
         count=len,
@@ -82,7 +91,7 @@ def collect_account(
         account.currency = account.services[0].currency
     account.glue_jobs = health.capture(
         "Glue Jobs",
-        lambda: glue_collector.collect_jobs(glue, lookback_days=lookback_days),
+        lambda: glue_collector.collect_jobs(glue, window=window),
         [],
         required=True,
         count=len,
@@ -108,7 +117,7 @@ def collect_account(
                 lambda: spark_event_logs_collector.enrich_glue_shuffle(
                     session.client("s3"),
                     account.glue_jobs,
-                    lookback_days=lookback_days,
+                    window=window,
                 ),
                 event_log_jobs,
             ),
@@ -148,7 +157,7 @@ def collect_account(
     )
     account.glue_crawlers = health.capture(
         "Glue Crawlers",
-        lambda: crawlers_collector.collect_crawlers(glue),
+        lambda: crawlers_collector.collect_crawlers(glue, window=window),
         [],
         count=len,
         data_through=_latest_data_through,
@@ -165,7 +174,7 @@ def collect_account(
     )
     account.databrew_jobs = health.capture(
         "Glue DataBrew",
-        lambda: databrew_collector.collect_jobs(session.client("databrew")),
+        lambda: databrew_collector.collect_jobs(session.client("databrew"), window=window),
         [],
         count=len,
         data_through=_latest_data_through,
@@ -179,7 +188,7 @@ def collect_account(
             lambda: cloudwatch_collector.enrich_glue_cpu(
                 session.client("cloudwatch"),
                 account.glue_jobs,
-                lookback_days=lookback_days,
+                window=window,
             ),
             account.glue_jobs,
         ),
@@ -195,7 +204,7 @@ def collect_account(
             lambda: cloudwatch_collector.enrich_glue_observability(
                 session.client("cloudwatch"),
                 account.glue_jobs,
-                lookback_days=lookback_days,
+                window=window,
             ),
             account.glue_jobs,
         ),
@@ -213,7 +222,7 @@ def collect_account(
     )
     account.interactive_sessions = health.capture(
         "Glue Interactive Sessions",
-        lambda: sessions_collector.collect_sessions(glue),
+        lambda: sessions_collector.collect_sessions(glue, window=window),
         [],
         count=len,
         data_through=_latest_data_through,
@@ -226,7 +235,7 @@ def collect_account(
         "Glue Cost Explorer",
         lambda: glue_cost.allocate_costs(
             account,
-            glue_cost.collect_glue_costs(session.client("ce")),
+            glue_cost.collect_glue_costs(session.client("ce"), window=window),
             config,
             jobs_collection_complete=jobs_collection_complete,
         ),
@@ -249,7 +258,7 @@ def collect_account(
             glue_client=glue,
             s3_client=session.client("s3"),
             ce_client=session.client("ce"),
-            lookback_days=30,
+            window=window,
         ),
         None,
         count=lambda analysis: len(analysis.queries) if analysis else 0,
@@ -265,7 +274,7 @@ def collect_account(
     account.state_machines = health.capture(
         "Step Functions",
         lambda: stepfunctions_collector.collect_state_machines(
-            session.client("stepfunctions"), lookback_days=lookback_days
+            session.client("stepfunctions"), window=window
         ),
         [],
         count=len,
@@ -290,7 +299,7 @@ def collect_account(
                 touches_table=touches_table,
                 workgroup=athena_workgroup,
                 output_location=athena_output,
-                lookback_days=lookback_days,
+                window=window,
             ),
             {},
             count=len,
@@ -330,7 +339,7 @@ def collect_account(
         account.actor_events = health.capture(
             "CloudTrail Ownership",
             lambda: cloudtrail_collector.collect_actor_events(
-                session.client("cloudtrail"), lookback_days=lookback_days
+                session.client("cloudtrail"), window=window
             ),
             [],
             count=len,

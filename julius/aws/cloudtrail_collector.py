@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
+
+from julius.aws.window import AnalysisWindow
 
 from julius.inventory.model import ActorEvent
 
@@ -38,11 +40,9 @@ _EVENT_TYPES = {
 def collect_actor_events(
     cloudtrail_client,
     *,
-    lookback_days: int = 90,
-    now: datetime | None = None,
+    window: AnalysisWindow,
 ) -> list[ActorEvent]:
-    now = now or datetime.now(timezone.utc)
-    start = now - timedelta(days=lookback_days)
+    start, now = window.start, window.end
     events: list[ActorEvent] = []
     paginator = cloudtrail_client.get_paginator("lookup_events")
     for page in paginator.paginate(StartTime=start, EndTime=now):

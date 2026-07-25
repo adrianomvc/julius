@@ -57,12 +57,10 @@ def enrich_opportunities(
             opportunity.process_cost_window = round(
                 sum(row.total_cost_window for row in process_rows), 2
             )
-            opportunity.process_forecast_eom = round(
-                sum(row.forecast_cost_eom for row in process_rows), 2
+            opportunity.process_cost_monthly = round(
+                sum(row.monthly_cost for row in process_rows), 2
             )
-            opportunity.window_end = max(
-                row.data_through for row in process_rows
-            )
+            opportunity.window_end = max(row.window_end for row in process_rows)
         opportunity.evidence_refs = _evidence_refs(account, opportunity)
 
         key = AssetKey(

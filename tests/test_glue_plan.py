@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import io
 import json
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 
 import boto3
 import pytest
@@ -35,6 +35,7 @@ from julius.inventory.model import (
 from julius.opportunities.base import Estimation, Opportunity
 from julius.opportunities import prioritizer
 from julius.opportunities.detectors import glue as glue_detector
+from julius.aws.window import AnalysisWindow
 
 
 def _glue_client():
@@ -50,6 +51,8 @@ def test_job_cost_separates_reported_and_estimated_dpu_hours():
     glue = _glue_client()
     stub = Stubber(glue)
     now = datetime(2026, 7, 24, tzinfo=timezone.utc)
+    # `now` e o corte da janela; execucoes precisam cair em dia fechado.
+    ran_at = now - timedelta(days=1)
     stub.add_response(
         "get_jobs",
         {
@@ -75,7 +78,7 @@ def test_job_cost_separates_reported_and_estimated_dpu_hours():
                     "JobRunState": "SUCCEEDED",
                     "ExecutionTime": 1800,
                     "DPUSeconds": 3600.0,
-                    "StartedOn": now,
+                    "StartedOn": ran_at,
                 },
                 {
                     "Id": "jr-estimated",
@@ -83,13 +86,13 @@ def test_job_cost_separates_reported_and_estimated_dpu_hours():
                     "ExecutionTime": 1800,
                     "WorkerType": "G.1X",
                     "NumberOfWorkers": 2,
-                    "StartedOn": now,
+                    "StartedOn": ran_at,
                 },
             ]
         },
     )
     with stub:
-        job = glue_collector.collect_jobs(glue, now=now)[0]
+        job = glue_collector.collect_jobs(glue, window=AnalysisWindow.trailing(now=now))[0]
 
     assert job.job_mode == "VISUAL"
     assert job.actual_dpu_hours_window == 1.0
@@ -97,17 +100,23 @@ def test_job_cost_separates_reported_and_estimated_dpu_hours():
     assert job.run_ids_in_window == ["jr-estimated", "jr-reported"]
 
 
-def test_usd_is_canonical_and_mtd_is_forecast_before_monthly_savings():
+def test_window_consumption_is_measured_and_never_extrapolated():
+    """A janela é reportada como medida; o mês vem de um fator explícito.
+
+    Antes, 10 DPU-hora observadas até o dia 10 viravam 31 pela projeção para o
+    fim do mês — o resultado dependia do dia em que o scan rodasse.
+    """
     job = GlueJob(
         name="processa",
         dpu_seconds_window=36000,
         window_end="2026-07-10",
+        window_days=30,
     )
 
     assert DEFAULT_CONFIG.pricing.currency == "USD"
     assert job.total_dpu_hours_window == 10.0
-    assert job.forecast_dpu_hours_eom == pytest.approx(31.0)
-    assert job.window_dpu_hours == pytest.approx(31.0)
+    assert job.window_dpu_hours == 10.0
+    assert job.monthly_dpu_hours == pytest.approx(10.0 * 365.25 / 12 / 30)
 
 
 def test_flex_requires_supported_spark_batch_job():
@@ -117,7 +126,7 @@ def test_flex_requires_supported_spark_batch_job():
         command_type="glueetl",
         execution_class="STANDARD",
         time_sensitive=False,
-        runs_per_month=10,
+        runs_in_window=10,
         avg_execution_sec=600,
         worker_type="G.1X",
         number_of_workers=2,
@@ -129,7 +138,7 @@ def test_flex_requires_supported_spark_batch_job():
         command_type="glueetl",
         execution_class="STANDARD",
         time_sensitive=False,
-        runs_per_month=10,
+        runs_in_window=10,
         avg_execution_sec=600,
         worker_type="G.1X",
         number_of_workers=2,
@@ -223,8 +232,8 @@ def test_saving_is_conservative_and_capped_by_process_cost():
                 process_id="glue_job:processa",
                 process_name="processa",
                 root_type="glue_job",
-                forecast_cost_eom=100.0,
                 component_names=["processa"],
+                actual_cost_window=100.0,
             )
         ],
     )
@@ -249,10 +258,13 @@ def test_saving_is_conservative_and_capped_by_process_cost():
         account, [opportunity], DEFAULT_CONFIG, today=date(2026, 7, 24)
     )
 
-    assert opportunity.estimated_gain.monthly_expected == 100.0
-    assert opportunity.estimated_gain.monthly_high <= 100.0
+    # O teto é o custo do processo por mês — a janela medida convertida, não
+    # uma projeção para o fim do mês-calendário.
+    cap = account.process_costs[0].monthly_cost
+    assert opportunity.estimated_gain.monthly_expected == pytest.approx(cap, abs=0.01)
+    assert opportunity.estimated_gain.monthly_high <= round(cap, 2)
     assert opportunity.estimation is not None
-    assert opportunity.estimation.estimated_saving <= 100.0
+    assert opportunity.estimation.estimated_saving <= round(cap, 2)
 
 
 def test_process_cap_is_shared_across_related_assets():
@@ -263,8 +275,8 @@ def test_process_cap_is_shared_across_related_assets():
                 process_id="glue_job:processa",
                 process_name="processa",
                 root_type="glue_job",
-                forecast_cost_eom=100.0,
                 component_names=["processa"],
+                actual_cost_window=100.0,
             )
         ],
     )
@@ -301,7 +313,7 @@ def test_process_cap_is_shared_across_related_assets():
 
     assert sum(
         item.estimation.estimated_saving for item in opportunities
-    ) == pytest.approx(100.0)
+    ) == pytest.approx(account.process_costs[0].monthly_cost, abs=0.01)
 
 
 def test_blocked_state_survives_reprioritization():
@@ -416,9 +428,11 @@ class _GlueInventory:
 
 def test_collects_crawler_dpu_and_glue_trigger_lineage():
     now = datetime(2026, 7, 24, tzinfo=timezone.utc)
-    client = _GlueInventory(now)
+    # `now` e o corte da janela; execucoes precisam cair em dia fechado.
+    ran_at = now - timedelta(days=1)
+    client = _GlueInventory(ran_at)
 
-    crawler = crawlers_collector.collect_crawlers(client, now=now)[0]
+    crawler = crawlers_collector.collect_crawlers(client, window=AnalysisWindow.trailing(now=now))[0]
     trigger = glue_triggers_collector.collect_triggers(client)[0]
 
     assert crawler.dpu_hours_window == 0.25
@@ -480,7 +494,9 @@ class _DataBrew:
 
 def test_databrew_cost_keeps_node_hours_separate_from_dpu_hours():
     now = datetime(2026, 7, 24, tzinfo=timezone.utc)
-    job = databrew_collector.collect_jobs(_DataBrew(now), now=now)[0]
+    # `now` e o corte da janela; execucoes precisam cair em dia fechado.
+    ran_at = now - timedelta(days=1)
+    job = databrew_collector.collect_jobs(_DataBrew(ran_at), window=AnalysisWindow.trailing(now=now))[0]
 
     assert job.execution_hours_window == 1.0
     assert job.estimated_node_hours_window == 10.0
@@ -508,7 +524,9 @@ def test_collects_observability_metrics_needed_for_capacity_decisions():
     cloudwatch_collector.enrich_glue_observability(
         _CloudWatch(),
         [job],
-        now=datetime(2026, 7, 24, tzinfo=timezone.utc),
+        window=AnalysisWindow.trailing(
+            now=datetime(2026, 7, 24, tzinfo=timezone.utc)
+        ),
     )
 
     assert job.avg_worker_utilization == 0.2
@@ -532,7 +550,9 @@ def test_observability_preserves_peaks_instead_of_averaging_them():
     cloudwatch_collector.enrich_glue_observability(
         _CloudWatchPeaks(),
         [job],
-        now=datetime(2026, 7, 24, tzinfo=timezone.utc),
+        window=AnalysisWindow.trailing(
+            now=datetime(2026, 7, 24, tzinfo=timezone.utc)
+        ),
     )
 
     assert job.max_memory_used_pct == 0.8
@@ -578,7 +598,9 @@ class _Sessions:
 
 def test_session_idle_is_derived_from_statement_activity():
     now = datetime(2026, 7, 24, tzinfo=timezone.utc)
-    session = sessions_collector.collect_sessions(_Sessions(now), now=now)[0]
+    # `now` e o corte da janela; execucoes precisam cair em dia fechado.
+    ran_at = now - timedelta(days=1)
+    session = sessions_collector.collect_sessions(_Sessions(ran_at), window=AnalysisWindow.trailing(now=now))[0]
 
     assert session.activity_evidence is True
     assert session.observed_runs == 1
@@ -637,6 +659,7 @@ def test_spark_event_logs_collect_complete_spill_evidence():
     spark_event_logs_collector.enrich_glue_shuffle(
         _SparkLogS3((json.dumps(event) + "\n").encode()),
         [job],
+        window=AnalysisWindow.trailing(),
     )
 
     assert job.shuffle_spill_bytes == 100
@@ -652,6 +675,7 @@ def test_spark_event_logs_do_not_claim_zero_when_log_is_too_large():
     spark_event_logs_collector.enrich_glue_shuffle(
         _SparkLogS3(b"", size=10 * 1024 * 1024 + 1),
         [job],
+        window=AnalysisWindow.trailing(),
     )
 
     assert job.shuffle_spill_bytes is None

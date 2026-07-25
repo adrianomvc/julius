@@ -1,16 +1,57 @@
 {
+  "dataset_schema_version": 2,
   "account": "consumer-avi",
   "region": "sa-east-1",
   "period": "jul/2026",
-  "lookback_days": 90,
+  "lookback_days": 30,
   "generated_at": "2026-07-23",
   "cost_explorer": {
     "services": [
-      { "name": "AWS Glue", "subtitle": "Jobs, sessions e crawlers", "monthly_cost": 3292.31, "currency": "USD", "period_kind": "month_to_date", "data_through": "2026-07-22", "estimated": true },
-      { "name": "Amazon Athena", "subtitle": "queries + workgroups", "monthly_cost": 1046.15, "currency": "USD", "period_kind": "month_to_date", "data_through": "2026-07-22", "estimated": true },
-      { "name": "Amazon S3", "subtitle": "armazenamento + requests", "monthly_cost": 646.15, "currency": "USD", "period_kind": "month_to_date", "data_through": "2026-07-22", "estimated": true },
-      { "name": "Step Functions", "subtitle": "Standard / Express", "monthly_cost": 323.08, "currency": "USD", "period_kind": "month_to_date", "data_through": "2026-07-22", "estimated": true },
-      { "name": "Outros", "subtitle": "CloudWatch, KMS, transfer", "monthly_cost": 615.38, "currency": "USD", "period_kind": "month_to_date", "data_through": "2026-07-22", "estimated": true }
+      {
+        "name": "AWS Glue",
+        "subtitle": "Jobs, sessions e crawlers",
+        "monthly_cost": 3292.31,
+        "currency": "USD",
+        "period_kind": "month_to_date",
+        "data_through": "2026-07-22",
+        "estimated": true
+      },
+      {
+        "name": "Amazon Athena",
+        "subtitle": "queries + workgroups",
+        "monthly_cost": 1046.15,
+        "currency": "USD",
+        "period_kind": "month_to_date",
+        "data_through": "2026-07-22",
+        "estimated": true
+      },
+      {
+        "name": "Amazon S3",
+        "subtitle": "armazenamento + requests",
+        "monthly_cost": 646.15,
+        "currency": "USD",
+        "period_kind": "month_to_date",
+        "data_through": "2026-07-22",
+        "estimated": true
+      },
+      {
+        "name": "Step Functions",
+        "subtitle": "Standard / Express",
+        "monthly_cost": 323.08,
+        "currency": "USD",
+        "period_kind": "month_to_date",
+        "data_through": "2026-07-22",
+        "estimated": true
+      },
+      {
+        "name": "Outros",
+        "subtitle": "CloudWatch, KMS, transfer",
+        "monthly_cost": 615.38,
+        "currency": "USD",
+        "period_kind": "month_to_date",
+        "data_through": "2026-07-22",
+        "estimated": true
+      }
     ]
   },
   "glue_jobs": [
@@ -23,7 +64,7 @@
       "execution_class": "STANDARD",
       "job_bookmark": false,
       "time_sensitive": false,
-      "runs_per_month": 40,
+      "runs_in_window": 40,
       "avg_execution_sec": 3600,
       "avg_cpu_load": 0.22,
       "observed_runs": 30,
@@ -39,13 +80,15 @@
       "execution_class": "STANDARD",
       "job_bookmark": true,
       "time_sensitive": true,
-      "runs_per_month": 25,
+      "runs_in_window": 25,
       "avg_execution_sec": 3000,
       "avg_cpu_load": 0.28,
       "observed_runs": 26,
       "coverage_days": 90,
       "owner_tag": "Squad AVI",
-      "writes_tables": ["resumo_regional"]
+      "writes_tables": [
+        "resumo_regional"
+      ]
     },
     {
       "name": "sync_parceiros",
@@ -56,7 +99,7 @@
       "execution_class": "STANDARD",
       "job_bookmark": true,
       "time_sensitive": true,
-      "runs_per_month": 60,
+      "runs_in_window": 60,
       "avg_execution_sec": 1800,
       "avg_failed_execution_sec": 1200,
       "avg_cpu_load": 0.62,
@@ -76,7 +119,7 @@
       "job_bookmark": true,
       "time_sensitive": true,
       "timeout_min": 2880,
-      "runs_per_month": 20,
+      "runs_in_window": 20,
       "avg_execution_sec": 1200,
       "avg_cpu_load": 0.2,
       "observed_runs": 20,
@@ -92,13 +135,15 @@
       "execution_class": "STANDARD",
       "job_bookmark": true,
       "time_sensitive": true,
-      "runs_per_month": 30,
+      "runs_in_window": 30,
       "avg_execution_sec": 1800,
       "avg_cpu_load": 0.68,
       "observed_runs": 30,
       "coverage_days": 90,
       "owner_tag": "Squad AVI",
-      "writes_tables": ["base_legado_diaria"]
+      "writes_tables": [
+        "base_legado_diaria"
+      ]
     }
   ],
   "state_machines": [
@@ -115,8 +160,13 @@
       "observed_runs": 45000,
       "coverage_days": 90,
       "owner_tag": "Squad AVI",
-      "glue_jobs": ["processa_interacoes", "agrega_vendas"],
-      "schedule_names": ["cron-ingestao-diaria"]
+      "glue_jobs": [
+        "processa_interacoes",
+        "agrega_vendas"
+      ],
+      "schedule_names": [
+        "cron-ingestao-diaria"
+      ]
     }
   ],
   "schedules": [
@@ -169,7 +219,9 @@
       "touches_90d": 11,
       "consuming_accounts": 1,
       "consuming_communities": 1,
-      "used_by_accounts": ["consumer-nova"],
+      "used_by_accounts": [
+        "consumer-nova"
+      ],
       "storage_bytes": 42949672960,
       "coverage_days": 90,
       "owner_tag": "Squad AVI",
@@ -235,15 +287,78 @@
   ],
   "governance": {
     "producer_candidates": [
-      { "name": "produto_recomendacoes", "candidate_score": 92, "readiness_score": 70 },
-      { "name": "fluxo_scoring_leads", "candidate_score": 80, "readiness_score": 35 },
-      { "name": "pipeline_relatorios", "candidate_score": 45, "readiness_score": 62 },
-      { "name": "export_adhoc_planilha", "candidate_score": 28, "readiness_score": 24 }
+      {
+        "name": "produto_recomendacoes",
+        "candidate_score": 92,
+        "readiness_score": 70
+      },
+      {
+        "name": "fluxo_scoring_leads",
+        "candidate_score": 80,
+        "readiness_score": 35
+      },
+      {
+        "name": "pipeline_relatorios",
+        "candidate_score": 45,
+        "readiness_score": 62
+      },
+      {
+        "name": "export_adhoc_planilha",
+        "candidate_score": 28,
+        "readiness_score": 24
+      }
     ],
     "previous_results": [
-      { "title": "Redução de workers", "asset": "glue_job: normaliza_clientes", "date": "abr/2026", "predicted_monthly": 169.23, "realized_monthly": 190.77, "currency": "USD", "unit": "US$ 95.38 → US$ 72.31 por execução" },
-      { "title": "Result reuse no workgroup", "asset": "athena: wg-avi-analytics", "date": "mai/2026", "predicted_monthly": 83.08, "realized_monthly": 76.92, "currency": "USD", "unit": "US$ 5.85 → US$ 3.23 por query" },
-      { "title": "Desligar sessões ociosas", "asset": "glue_session: adhoc-ds", "date": "mai/2026", "predicted_monthly": 58.46, "realized_monthly": 46.15, "currency": "USD", "unit": "US$ 1.97 → US$ 0.78 por hora-sessão" }
+      {
+        "title": "Redução de workers",
+        "asset": "glue_job: normaliza_clientes",
+        "date": "abr/2026",
+        "predicted_monthly": 169.23,
+        "realized_monthly": 190.77,
+        "currency": "USD",
+        "unit": "US$ 95.38 → US$ 72.31 por execução"
+      },
+      {
+        "title": "Result reuse no workgroup",
+        "asset": "athena: wg-avi-analytics",
+        "date": "mai/2026",
+        "predicted_monthly": 83.08,
+        "realized_monthly": 76.92,
+        "currency": "USD",
+        "unit": "US$ 5.85 → US$ 3.23 por query"
+      },
+      {
+        "title": "Desligar sessões ociosas",
+        "asset": "glue_session: adhoc-ds",
+        "date": "mai/2026",
+        "predicted_monthly": 58.46,
+        "realized_monthly": 46.15,
+        "currency": "USD",
+        "unit": "US$ 1.97 → US$ 0.78 por hora-sessão"
+      }
     ]
+  },
+  "window": {
+    "start": "",
+    "end": "2026-07-23",
+    "days": 30
+  },
+  "glue_cost_coverage": {
+    "period_start": "",
+    "data_through": "2026-07-23",
+    "cost_metric": "NetUnblendedCost",
+    "currency": "USD",
+    "net_cost": 2992.3,
+    "buckets": {
+      "etl_job": 2411.4,
+      "crawler": 180.5,
+      "interactive_session": 240.0,
+      "catalog": 96.4,
+      "data_quality": 64.0
+    },
+    "unknown_usage_types": [],
+    "cost_quality": "partial",
+    "allocation_version": "glue-cost-allocation-1.0",
+    "gaps": []
   }
 }

@@ -19,6 +19,7 @@ from julius.aws import (
 )
 from julius.estimation.currency import UnsupportedCurrencyError
 from julius.inventory.model import Account, GlueJob, Table
+from julius.aws.window import AnalysisWindow, BillingMonth
 
 
 def _client(service: str):
@@ -49,7 +50,7 @@ def test_cost_explorer_maps_services():
         },
     )
     with stub:
-        services = cost_explorer.collect_services(ce)
+        services = cost_explorer.collect_services(ce, billing=BillingMonth.current())
 
     by_name = {s.name: s.monthly_cost for s in services}
     assert by_name["AWS Glue"] == 21400
@@ -74,7 +75,7 @@ def test_cost_explorer_first_day_uses_a_valid_exclusive_end():
         },
     )
     with stub:
-        assert cost_explorer.collect_services(ce, today=date(2026, 7, 1)) == []
+        assert cost_explorer.collect_services(ce, billing=BillingMonth.current(now=datetime(2026, 7, 1, tzinfo=timezone.utc))) == []
 
 
 def test_cost_explorer_rejects_a_response_outside_usd():
@@ -98,7 +99,7 @@ def test_cost_explorer_rejects_a_response_outside_usd():
         },
     )
     with stub, pytest.raises(UnsupportedCurrencyError):
-        cost_explorer.collect_services(ce)
+        cost_explorer.collect_services(ce, billing=BillingMonth.current())
 
 
 def test_cost_explorer_accepts_a_zero_amount_with_an_odd_unit():
@@ -122,7 +123,7 @@ def test_cost_explorer_accepts_a_zero_amount_with_an_odd_unit():
         },
     )
     with stub:
-        services = cost_explorer.collect_services(ce)
+        services = cost_explorer.collect_services(ce, billing=BillingMonth.current())
 
     assert services[0].monthly_cost == 0
     assert services[0].currency == "USD"
@@ -164,7 +165,7 @@ def test_glue_collector_jobs_and_failure_rate():
         },
     )
     with stub:
-        jobs = glue_collector.collect_jobs(glue, lookback_days=90, now=now)
+        jobs = glue_collector.collect_jobs(glue, window=AnalysisWindow.trailing(days=90, now=now))
 
     assert len(jobs) == 1
     job = jobs[0]
@@ -192,7 +193,7 @@ def test_cloudwatch_enriches_cpu():
     )
     jobs = [GlueJob(name="processa", worker_type="G.1X", number_of_workers=20)]
     with stub:
-        cloudwatch_collector.enrich_glue_cpu(cw, jobs, now=now)
+        cloudwatch_collector.enrich_glue_cpu(cw, jobs, window=AnalysisWindow.trailing(now=now))
 
     # média das duas leituras → destrava as regras de capacidade.
     assert jobs[0].avg_cpu_load == pytest.approx(0.22, abs=0.001)
@@ -220,7 +221,10 @@ def test_touches_collector_parses_rows():
     )
     with stub:
         stats = touches_collector.collect_touches(
-            athena, touches_table="governanca.toques", workgroup="julius"
+            athena,
+            touches_table="governanca.toques",
+            workgroup="julius",
+            window=AnalysisWindow.trailing(),
         )
 
     assert stats["base_legado"].touches == 0
@@ -267,7 +271,7 @@ class _StepFunctions:
 
 
 def test_stepfunctions_collector_extracts_glue_lineage():
-    machines = stepfunctions_collector.collect_state_machines(_StepFunctions())
+    machines = stepfunctions_collector.collect_state_machines(_StepFunctions(), window=AnalysisWindow.trailing())
     assert len(machines) == 1
     assert machines[0].name == "orquestra"
     assert machines[0].glue_jobs == ["transforma"]

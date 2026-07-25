@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from julius.config import ANALYSIS_WINDOW_DAYS, DATASET_SCHEMA_VERSION
 from julius.inventory.model import (
     Account,
     ActorEvent,
@@ -69,14 +70,39 @@ def _previous_result(raw: dict) -> PreviousResult | None:
     return _pick(normalized, PreviousResult)
 
 
+class UnsupportedDatasetVersionError(RuntimeError):
+    """O dataset é de um esquema anterior e não pode ser reinterpretado.
+
+    Os campos de consumo mudaram de significado — antes mês-corrente, agora
+    janela móvel de dias completos. `_pick` descartaria os nomes antigos em
+    silêncio e o consumo viraria zero, então a recusa é explícita, como já
+    acontece com um registro que chega fora de USD.
+    """
+
+    def __init__(self, found: int):
+        self.found = found
+        super().__init__(
+            f"dataset no esquema {found}; esperado {DATASET_SCHEMA_VERSION}. "
+            "Regenere com `julius collect` — os campos de consumo mudaram de "
+            "mês-corrente para janela de dias completos e não são conversíveis."
+        )
+
+
 def load_account(path: str | Path) -> Account:
     raw = json.loads(Path(path).read_text(encoding="utf-8"))
+    version = int(raw.get("dataset_schema_version", 1))
+    if version != DATASET_SCHEMA_VERSION:
+        raise UnsupportedDatasetVersionError(version)
+    window = raw.get("window") or {}
     account = Account(
         account_id=raw["account"],
         region=raw.get("region", "sa-east-1"),
         period=raw.get("period", ""),
-        lookback_days=raw.get("lookback_days", 90),
+        lookback_days=raw.get("lookback_days", ANALYSIS_WINDOW_DAYS),
         generated_at=raw.get("generated_at", ""),
+        window_start=str(window.get("start") or ""),
+        window_end=str(window.get("end") or ""),
+        window_days=int(window.get("days") or ANALYSIS_WINDOW_DAYS),
         # USD é a única moeda aceita; a AWS já reporta custo em USD.
         currency="USD",
     )

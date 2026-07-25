@@ -8,13 +8,20 @@ from __future__ import annotations
 
 from dataclasses import asdict
 
+from julius.config import DATASET_SCHEMA_VERSION
 from julius.inventory.model import Account
 
 # Campos internos (properties/derivados) que não fazem parte do schema exportado.
 _DROP = {
     "dpu_per_worker",
     "window_dpu_hours",
-    "historical_monthly_dpu_hours",
+    "modeled_window_dpu_hours",
+    "monthly_dpu_hours",
+    "monthly_node_hours",
+    "monthly_factor",
+    "monthly_cost",
+    "runs_per_month",
+    "expected_runs_in_window",
     "glue_version_num",
     "monthly_bytes_scanned",
     "unattributed_cost",
@@ -27,11 +34,17 @@ def _clean(d: dict) -> dict:
 
 def account_to_dataset(account: Account) -> dict:
     return {
+        "dataset_schema_version": DATASET_SCHEMA_VERSION,
         "account": account.account_id,
         "region": account.region,
         "period": account.period,
         "lookback_days": account.lookback_days,
         "generated_at": account.generated_at,
+        "window": {
+            "start": account.window_start,
+            "end": account.window_end,
+            "days": account.window_days,
+        },
         "collection_health": [
             _clean(asdict(item)) for item in account.collection_health
         ],

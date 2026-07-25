@@ -4,13 +4,18 @@ Extrai config (worker type, autoscaling, FLEX, bookmarks, versão, timeout) do
 GetJob e agrega o histórico de execuções (duração, recorrência, taxa de falha)
 do GetJobRuns. `avg_cpu_load` fica None aqui (vem do CloudWatch — coletor à parte),
 então as regras de capacidade só disparam quando essa métrica for adicionada.
+
+Comportamento e consumo saem da mesma janela de análise: antes as métricas de
+duração vinham de 90 dias enquanto a DPU-hora vinha do mês corrente, e as duas
+eram usadas lado a lado como se cobrissem o mesmo período.
 """
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from statistics import mean, median, pstdev
 
+from julius.aws.window import AnalysisWindow
 from julius.config import DPU_PER_WORKER
 from julius.inventory.model import GlueJob, Table
 
@@ -21,58 +26,48 @@ def _truthy(value) -> bool:
     return str(value).strip().lower() in ("true", "1", "yes")
 
 
-def collect_jobs(glue_client, *, lookback_days: int = 90, now: datetime | None = None) -> list[GlueJob]:
-    now = now or datetime.now(timezone.utc)
-    cutoff = now - timedelta(days=lookback_days)
-    months = max(1.0, lookback_days / 30.0)
-
+def collect_jobs(glue_client, *, window: AnalysisWindow) -> list[GlueJob]:
     jobs: list[GlueJob] = []
     paginator = glue_client.get_paginator("get_jobs")
     for page in paginator.paginate():
         for job in page.get("Jobs", []):
-            jobs.append(_build_job(glue_client, job, cutoff, months, now))
+            jobs.append(_build_job(glue_client, job, window))
     return jobs
 
 
-def _build_job(
-    glue_client, job: dict, cutoff: datetime, months: float, now: datetime
-) -> GlueJob:
+def _build_job(glue_client, job: dict, window: AnalysisWindow) -> GlueJob:
     name = job["Name"]
     args = job.get("DefaultArguments", {}) or {}
-    runs = _job_runs(glue_client, name, cutoff)
+    runs = _job_runs(glue_client, name, window.start)
 
     completed = [r for r in runs if r.get("JobRunState") == "SUCCEEDED"]
     failed = [r for r in runs if r.get("JobRunState") in _FAILED_STATES]
     exec_times = [r.get("ExecutionTime", 0) for r in completed if r.get("ExecutionTime")]
     failed_times = [r.get("ExecutionTime", 0) for r in failed if r.get("ExecutionTime")]
-    month_start = now.replace(
-        day=1,
-        hour=0,
-        minute=0,
-        second=0,
-        microsecond=0,
-    )
     command_type = str((job.get("Command", {}) or {}).get("Name") or "glueetl")
     if command_type == "gluestreaming":
-        mtd_runs = [
-            r for r in runs if _run_overlap_seconds(r, month_start, now) > 0
+        # Job contínuo: o que conta é a sobreposição com a janela, não o início.
+        window_runs = [
+            r
+            for r in runs
+            if window.overlap_seconds(r.get("StartedOn"), r.get("CompletedOn")) > 0
         ]
     else:
-        mtd_runs = [
-            r for r in runs if _at_or_after(r.get("StartedOn"), month_start)
-        ]
+        window_runs = [r for r in runs if window.contains(_as_utc(r.get("StartedOn")))]
     dpu_seconds = 0.0
     estimated_dpu_hours = 0.0
     worker_type = job.get("WorkerType")
     number_of_workers = _optional_int(job.get("NumberOfWorkers"))
     max_capacity = _optional_float(job.get("MaxCapacity"))
-    for run in mtd_runs:
+    for run in window_runs:
         if command_type == "gluestreaming":
             capacity = _run_capacity(
                 run, worker_type, number_of_workers, max_capacity
             )
             estimated_dpu_hours += (
-                _run_overlap_seconds(run, month_start, now) * capacity / 3600.0
+                window.overlap_seconds(run.get("StartedOn"), run.get("CompletedOn"))
+                * capacity
+                / 3600.0
             )
             continue
         reported = _optional_float(run.get("DPUSeconds"))
@@ -100,7 +95,6 @@ def _build_job(
         job_bookmark=str(args.get("--job-bookmark-option", "")) == "job-bookmark-enable",
         timeout_min=int(job.get("Timeout", 2880) or 2880),
         max_retries=int(job.get("MaxRetries", 0) or 0),
-        runs_per_month=round(total / months, 1),
         avg_execution_sec=round(mean(exec_times), 1) if exec_times else 0.0,
         p50_execution_sec=round(median(exec_times), 1) if exec_times else 0.0,
         p95_execution_sec=round(_percentile(exec_times, 0.95), 1) if exec_times else 0.0,
@@ -110,11 +104,12 @@ def _build_job(
         failure_rate=round(len(failed) / total, 3) if total else 0.0,
         avg_cpu_load=None,  # requer CloudWatch (coletor à parte)
         observed_runs=total,
-        coverage_days=int(months * 30),
+        coverage_days=window.days,
+        window_days=window.days,
         dpu_seconds_window=round(dpu_seconds, 3),
         estimated_dpu_hours_window=round(estimated_dpu_hours, 4),
-        runs_in_window=len(mtd_runs),
-        window_end=now.date().isoformat(),
+        runs_in_window=len(window_runs),
+        window_end=window.data_through.isoformat(),
         trigger_names=sorted(
             {
                 str(r["TriggerName"])
@@ -123,7 +118,7 @@ def _build_job(
             }
         ),
         run_ids_in_window=sorted(
-            str(r["Id"]) for r in mtd_runs if r.get("Id")
+            str(r["Id"]) for r in window_runs if r.get("Id")
         ),
         owner_tag=(job.get("Tags", {}) or {}).get("Owner"),
             script_location=(job.get("Command", {}) or {}).get("ScriptLocation"),
@@ -152,29 +147,10 @@ def _optional_float(value) -> float | None:
     return float(value) if value is not None else None
 
 
-def _at_or_after(value, cutoff: datetime) -> bool:
+def _as_utc(value) -> datetime | None:
     if not isinstance(value, datetime):
-        return False
-    normalized = value.replace(tzinfo=value.tzinfo or timezone.utc)
-    normalized_cutoff = cutoff.replace(tzinfo=cutoff.tzinfo or timezone.utc)
-    return normalized >= normalized_cutoff
-
-
-def _run_overlap_seconds(
-    run: dict, period_start: datetime, period_end: datetime
-) -> float:
-    started = run.get("StartedOn")
-    if not isinstance(started, datetime):
-        return 0.0
-    started = started.replace(tzinfo=started.tzinfo or timezone.utc)
-    completed = run.get("CompletedOn")
-    if isinstance(completed, datetime):
-        completed = completed.replace(tzinfo=completed.tzinfo or timezone.utc)
-    else:
-        completed = period_end
-    start = max(started, period_start)
-    end = min(completed, period_end)
-    return max(0.0, (end - start).total_seconds())
+        return None
+    return value.replace(tzinfo=value.tzinfo or timezone.utc)
 
 
 def _billable_execution_seconds(glue_version: str, execution_sec: float) -> float:

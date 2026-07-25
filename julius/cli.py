@@ -10,6 +10,7 @@ from pathlib import Path
 
 import typer
 
+from julius.config import ANALYSIS_WINDOW_DAYS
 from julius.agent import (
     AgentOutputError,
     load_agent_context,
@@ -513,7 +514,11 @@ def collect(
         "--sso-profile",
         help="Nome do perfil SSO no AWS CLI; vazio usa default/AWS_PROFILE.",
     ),
-    lookback_days: int = typer.Option(90, "--lookback-days"),
+    lookback_days: int = typer.Option(
+        ANALYSIS_WINDOW_DAYS,
+        "--lookback-days",
+        help="Dias UTC completos da janela de análise (custo e comportamento).",
+    ),
     touches_table: str = typer.Option("", "--touches-table", help="Tabela oficial de toques (Athena)."),
     athena_workgroup: str = typer.Option("julius", "--athena-workgroup"),
     athena_output: str = typer.Option("", "--athena-output", help="S3 de resultados do Athena."),

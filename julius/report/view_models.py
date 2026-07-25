@@ -65,7 +65,7 @@ class OpportunityVM:
     is_strategic: bool
     source_process: str | None
     process_cost_fmt: str
-    process_forecast_fmt: str
+    process_monthly_fmt: str
     window_end: str
     traceability: str
     ai_diagnosis: str = ""
@@ -261,9 +261,9 @@ def _opp_vm(o: Opportunity, currency: str) -> OpportunityVM:
             if o.process_cost_window is not None
             else "—"
         ),
-        process_forecast_fmt=(
-            fmt.money(o.process_forecast_eom, currency)
-            if o.process_forecast_eom is not None
+        process_monthly_fmt=(
+            fmt.money(o.process_cost_monthly, currency)
+            if o.process_cost_monthly is not None
             else "—"
         ),
         window_end=o.window_end or "—",
@@ -386,7 +386,7 @@ def _services(account: Account, opportunities: list[Opportunity]) -> tuple[list[
             if o.estimation is not None:
                 saving_currency_by_service[svc] = o.estimation.currency
 
-    total = account.total_cost_window or 1.0
+    total = account.billing_cost_mtd or 1.0
     rows = []
     for s in account.services:
         saving = saving_by_service.get(s.name, 0.0)
@@ -426,14 +426,15 @@ def _process_costs(account: Account) -> list[dict]:
             "owner_event_time": row.owner_event_time or "—",
             "owner_event_name": row.owner_event_name or "—",
             "cost_window": fmt.money(row.total_cost_window, row.currency),
-            "forecast_eom": fmt.money(row.forecast_cost_eom, row.currency),
-            "actual_cost_mtd_value": row.actual_cost_window,
-            "estimated_cost_mtd_value": row.estimated_cost_window,
-            "total_cost_mtd_value": row.total_cost_window,
-            "forecast_cost_eom_value": row.forecast_cost_eom,
+            "cost_monthly": fmt.money(row.monthly_cost, row.currency),
+            "actual_cost_window_value": row.actual_cost_window,
+            "estimated_cost_window_value": row.estimated_cost_window,
+            "total_cost_window_value": row.total_cost_window,
+            "monthly_cost_value": row.monthly_cost,
             "currency": row.currency,
-            "period_start": row.period_start,
-            "data_through": row.data_through or "—",
+            "window_start": row.window_start,
+            "window_end": row.window_end or "—",
+            "window_days": row.window_days,
             "dpu_actual": f"{row.actual_dpu_hours:.2f}",
             "dpu_estimated": f"{row.estimated_dpu_hours:.2f}",
             "allocation": row.allocation_method,
@@ -444,24 +445,31 @@ def _process_costs(account: Account) -> list[dict]:
 
 
 def _cost_reconciliation(account: Account) -> tuple[str, str, str, str]:
-    glue = next((service for service in account.services if service.name == "AWS Glue"), None)
+    """Custo atribuído × cobrança, ambos **na janela de análise**.
+
+    A cobrança comparável é a do Cost Explorer coletada na mesma janela, não a
+    do painel de fatura: aquela é mês-calendário parcial e a diferença entre os
+    dois períodos apareceria como divergência de atribuição.
+    """
     process_total = sum(row.total_cost_window for row in account.process_costs)
     attributed = fmt.usd(process_total)
-    if glue is None:
-        return attributed, "—", "—", "Cost Explorer Glue não disponível."
-    explorer = fmt.usd(glue.monthly_cost)
-    delta = glue.monthly_cost - process_total
-    note = (
-        f"Cost Explorer atualizado até {glue.data_through or 'data não informada'}; "
-        "valor MTD de cobrança estimado pela AWS; a diferença reúne atraso, "
-        "tarifas, arredondamento e consumo ainda não atribuído."
-    )
     coverage = account.glue_cost_coverage
-    if coverage is not None and coverage.unattributed_cost:
-        note += (
-            f" Buckets sem rateio somam {fmt.usd(coverage.unattributed_cost)}."
+    if coverage is None or coverage.net_cost is None:
+        return (
+            attributed,
+            "—",
+            "—",
+            "cobrança Glue da janela não coletada; sem base para reconciliar.",
         )
-    return attributed, explorer, fmt.usd(delta), note
+    delta = coverage.net_cost - process_total
+    note = (
+        f"Cobrança Glue de {coverage.period_start} a {coverage.data_through}, "
+        f"qualidade {coverage.cost_quality}; a diferença reúne tarifas, "
+        "arredondamento e consumo ainda não atribuído."
+    )
+    if coverage.unattributed_cost:
+        note += f" Buckets sem rateio somam {fmt.usd(coverage.unattributed_cost)}."
+    return attributed, fmt.usd(coverage.net_cost), fmt.usd(delta), note
 
 
 def _glue_cost_view(account: Account) -> dict:
@@ -720,7 +728,7 @@ def build(
         scan_id=manifest_val(manifest, "scan_id"),
         generated_at=account.generated_at,
         currency=account_currency,
-        total_cost_fmt=fmt.money(account.total_cost_window, account_currency),
+        total_cost_fmt=fmt.money(account.billing_cost_mtd, account_currency),
         identified_fmt=fmt.money(identified, saving_currency),
         high_conf_fmt=fmt.money(high_conf, saving_currency),
         realizable_year_fmt=fmt.money(realizable_year, saving_currency),
@@ -738,16 +746,16 @@ def build(
         executable_count=len(pareto.executable_focus),
         months_remaining=months_remaining_in_year(),
         services=services,
-        account_total_fmt=fmt.money(account.total_cost_window, account_currency),
+        account_total_fmt=fmt.money(account.billing_cost_mtd, account_currency),
         account_saving_fmt=fmt.money(identified, saving_currency),
         account_saving_pct=(
-            f"{round(identified / account.total_cost_window * 100)}%"
-            if account.total_cost_window and account_saving_comparable
+            f"{round(identified / account.billing_cost_mtd * 100)}%"
+            if account.billing_cost_mtd and account_saving_comparable
             else "—"
         ),
         account_bar_w=(
-            f"{identified / account.total_cost_window * 100:.1f}%"
-            if account.total_cost_window and account_saving_comparable
+            f"{identified / account.billing_cost_mtd * 100:.1f}%"
+            if account.billing_cost_mtd and account_saving_comparable
             else "0%"
         ),
         process_costs=_process_costs(account),

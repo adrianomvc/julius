@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import gzip
 import json
-from datetime import datetime, timedelta, timezone
+from datetime import datetime
+
+from julius.aws.window import AnalysisWindow
 from urllib.parse import urlparse
 
 from julius.inventory.model import GlueJob
@@ -18,11 +20,9 @@ def enrich_glue_shuffle(
     s3_client,
     jobs: list[GlueJob],
     *,
-    lookback_days: int = 90,
-    now: datetime | None = None,
+    window: AnalysisWindow,
 ) -> None:
-    now = now or datetime.now(timezone.utc)
-    cutoff = now - timedelta(days=lookback_days)
+    cutoff = window.start
     for job in jobs:
         location = _s3_location(job.spark_event_logs_path)
         if location is None:

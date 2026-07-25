@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
+
+from julius.aws.window import AnalysisWindow
 
 from julius.inventory.model import StateMachine
 
@@ -11,12 +13,10 @@ from julius.inventory.model import StateMachine
 def collect_state_machines(
     client,
     *,
-    lookback_days: int = 90,
-    now: datetime | None = None,
+    window: AnalysisWindow,
 ) -> list[StateMachine]:
-    now = now or datetime.now(timezone.utc)
-    cutoff = now - timedelta(days=lookback_days)
-    months = max(1.0, lookback_days / 30.0)
+    cutoff = window.start
+    months = max(1.0, window.days / 30.0)
     machines: list[StateMachine] = []
 
     paginator = client.get_paginator("list_state_machines")
@@ -40,7 +40,7 @@ def collect_state_machines(
                     if durations
                     else 0.0,
                     observed_runs=len(executions),
-                    coverage_days=lookback_days,
+                    coverage_days=window.days,
                     glue_jobs=sorted(_glue_jobs(definition)),
                     has_polling_loop=_has_polling_loop(definition),
                 )

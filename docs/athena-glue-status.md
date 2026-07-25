@@ -4,6 +4,31 @@ Documento único de estado dos dois serviços que concentram a análise do Juliu
 Complementa o [runbook de homologação Athena](athena-operational-validation.md)
 e o [detalhamento técnico do Glue](glue-analysis.md).
 
+## Contrato de janela
+
+- **Dois períodos, nomeados, que nunca se somam.** A *janela de análise* tem N
+  dias UTC **completos** (padrão 30) e é o período de tudo que é comparado:
+  comportamento, custo, rateio, baseline de oportunidade — idêntica em Glue e
+  Athena. O *painel de fatura* é o mês-calendário até o último dia fechado, e
+  existe só para reconciliar com o que a AWS emite.
+- O teto prático da janela é o histórico de execuções do Athena, que a AWS
+  retém por cerca de 45 dias.
+- **A janela é construída uma vez, em UTC** (`aws/window.py`), e passada a
+  todos os coletores. Nenhum coletor chama `date.today()`: era essa mistura de
+  fuso local com UTC que deslocava o corte de consumo em relação ao corte da
+  cobrança num scan noturno de fim de mês.
+- **Nada é extrapolado.** Trinta dias completos já são um período realizado; a
+  projeção que multiplicava um mês parcial por `dias_do_mês / dia_observado`
+  saiu do caminho de análise. Onde a projeção de fechamento continua sendo
+  exibida, ela exige um mínimo de dias observados.
+- **30 dias não são um mês.** O mês médio tem 30,44 dias. Um número por mês é a
+  medição da janela multiplicada por um fator explícito e único
+  (`DAYS_PER_MONTH / window_days`), nunca a janela renomeada.
+- **Free tier do Data Catalog é por mês-calendário** e a janela móvel cruza essa
+  fronteira. Afeta apenas o bucket `catalog`, que já não é rateado.
+- Um dataset do esquema anterior mede mês-corrente e **é recusado na ingestão**
+  (`unsupported_dataset_version`): renomear o campo não converte o número.
+
 ## Contrato de custo
 
 - **USD é a única moeda, e não há conversão.** Cost Explorer, Cost and Usage
@@ -48,8 +73,8 @@ da coleta read-only atual:
 
 ### Feito
 
-- coleta mensal read-only por workgroup, com paginação completa e janela de 30
-  dias UTC completos (`aws/athena_collector.py`);
+- coleta read-only por workgroup, com paginação completa, sobre a janela de
+  análise compartilhada (`aws/athena_collector.py`);
 - enriquecimento por Glue Catalog e S3: particionamento, formato, compressão,
   arquivos pequenos, tabelas wide, candidatos a partition projection;
 - parsing AST com `sqlglot`, fingerprint estrutural e exato, elegibilidade de
@@ -69,8 +94,11 @@ da coleta read-only atual:
 - **homologação read-only em conta real** — depende de identidade corporativa;
   procedimento e critérios já descritos em
   [athena-operational-validation.md](athena-operational-validation.md);
-- **capacidade provisionada**: `detectors/athena.py` ignora execuções com
-  `modality != on_demand`; contas com capacity reservation não são analisadas;
+- **capacidade provisionada**: `detectors/athena.py` continua sem modelar
+  `modality != on_demand` — a cobrança é por DPU reservada, não por bytes. As
+  queries ignoradas agora são contadas e nomeadas em `AthenaCoverage.gaps`, em
+  vez de sumirem em silêncio, mas contas com capacity reservation seguem sem
+  regra própria;
 - **controles de workgroup**: limite de dados por query, result reuse habilitado
   no próprio workgroup e migração para engine v3 ainda não viram regra;
 - **ciclo de vida do bucket de resultados**: o custo S3 dos resultados de query
@@ -93,8 +121,8 @@ da coleta read-only atual:
   entre raízes compartilhadas;
 - saúde da coleta por fonte, com impacto, próxima ação e categoria de erro
   estável, sem mensagens sensíveis;
-- **custo real por usage type** (`aws/glue_cost.py`): `GetCostAndUsage` diário
-  do mês corrente filtrado por `AWS Glue`, agrupado por `USAGE_TYPE`,
+- **custo real por usage type** (`aws/glue_cost.py`): `GetCostAndUsage` sobre a
+  mesma janela do Athena, filtrado por `AWS Glue`, agrupado por `USAGE_TYPE`,
   classificado em buckets versionados (`etl_job`, `flex`, `crawler`,
   `interactive_session`, `databrew`, `catalog`, `data_quality`, `other`);
 - **rateio por consumo medido** para jobs, crawlers, sessions e DataBrew, com

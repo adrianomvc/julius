@@ -10,7 +10,7 @@ from julius.aws.technical_artifacts import (
     write_artifact_bundle,
 )
 from julius.code_analysis import GlueCodeArtifact, load_glue_artifacts, scan_glue_script
-from julius.config import DEFAULT_CONFIG
+from julius.config import DATASET_SCHEMA_VERSION, DEFAULT_CONFIG
 from julius.inventory.model import Account, GlueJob
 from julius.opportunities.detectors import glue_code
 from julius.pipeline import analyze
@@ -102,7 +102,7 @@ def test_python_shell_candidate_requires_complete_non_spark_script():
         command_type="glueetl",
         number_of_workers=10,
         worker_type="G.1X",
-        runs_per_month=30,
+        runs_in_window=30,
         avg_execution_sec=600,
         observed_runs=20,
         coverage_days=30,
@@ -149,6 +149,7 @@ def test_manifest_hash_is_verified_and_pipeline_consumes_code_findings(tmp_path)
     dataset.write_text(
         json.dumps(
             {
+                "dataset_schema_version": DATASET_SCHEMA_VERSION,
                 "account": "consumer-code",
                 "region": "sa-east-1",
                 "period": "jul/2026",
@@ -160,7 +161,7 @@ def test_manifest_hash_is_verified_and_pipeline_consumes_code_findings(tmp_path)
                         "command_type": "glueetl",
                         "worker_type": "G.1X",
                         "number_of_workers": 10,
-                        "runs_per_month": 30,
+                        "runs_in_window": 30,
                         "avg_execution_sec": 600,
                         "timeout_min": 60,
                         "observed_runs": 20,

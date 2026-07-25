@@ -22,6 +22,18 @@ _GB = 1024**3
 def detect(account: Account, config: Config, scan_id: str) -> list[Opportunity]:
     out: list[Opportunity] = []
     th = config.thresholds
+    # Nenhuma regra Athena modela capacidade provisionada: a cobrança é por DPU
+    # reservada, não por bytes lidos. Ignorar essas queries é correto, mas
+    # ignorá-las em silêncio faz um relatório parcial parecer completo.
+    skipped = [q for q in account.athena_queries if q.modality not in {"on_demand", ""}]
+    if skipped and account.athena_coverage is not None:
+        modalities = ", ".join(sorted({q.modality for q in skipped}))
+        gap = (
+            f"{len(skipped)} padrão(ões) de query fora de on-demand ({modalities}) "
+            "não analisados: as regras Athena modelam custo por bytes"
+        )
+        if gap not in account.athena_coverage.gaps:
+            account.athena_coverage.gaps.append(gap)
     for q in account.athena_queries:
         if q.modality not in {"on_demand", ""}:
             continue

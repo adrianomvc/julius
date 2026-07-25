@@ -7,9 +7,10 @@ destrava as regras de capacidade (Auto Scaling / workers superdimensionados) ao 
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import datetime
 from statistics import mean
 
+from julius.aws.window import AnalysisWindow
 from julius.inventory.model import GlueJob
 
 _NAMESPACE = "Glue"
@@ -34,12 +35,10 @@ def enrich_glue_cpu(
     cw_client,
     jobs: list[GlueJob],
     *,
-    lookback_days: int = 90,
-    now: datetime | None = None,
+    window: AnalysisWindow,
 ) -> None:
     """Preenche `avg_cpu_load` (0–1) de cada job in place, best-effort por job."""
-    now = now or datetime.now(timezone.utc)
-    start = now - timedelta(days=lookback_days)
+    start, now = window.start, window.end
     for job in jobs:
         avg = _avg_cpu(cw_client, job.name, start, now)
         if avg is not None:
@@ -50,16 +49,14 @@ def enrich_glue_observability(
     cw_client,
     jobs: list[GlueJob],
     *,
-    lookback_days: int = 90,
-    now: datetime | None = None,
+    window: AnalysisWindow,
 ) -> None:
     """Coleta sinais que tornam recomendações de capacidade acionáveis.
 
     Falhas são isoladas por métrica; ausência permanece `None` e nunca é
     interpretada como ausência de pressão.
     """
-    now = now or datetime.now(timezone.utc)
-    start = now - timedelta(days=lookback_days)
+    start, now = window.start, window.end
     for job in jobs:
         for field, (metric_name, statistic) in _OBSERVABILITY_METRICS.items():
             value = _metric(cw_client, job.name, metric_name, statistic, start, now)

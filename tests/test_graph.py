@@ -22,6 +22,7 @@ from julius.inventory.model import (
     Table,
 )
 from julius.pipeline import analyze_account
+from julius.aws.window import AnalysisWindow
 
 
 def _process_account() -> Account:
@@ -43,7 +44,7 @@ def _process_account() -> Account:
                 worker_type="G.2X",
                 number_of_workers=20,
                 auto_scaling=False,
-                runs_per_month=30,
+                runs_in_window=30,
                 avg_execution_sec=3600,
                 avg_cpu_load=0.15,
                 observed_runs=30,
@@ -190,7 +191,7 @@ def test_cloudtrail_collector_normalizes_source_identity():
             }
         ]
     )
-    events = collect_actor_events(client, now=datetime(2026, 7, 23, tzinfo=timezone.utc))
+    events = collect_actor_events(client, window=AnalysisWindow.trailing(now=datetime(2026, 7, 23, tzinfo=timezone.utc)))
     assert len(events) == 1
     assert events[0].resource_type == "glue_job"
     assert events[0].resource_name == "transforma"

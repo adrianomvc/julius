@@ -32,6 +32,25 @@ def sagemaker_hourly(instance_type: str) -> float:
 def is_gpu_instance(instance_type: str) -> bool:
     return any(f".{fam}" in instance_type for fam in ("g4dn", "g5", "p3", "p4", "p2", "g6"))
 
+# Janela de análise padrão, em dias UTC completos. É o período de tudo que é
+# comparado entre serviços. O teto prático é o histórico de execuções do
+# Athena, que a AWS retém por ~45 dias.
+ANALYSIS_WINDOW_DAYS = 30
+
+# Um mês médio tem 365,25/12 = 30,44 dias. A medição acontece na janela, em
+# dias; quando um número precisa ser expresso "por mês" a conversão passa por
+# aqui, uma vez só e com nome. Tratar 30 dias como mês subestima ~1,4%.
+DAYS_PER_MONTH = 365.25 / 12
+
+# Mínimo de dias observados para projetar o fechamento do mês. Abaixo disso o
+# fator explode (no dia 2 seria ×15) e a projeção deixa de ser informação.
+MIN_DAYS_FOR_FORECAST = 5
+
+# Versão do dataset exportado. Sobe quando o significado de um campo muda, não
+# só quando um campo é adicionado: um dataset da versão anterior mede
+# mês-corrente, e esse número não pode ser reinterpretado como janela móvel.
+DATASET_SCHEMA_VERSION = 2
+
 # Versões usadas nas oportunidades (auditoria/calibração).
 JULIUS_VERSION = "0.6.0"
 KNOWLEDGE_VERSION = "aws-glue-guidance-2026-07"

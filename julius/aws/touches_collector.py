@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from julius.aws.window import AnalysisWindow
 from julius.aws.athena_query import run_query
 
 
@@ -39,7 +40,7 @@ def collect_touches(
     touches_table: str,
     workgroup: str = "julius",
     output_location: str | None = None,
-    lookback_days: int = 90,
+    window: AnalysisWindow,
     columns: TouchColumns | None = None,
 ) -> dict[str, TouchStats]:
     if not touches_table:
@@ -49,7 +50,7 @@ def collect_touches(
         "WITH base AS ("
         f"SELECT {cols.table} AS tabela, cast({cols.account} AS varchar) AS conta, "
         f"cast({cols.community} AS varchar) AS comunidade FROM {touches_table} "
-        f"WHERE {cols.date} >= date_add('day', -{int(lookback_days)}, current_date)"
+        f"WHERE {cols.date} >= date_add('day', -{int(window.days)}, current_date)"
         "), totals AS ("
         "SELECT tabela, count(*) AS toques, count(distinct conta) AS contas, "
         "count(distinct comunidade) AS comunidades, "

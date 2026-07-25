@@ -16,6 +16,8 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import Any, Iterable
 
+from julius.aws.window import AnalysisWindow
+from julius.config import ANALYSIS_WINDOW_DAYS
 from julius.estimation.currency import non_usd_gap, usd_amount
 from julius.inventory.model import AthenaActorUsage, AthenaCoverage, AthenaQuery
 
@@ -113,10 +115,12 @@ class AthenaAnalysis:
     coverage: AthenaCoverage
 
 
-def complete_utc_window(now: datetime | None = None, days: int = 30) -> tuple[datetime, datetime]:
-    now = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
-    end = now.replace(hour=0, minute=0, second=0, microsecond=0)
-    return end - timedelta(days=days), end
+def complete_utc_window(
+    now: datetime | None = None, days: int = ANALYSIS_WINDOW_DAYS
+) -> tuple[datetime, datetime]:
+    """Compatibilidade: a definição canônica agora é `AnalysisWindow`."""
+    window = AnalysisWindow.trailing(days=days, now=now)
+    return window.start, window.end
 
 
 def billable_bytes(
@@ -215,12 +219,18 @@ def collect_analysis(
     glue_client=None,
     s3_client=None,
     ce_client=None,
-    lookback_days: int = 30,
+    window: AnalysisWindow | None = None,
+    lookback_days: int = ANALYSIS_WINDOW_DAYS,
     max_ids_per_workgroup: int | None = None,
     now: datetime | None = None,
 ) -> AthenaAnalysis:
-    start, end = complete_utc_window(now, lookback_days)
-    coverage = AthenaCoverage(window_start=start.isoformat(), window_end=end.isoformat())
+    window = window or AnalysisWindow.trailing(days=lookback_days, now=now)
+    start, end = window.start, window.end
+    coverage = AthenaCoverage(
+        window_start=start.isoformat(),
+        window_end=end.isoformat(),
+        window_days=window.days,
+    )
     workgroups, configs = _workgroups(athena_client, coverage)
     evidence: list[AthenaExecutionEvidence] = []
 

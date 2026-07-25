@@ -5,13 +5,12 @@ from __future__ import annotations
 import json
 from datetime import datetime, timezone
 
+from julius.aws.window import AnalysisWindow
 from julius.inventory.model import GlueCrawler
 from julius.aws.schedule_frequency import expected_runs_per_month
 
 
-def collect_crawlers(glue_client, *, now: datetime | None = None) -> list[GlueCrawler]:
-    now = now or datetime.now(timezone.utc)
-    month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+def collect_crawlers(glue_client, *, window: AnalysisWindow) -> list[GlueCrawler]:
     raw_crawlers: list[dict] = []
     paginator = glue_client.get_paginator("get_crawlers")
     for page in paginator.paginate():
@@ -21,7 +20,7 @@ def collect_crawlers(glue_client, *, now: datetime | None = None) -> list[GlueCr
     out: list[GlueCrawler] = []
     for raw in raw_crawlers:
         name = str(raw.get("Name") or "")
-        histories = _histories(glue_client, name, month_start)
+        histories = _histories(glue_client, name, window)
         history_changes = _catalog_changes(histories)
         schedule = raw.get("Schedule", {}) or {}
         last = raw.get("LastCrawl", {}) or {}
@@ -61,7 +60,9 @@ def collect_crawlers(glue_client, *, now: datetime | None = None) -> list[GlueCr
                 expected_runs_monthly=expected_runs_per_month(
                     str(schedule.get("ScheduleExpression") or "")
                 ),
-                window_end=now.date().isoformat(),
+                window_end=window.data_through.isoformat(),
+                coverage_days=window.days,
+                window_days=window.days,
                 recrawl_behavior=str(
                     (raw.get("RecrawlPolicy") or {}).get("RecrawlBehavior")
                     or "CRAWL_EVERYTHING"
@@ -88,7 +89,7 @@ def _metrics_by_name(glue_client) -> dict[str, dict]:
     }
 
 
-def _histories(glue_client, name: str, month_start: datetime) -> list[dict]:
+def _histories(glue_client, name: str, window: AnalysisWindow) -> list[dict]:
     try:
         paginator = glue_client.get_paginator("list_crawls")
         pages = paginator.paginate(CrawlerName=name)
@@ -103,7 +104,7 @@ def _histories(glue_client, name: str, month_start: datetime) -> list[dict]:
             started = item.get("StartTime")
             if isinstance(started, datetime):
                 normalized = started.replace(tzinfo=started.tzinfo or timezone.utc)
-                if normalized < month_start:
+                if not window.contains(normalized):
                     continue
             histories.append(item)
     return histories

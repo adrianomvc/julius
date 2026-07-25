@@ -153,7 +153,7 @@ def _opportunity(
         doc_links=[doc_link],
         data_sources=["Glue GetCrawlers", "GetCrawlerMetrics", "ListCrawls"],
         observed_runs=crawler.runs_in_window,
-        coverage_days=min(account.lookback_days, 31),
+        coverage_days=crawler.window_days,
         has_optional_metrics=crawler.dpu_hours_window > 0,
         owner_tag=crawler.owner_tag,
         config=config,

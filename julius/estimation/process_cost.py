@@ -1,8 +1,13 @@
-"""Atribuição conservadora do custo MTD aos processos do grafo Julius."""
+"""Atribuição conservadora do custo da janela aos processos do grafo Julius.
+
+O custo por processo é o consumo **realizado** na janela de análise, rateado
+entre as raízes que compartilham um ativo. Não há projeção para fim de mês:
+extrapolar uma janela parcial era o que fazia o teto de economia de um processo
+depender do dia em que o scan rodou.
+"""
 
 from __future__ import annotations
 
-import calendar
 from datetime import date
 
 from julius.config import Config
@@ -17,39 +22,34 @@ def build_process_costs(
     account: Account, config: Config, *, today: date | None = None
 ) -> list[ProcessCost]:
     today = today or _account_date(account)
-    period_start = today.replace(day=1).isoformat()
+    window_start = account.window_start
+    window_end = account.window_end or today.isoformat()
+    coverage_days = max(1, account.window_days)
     roots_by_job = _roots_by_job(account)
     rows: dict[tuple[str, str], ProcessCost] = {}
+
+    def row_for(root_type: str, root_name: str) -> ProcessCost:
+        return _row(
+            rows, account, root_type, root_name, window_start, window_end, coverage_days
+        )
 
     for job in account.glue_jobs:
         roots = roots_by_job.get(job.name) or [("glue_job", job.name)]
         share = 1.0 / len(roots)
+        rate = _job_rate(job, config)
+        # Sem consumo reportado na janela, o fallback é a modelagem por duração
+        # — nunca a projeção de um período maior.
         actual_dpu = job.actual_dpu_hours_window * share
         estimated_dpu = job.estimated_dpu_hours_window * share
-        rate = _job_rate(job, config)
-        current_job_cost = job.total_dpu_hours_window * rate
-        historical_job_cost = (
-            job.historical_monthly_dpu_hours * rate
-        )
-        if current_job_cost > 0:
-            forecast_job_cost = job.forecast_dpu_hours_eom * rate
-        else:
-            forecast_job_cost = historical_job_cost
+        if job.total_dpu_hours_window <= 0:
+            estimated_dpu = job.modeled_window_dpu_hours * share
         for root_type, root_name in roots:
-            row = _row(
-                rows,
-                account,
-                root_type,
-                root_name,
-                period_start,
-                job.window_end or today.isoformat(),
-            )
+            row = row_for(root_type, root_name)
             _inherit_owner(row, account, "glue_job", job.name)
             row.actual_dpu_hours += actual_dpu
             row.estimated_dpu_hours += estimated_dpu
             row.actual_cost_window += actual_dpu * rate
             row.estimated_cost_window += estimated_dpu * rate
-            row.forecast_cost_eom += forecast_job_cost * share
             row.allocation_method = (
                 "direct" if len(roots) == 1 else "equal_share_across_processes"
             )
@@ -61,47 +61,19 @@ def build_process_costs(
         crawler_rate = _rate_from_allocation(
             crawler.allocated_cost, crawler.dpu_hours_window
         ) or config.pricing.glue_dpu_hour
-        crawler_factor = _forecast_factor(
-            crawler.window_end or today.isoformat(), today
-        )
         roots = crawler_roots.get(crawler.name) or [("glue_crawler", crawler.name)]
         share = 1.0 / len(roots)
         for root_type, root_name in roots:
-            row = _row(
-                rows,
-                account,
-                root_type,
-                root_name,
-                period_start,
-                today.isoformat(),
-            )
+            row = row_for(root_type, root_name)
             _inherit_owner(row, account, "glue_crawler", crawler.name)
             row.actual_dpu_hours += crawler.dpu_hours_window * share
-            row.actual_cost_window += (
-                crawler.dpu_hours_window * crawler_rate * share
-            )
-            row.forecast_cost_eom += (
-                crawler.dpu_hours_window
-                * crawler_rate
-                * crawler_factor
-                * share
-            )
+            row.actual_cost_window += crawler.dpu_hours_window * crawler_rate * share
             if crawler.name not in row.component_names:
                 row.component_names.append(crawler.name)
 
     for session in account.interactive_sessions:
-        row = _row(
-            rows,
-            account,
-            "glue_session",
-            session.session_id,
-            period_start,
-            today.isoformat(),
-        )
+        row = row_for("glue_session", session.session_id)
         _inherit_owner(row, account, "glue_session", session.session_id)
-        session_factor = _forecast_factor(
-            session.window_end or today.isoformat(), today
-        )
         session_rate = _rate_from_allocation(
             session.allocated_cost, session.dpu_hours
         ) or config.pricing.glue_dpu_hour
@@ -109,29 +81,15 @@ def build_process_costs(
         row.estimated_dpu_hours += session.estimated_dpu_hours_window
         row.actual_cost_window += session.actual_dpu_hours_window * session_rate
         row.estimated_cost_window += session.estimated_dpu_hours_window * session_rate
-        row.forecast_cost_eom += session.dpu_hours * session_rate * session_factor
         row.component_names.append(session.session_id)
 
     for job in account.databrew_jobs:
-        databrew_factor = _forecast_factor(
-            job.window_end or today.isoformat(), today
-        )
-        row = _row(
-            rows,
-            account,
-            "databrew_job",
-            job.name,
-            period_start,
-            today.isoformat(),
-        )
+        row = row_for("databrew_job", job.name)
         _inherit_owner(row, account, "databrew_job", job.name)
         databrew_rate = _rate_from_allocation(
             job.allocated_cost, job.estimated_node_hours_window
         ) or config.pricing.databrew_node_hour
         row.estimated_cost_window += job.estimated_node_hours_window * databrew_rate
-        row.forecast_cost_eom += (
-            job.estimated_node_hours_window * databrew_rate * databrew_factor
-        )
         row.component_names.append(job.name)
 
     for row in rows.values():
@@ -140,9 +98,6 @@ def build_process_costs(
         row.estimated_cost_window = round(row.estimated_cost_window, 2)
         row.actual_dpu_hours = round(row.actual_dpu_hours, 4)
         row.estimated_dpu_hours = round(row.estimated_dpu_hours, 4)
-        row.forecast_cost_eom = round(
-            max(row.total_cost_window, row.forecast_cost_eom), 2
-        )
         row.component_names.sort()
     return sorted(rows.values(), key=lambda row: row.total_cost_window, reverse=True)
 
@@ -156,9 +111,11 @@ def apply_conservative_caps(
 ) -> None:
     """Converte potencial técnico em economia esperada e impede overbooking."""
     factor = max(0.0, min(1.0, config.thresholds.conservative_realization))
+    # O teto é o custo do processo expresso por mês, na mesma unidade das
+    # economias. Antes era a projeção para fim de mês, que inflava o teto
+    # proporcionalmente ao quanto faltava para o mês fechar.
     remaining_by_process = {
-        row.process_id: max(0.0, row.forecast_cost_eom)
-        for row in account.process_costs
+        row.process_id: max(0.0, row.monthly_cost) for row in account.process_costs
     }
     ordered = sorted(
         opportunities,
@@ -256,7 +213,7 @@ def _process_rows_for_opportunity(
     return [
         row
         for row in account.process_costs
-        if row.forecast_cost_eom > 0
+        if row.monthly_cost > 0
         and (
             row.process_name in names
             or any(name in row.component_names for name in names)
@@ -323,8 +280,9 @@ def _row(
     account: Account,
     root_type: str,
     root_name: str,
-    period_start: str,
-    data_through: str,
+    window_start: str,
+    window_end: str,
+    coverage_days: int,
 ) -> ProcessCost:
     key = (root_type, root_name)
     if key not in rows:
@@ -339,11 +297,10 @@ def _row(
             owner_event_time=owner.event_time,
             owner_event_name=owner.event_name,
             currency="USD",
-            period_start=period_start,
-            data_through=data_through,
+            window_start=window_start,
+            window_end=window_end,
+            window_days=coverage_days,
         )
-    elif data_through > rows[key].data_through:
-        rows[key].data_through = data_through
     return rows[key]
 
 
@@ -364,17 +321,6 @@ def _inherit_owner(
         row.owner_confidence = candidate.confidence
         row.owner_event_time = candidate.event_time
         row.owner_event_name = candidate.event_name
-
-
-def _forecast_factor(data_through: str, today: date) -> float:
-    try:
-        observed = date.fromisoformat(data_through)
-    except ValueError:
-        observed = today
-    if observed.year != today.year or observed.month != today.month:
-        return 1.0
-    elapsed = max(1, observed.day)
-    return calendar.monthrange(today.year, today.month)[1] / elapsed
 
 
 def _job_rate(job, config: Config) -> float:

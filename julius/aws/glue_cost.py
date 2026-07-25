@@ -12,9 +12,7 @@ dependência administrativa fora da coleta read-only.
 
 from __future__ import annotations
 
-import calendar
-from datetime import date, timedelta
-
+from julius.aws.window import AnalysisWindow
 from julius.config import (
     ALLOCATED_GLUE_BUCKETS,
     GLUE_COST_VERSION,
@@ -36,16 +34,16 @@ def classify_usage_type(usage_type: str) -> str:
     return "other"
 
 
-def collect_glue_costs(ce_client, *, today: date | None = None) -> GlueCostCoverage:
-    """Cobrança Glue do mês corrente por bucket, em USD."""
-    today = today or date.today()
-    month_start = today.replace(day=1)
-    # O fim do Cost Explorer é exclusivo; no dia 1 avançar um dia evita a
-    # janela inválida Start == End (mesma convenção de `cost_explorer`).
-    billing_end = today if today > month_start else today + timedelta(days=1)
+def collect_glue_costs(ce_client, *, window: AnalysisWindow) -> GlueCostCoverage:
+    """Cobrança Glue da janela de análise por bucket, em USD.
+
+    A janela é a mesma do consumo coletado e a mesma do Athena. O Cost Explorer
+    aceita intervalo arbitrário, então não há motivo para o custo seguir o
+    mês-calendário enquanto o consumo segue outra coisa.
+    """
     coverage = GlueCostCoverage(
-        period_start=month_start.isoformat(),
-        data_through=(billing_end - timedelta(days=1)).isoformat(),
+        period_start=window.start_date.isoformat(),
+        data_through=window.data_through.isoformat(),
         allocation_version=GLUE_COST_VERSION,
     )
 
@@ -53,8 +51,8 @@ def collect_glue_costs(ce_client, *, today: date | None = None) -> GlueCostCover
         try:
             response = ce_client.get_cost_and_usage(
                 TimePeriod={
-                    "Start": month_start.isoformat(),
-                    "End": billing_end.isoformat(),
+                    "Start": window.start_date.isoformat(),
+                    "End": window.end_date.isoformat(),
                 },
                 Granularity="MONTHLY",
                 Metrics=[metric],
@@ -195,7 +193,7 @@ def _quality(
 
 
 def _estimated_share(account: Account) -> float:
-    """Fração das DPU-horas do mês que veio de duração estimada, não medida."""
+    """Fração das DPU-horas da janela que veio de duração estimada."""
     estimated = sum(
         max(0.0, job.estimated_dpu_hours_window) for job in account.glue_jobs
     )
@@ -209,13 +207,3 @@ def _rate(job, config: Config) -> float:
     if job.capacity_unit == "M-DPU":
         return config.pricing.glue_ray_mdpu_hour
     return config.pricing.glue_rate(job.execution_class)
-
-
-def forecast_factor(coverage: GlueCostCoverage) -> float:
-    """Fator MTD → fim de mês, a partir do `data_through` da cobrança."""
-    try:
-        observed = date.fromisoformat(coverage.data_through)
-    except (TypeError, ValueError):
-        return 1.0
-    days = calendar.monthrange(observed.year, observed.month)[1]
-    return days / max(1, observed.day)

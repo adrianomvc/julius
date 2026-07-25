@@ -2,11 +2,27 @@
 
 from __future__ import annotations
 
-import calendar
 from dataclasses import dataclass, field
-from datetime import date
 
-from julius.config import DPU_PER_WORKER, UNATTRIBUTED_GLUE_BUCKETS
+from julius.config import (
+    ANALYSIS_WINDOW_DAYS,
+    DAYS_PER_MONTH,
+    DPU_PER_WORKER,
+    UNATTRIBUTED_GLUE_BUCKETS,
+)
+
+
+def _monthly_factor(window_days: int) -> float:
+    """Converte uma medição da janela em número por mês.
+
+    A coleta mede N dias completos; o relatório fala em mês. A conversão é
+    explícita e mora só aqui — 30 dias não são um mês.
+
+    O parâmetro é o tamanho da **janela**, nunca a vida do ativo: uma sessão
+    que existiu dois dias mede dois dias de consumo, e projetar esses dois dias
+    para um mês seria a extrapolação que este contrato existe para eliminar.
+    """
+    return DAYS_PER_MONTH / max(1, window_days or ANALYSIS_WINDOW_DAYS)
 
 
 @dataclass
@@ -38,7 +54,6 @@ class GlueJob:
     execution_class: str = "STANDARD"
     job_bookmark: bool = False
     timeout_min: int = 2880
-    runs_per_month: int = 0
     avg_execution_sec: float = 0.0
     p50_execution_sec: float = 0.0
     p95_execution_sec: float = 0.0
@@ -63,6 +78,7 @@ class GlueJob:
     estimated_dpu_hours_window: float = 0.0
     runs_in_window: int = 0
     window_end: str = ""
+    window_days: int = ANALYSIS_WINDOW_DAYS
     # Custo alocado por rateio da cobrança real do bucket no Cost Explorer.
     # Nunca é fatura por job: o CE não expõe dimensão de recurso para Glue.
     allocated_cost: float | None = None
@@ -115,26 +131,31 @@ class GlueJob:
         return self.actual_dpu_hours_window + max(0.0, self.estimated_dpu_hours_window)
 
     @property
+    def monthly_factor(self) -> float:
+        return _monthly_factor(self.window_days)
+
+    @property
+    def modeled_window_dpu_hours(self) -> float:
+        """Consumo por duração × capacidade, quando a AWS não reportou DPU."""
+        return self.runs_in_window * self.configured_dpu * (
+            self.avg_execution_sec / 3600.0
+        )
+
+    @property
     def window_dpu_hours(self) -> float:
-        """DPU-hora projetada para o mês, sem chamar MTD de mensal."""
-        return self.forecast_dpu_hours_eom
-
-    @property
-    def forecast_dpu_hours_eom(self) -> float:
+        """DPU-hora **realizada** na janela. Medida, nunca extrapolada."""
         if self.total_dpu_hours_window > 0:
-            try:
-                observed = date.fromisoformat(self.window_end)
-            except (TypeError, ValueError):
-                return self.total_dpu_hours_window
-            days = calendar.monthrange(observed.year, observed.month)[1]
-            return self.total_dpu_hours_window * days / max(1, observed.day)
-        hours = self.avg_execution_sec / 3600.0
-        return self.runs_per_month * self.configured_dpu * hours
+            return self.total_dpu_hours_window
+        return self.modeled_window_dpu_hours
 
     @property
-    def historical_monthly_dpu_hours(self) -> float:
-        hours = self.avg_execution_sec / 3600.0
-        return self.runs_per_month * self.configured_dpu * hours
+    def monthly_dpu_hours(self) -> float:
+        """A mesma DPU-hora expressa por mês, para os modelos financeiros."""
+        return self.window_dpu_hours * self.monthly_factor
+
+    @property
+    def runs_per_month(self) -> float:
+        return round(self.runs_in_window * self.monthly_factor, 1)
 
 
 @dataclass
@@ -159,6 +180,7 @@ class InteractiveSession:
     dpu_seconds_window: float | None = None
     estimated_dpu_hours_window: float = 0.0
     window_end: str = ""
+    window_days: int = ANALYSIS_WINDOW_DAYS
     allocated_cost: float | None = None
     cost_quality: str = "unavailable"
     last_activity_at: str = ""
@@ -177,6 +199,14 @@ class InteractiveSession:
     @property
     def dpu_hours(self) -> float:
         return self.actual_dpu_hours_window + max(0.0, self.estimated_dpu_hours_window)
+
+    @property
+    def monthly_factor(self) -> float:
+        return _monthly_factor(self.window_days)
+
+    @property
+    def monthly_dpu_hours(self) -> float:
+        return self.dpu_hours * self.monthly_factor
 
 
 @dataclass
@@ -201,9 +231,30 @@ class GlueCrawler:
     crawl_ids_in_window: list[str] = field(default_factory=list)
     expected_runs_monthly: float | None = None
     window_end: str = ""
+    window_days: int = ANALYSIS_WINDOW_DAYS
+    coverage_days: int = 0
     allocated_cost: float | None = None
     cost_quality: str = "unavailable"
     recrawl_behavior: str = "CRAWL_EVERYTHING"
+
+    @property
+    def monthly_factor(self) -> float:
+        return _monthly_factor(self.window_days)
+
+    @property
+    def monthly_dpu_hours(self) -> float:
+        return self.dpu_hours_window * self.monthly_factor
+
+    @property
+    def expected_runs_in_window(self) -> float | None:
+        """Execuções esperadas pelo agendamento **na janela**.
+
+        Comparar execuções da janela com uma expectativa mensal media coisas
+        diferentes; a expectativa é trazida para o mesmo período.
+        """
+        if self.expected_runs_monthly is None:
+            return None
+        return self.expected_runs_monthly / self.monthly_factor
 
 
 @dataclass
@@ -235,8 +286,25 @@ class DataBrewJob:
     run_ids_in_window: list[str] = field(default_factory=list)
     expected_runs_monthly: float | None = None
     window_end: str = ""
+    window_days: int = ANALYSIS_WINDOW_DAYS
+    coverage_days: int = 0
     allocated_cost: float | None = None
     cost_quality: str = "unavailable"
+
+    @property
+    def monthly_factor(self) -> float:
+        return _monthly_factor(self.window_days)
+
+    @property
+    def monthly_node_hours(self) -> float:
+        return self.estimated_node_hours_window * self.monthly_factor
+
+    @property
+    def expected_runs_in_window(self) -> float | None:
+        """Execuções esperadas pelo agendamento **na janela**."""
+        if self.expected_runs_monthly is None:
+            return None
+        return self.expected_runs_monthly / self.monthly_factor
 
 
 @dataclass
@@ -251,18 +319,32 @@ class ProcessCost:
     owner_event_name: str = ""
     actual_cost_window: float = 0.0
     estimated_cost_window: float = 0.0
-    forecast_cost_eom: float = 0.0
     actual_dpu_hours: float = 0.0
     estimated_dpu_hours: float = 0.0
     currency: str = "USD"
-    period_start: str = ""
-    data_through: str = ""
+    window_start: str = ""
+    window_end: str = ""
+    window_days: int = ANALYSIS_WINDOW_DAYS
     allocation_method: str = "direct"
     component_names: list[str] = field(default_factory=list)
 
     @property
     def total_cost_window(self) -> float:
         return self.actual_cost_window + self.estimated_cost_window
+
+    @property
+    def monthly_factor(self) -> float:
+        return _monthly_factor(self.window_days)
+
+    @property
+    def monthly_cost(self) -> float:
+        """Custo do processo por mês — realizado na janela, não projetado.
+
+        Substitui a antiga projeção para fim de mês, que multiplicava um MTD
+        de poucos dias e virava o teto de economia de todas as oportunidades
+        do processo.
+        """
+        return self.total_cost_window * self.monthly_factor
 
 
 @dataclass
@@ -362,10 +444,11 @@ class AthenaActorUsage:
 
 @dataclass
 class AthenaCoverage:
-    """Cobertura e reconciliação da coleta mensal do Athena."""
+    """Cobertura e reconciliação da coleta do Athena na janela de análise."""
 
     window_start: str = ""
     window_end: str = ""
+    window_days: int = ANALYSIS_WINDOW_DAYS
     workgroups_total: int = 0
     workgroups_covered: int = 0
     workgroups: list[str] = field(default_factory=list)
@@ -578,8 +661,13 @@ class Account:
     account_id: str
     region: str = "sa-east-1"
     period: str = ""
-    lookback_days: int = 90
+    lookback_days: int = ANALYSIS_WINDOW_DAYS
     generated_at: str = ""
+    # Janela de análise sob a qual a conta foi coletada. Persistida no dataset
+    # para que a mesma medição possa ser reinterpretada depois.
+    window_start: str = ""
+    window_end: str = ""
+    window_days: int = ANALYSIS_WINDOW_DAYS
     collection_health: list[CollectionHealth] = field(default_factory=list)
     services: list[ServiceCost] = field(default_factory=list)
     glue_jobs: list[GlueJob] = field(default_factory=list)
@@ -608,13 +696,17 @@ class Account:
         return next((j for j in self.glue_jobs if j.name == name), None)
 
     @property
-    def total_cost_window(self) -> float:
+    def billing_cost_mtd(self) -> float:
+        """Cobrança do mês-calendário até a data — o painel de fatura.
+
+        Não é o período da análise. Nenhum baseline de oportunidade se apoia
+        neste número; ele existe para reconciliar com o que a AWS emite.
+        """
         return sum(s.monthly_cost for s in self.services)
 
     @property
     def total_monthly_cost(self) -> float:
-        """Compatibilidade: os custos de serviço atuais representam cobrança MTD."""
-        return self.total_cost_window
+        return self.billing_cost_mtd
 
     def process_cost_for_asset(self, asset_name: str) -> float | None:
         matches = [
@@ -624,9 +716,9 @@ class Account:
         ]
         return sum(matches) if matches else None
 
-    def process_forecast_for_asset(self, asset_name: str) -> float | None:
+    def process_monthly_cost_for_asset(self, asset_name: str) -> float | None:
         matches = [
-            p.forecast_cost_eom
+            p.monthly_cost
             for p in self.process_costs
             if asset_name in p.component_names or p.process_name == asset_name
         ]

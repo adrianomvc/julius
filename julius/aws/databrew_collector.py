@@ -4,20 +4,19 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
+from julius.aws.window import AnalysisWindow
 from julius.inventory.model import DataBrewJob
 from julius.aws.schedule_frequency import expected_runs_per_month
 
 
-def collect_jobs(databrew_client, *, now: datetime | None = None) -> list[DataBrewJob]:
-    now = now or datetime.now(timezone.utc)
-    month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+def collect_jobs(databrew_client, *, window: AnalysisWindow) -> list[DataBrewJob]:
     schedules = _schedules(databrew_client)
     out: list[DataBrewJob] = []
     paginator = databrew_client.get_paginator("list_jobs")
     for page in paginator.paginate():
         for raw in page.get("Jobs", []):
             name = str(raw.get("Name") or "")
-            runs = _runs(databrew_client, name, month_start)
+            runs = _runs(databrew_client, name, window)
             capacity = int(raw.get("MaxCapacity", 5) or 5)
             execution_hours = sum(
                 float(run.get("ExecutionTime", 0) or 0) / 3600.0 for run in runs
@@ -53,7 +52,9 @@ def collect_jobs(databrew_client, *, now: datetime | None = None) -> list[DataBr
                         if name in schedule["jobs"]
                     )
                     or None,
-                    window_end=now.date().isoformat(),
+                    window_end=window.data_through.isoformat(),
+                    coverage_days=window.days,
+                    window_days=window.days,
                 )
             )
     return out
@@ -77,7 +78,7 @@ def _schedules(databrew_client) -> dict[str, dict]:
     return result
 
 
-def _runs(databrew_client, name: str, month_start: datetime) -> list[dict]:
+def _runs(databrew_client, name: str, window: AnalysisWindow) -> list[dict]:
     try:
         paginator = databrew_client.get_paginator("list_job_runs")
         pages = paginator.paginate(Name=name)
@@ -89,7 +90,7 @@ def _runs(databrew_client, name: str, month_start: datetime) -> list[dict]:
             created = run.get("CreatedOn")
             if isinstance(created, datetime):
                 normalized = created.replace(tzinfo=created.tzinfo or timezone.utc)
-                if normalized < month_start:
+                if not window.contains(normalized):
                     continue
             out.append(run)
     return out

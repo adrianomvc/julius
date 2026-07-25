@@ -222,29 +222,29 @@ def detect(account: Account, config: Config, scan_id: str) -> list[Opportunity]:
                         ],
                     )
                 )
-    service = next(
-        (item for item in account.services if item.name == "AWS Glue"),
-        None,
-    )
+    # A cobrança comparável é a da janela de análise, não a do painel de
+    # fatura: aquela cobre o mês-calendário parcial, e a diferença de período
+    # apareceria aqui como custo não atribuído.
+    coverage = account.glue_cost_coverage
     modeled = sum(row.total_cost_window for row in account.process_costs)
     modeled_currency = (
         account.process_costs[0].currency if account.process_costs else config.pricing.currency
     )
     if (
-        service is not None
-        and service.currency == modeled_currency
-        and service.monthly_cost > 0
+        coverage is not None
+        and coverage.net_cost
+        and coverage.currency == modeled_currency
     ):
-        delta = service.monthly_cost - modeled
-        if delta > max(10.0, service.monthly_cost * 0.20):
+        delta = coverage.net_cost - modeled
+        if delta > max(10.0, coverage.net_cost * 0.20):
             out.append(
                 _unattributed_cost(
                     account,
                     config,
                     scan_id,
-                    service.monthly_cost,
+                    coverage.net_cost,
                     modeled,
-                    service.data_through,
+                    coverage.data_through,
                 )
             )
     return out
@@ -299,7 +299,7 @@ def _unattributed_cost(
         ),
         finding="Cobrança Glue relevante ainda não atribuída aos processos",
         why=(
-            f"Cost Explorer MTD={billing_window:.2f} e modelo por processo="
+            f"Cost Explorer na janela={billing_window:.2f} e modelo por processo="
             f"{modeled_window:.2f}; diferença={delta:.2f} {config.pricing.currency}."
             + (
                 " Buckets sem rateio: " + "; ".join(buckets) + "."
@@ -319,8 +319,8 @@ def _unattributed_cost(
             "Data Quality e table optimizers até explicar a diferença."
         ),
         evidence=[
-            f"Cost Explorer Glue MTD={billing_window:.2f}",
-            f"modelo atribuído MTD={modeled_window:.2f}",
+            f"Cost Explorer Glue na janela={billing_window:.2f}",
+            f"modelo atribuído na janela={modeled_window:.2f}",
             f"data_through={data_through or 'não informada'}",
         ] + buckets,
         risks=["diferença pode conter atraso ou modalidades ainda não modeladas"],

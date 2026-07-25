@@ -8,15 +8,15 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
+from julius.aws.window import AnalysisWindow
 from julius.config import DPU_PER_WORKER
 from julius.inventory.model import InteractiveSession
 
 
 def collect_sessions(
-    glue_client, *, now: datetime | None = None
+    glue_client, *, window: AnalysisWindow
 ) -> list[InteractiveSession]:
-    now = now or datetime.now(timezone.utc)
-    month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    now = window.end
     out: list[InteractiveSession] = []
     paginator = glue_client.get_paginator("list_sessions")
     for page in paginator.paginate():
@@ -45,14 +45,14 @@ def collect_sessions(
             created_on = _dt(s.get("CreatedOn"))
             completed_on = _dt(s.get("CompletedOn"))
             reported_seconds = float(s.get("DPUSeconds", 0) or 0)
+            # `DPUSeconds` cobre a sessão inteira; só pode ser atribuído à
+            # janela quando a sessão inteira cabe dentro dela.
             fully_observed_window = (
                 created_on is not None
-                and created_on >= month_start
-                and (completed_on is None or completed_on <= now)
+                and created_on >= window.start
+                and (completed_on is None or completed_on <= window.end)
             )
-            overlap_seconds = _interval_overlap_seconds(
-                created_on, completed_on, month_start, now
-            )
+            overlap_seconds = window.overlap_seconds(created_on, completed_on)
             reported_window = reported_seconds if fully_observed_window else 0.0
             estimated_window = (
                 0.0
@@ -77,7 +77,8 @@ def collect_sessions(
                     dpu_seconds=reported_seconds,
                     dpu_seconds_window=reported_window,
                     estimated_dpu_hours_window=round(estimated_window, 4),
-                    window_end=now.date().isoformat(),
+                    window_end=window.data_through.isoformat(),
+                    window_days=window.days,
                     observed_runs=activity["statement_count"],
                     coverage_days=activity["coverage_days"],
                     last_activity_at=activity["last_activity_at"],
@@ -153,18 +154,3 @@ def _dt(value) -> datetime | None:
     if not isinstance(value, datetime):
         return None
     return value.replace(tzinfo=value.tzinfo or timezone.utc)
-
-
-def _interval_overlap_seconds(
-    started: datetime | None,
-    completed: datetime | None,
-    period_start: datetime,
-    period_end: datetime,
-) -> float:
-    if started is None:
-        return 0.0
-    end = completed or period_end
-    return max(
-        0.0,
-        (min(end, period_end) - max(started, period_start)).total_seconds(),
-    )
