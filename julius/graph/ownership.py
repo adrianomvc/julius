@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
 
 from julius.inventory.model import Account
 
@@ -74,8 +75,8 @@ def resolve_owner(account: Account, asset_type: str, asset_name: str) -> OwnerAt
     return OwnerAttribution(None, "desconhecido", 0.0)
 
 
-def _asset(account: Account, asset_type: str, asset_name: str):
-    collections = {
+def _asset(account: Account, asset_type: str, asset_name: str) -> Any:
+    collections: dict[str, list[Any]] = {
         "glue_job": account.glue_jobs,
         "glue_session": account.interactive_sessions,
         "glue_crawler": account.glue_crawlers,

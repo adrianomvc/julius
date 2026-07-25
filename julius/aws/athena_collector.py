@@ -27,8 +27,8 @@ try:
     import sqlglot
     from sqlglot import exp
 except ImportError:  # pragma: no cover - instalação incompleta tem fallback seguro
-    sqlglot = None
-    exp = None
+    sqlglot = None  # type: ignore[assignment]
+    exp = None  # type: ignore[assignment]
 
 _MB = 1024**2
 _GB = 1024**3

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Any
 
 import boto3
 
@@ -27,6 +28,17 @@ from julius.aws.collection_health import CollectionRecorder, RequiredCollectionE
 from julius.aws.window import AnalysisWindow, BillingMonth
 from julius.config import ANALYSIS_WINDOW_DAYS, DEFAULT_CONFIG, Config
 from julius.inventory.model import Account
+
+
+# Fallback de uma fonte que falhou: nada coletado. Existe tipado porque um []
+# literal faz o inferidor resolver o retorno de capture como list[Never] e
+# apagar o tipo real da fonte.
+def _nothing() -> list[Any]:
+    return []
+
+
+def _nothing_mapped() -> dict[str, Any]:
+    return {}
 
 
 def collect_account(
@@ -81,7 +93,7 @@ def collect_account(
         lambda: cost_explorer.collect_services(
             session.client("ce"), billing=billing, include_forecast=True
         ),
-        [],
+        _nothing(),
         count=len,
         data_through=_latest_data_through,
         impact="cobrança MTD, forecast e reconciliação ficam indisponíveis",
@@ -92,7 +104,7 @@ def collect_account(
     account.glue_jobs = health.capture(
         "Glue Jobs",
         lambda: glue_collector.collect_jobs(glue, window=window),
-        [],
+        _nothing(),
         required=True,
         count=len,
         data_through=_latest_data_through,
@@ -121,9 +133,9 @@ def collect_account(
                 ),
                 event_log_jobs,
             ),
-            [],
+            _nothing(),
             count=lambda jobs: sum(
-                1 for job in jobs if job.spark_event_log_objects_scanned > 0
+                1 for item in jobs if item.spark_event_log_objects_scanned > 0
             ),
             expected=len(event_log_jobs),
             impact="shuffle, spill e evidência de código permanecem investigações",
@@ -150,7 +162,7 @@ def collect_account(
     account.tables = health.capture(
         "Glue Catalog",
         lambda: glue_collector.collect_tables(glue),
-        [],
+        _nothing(),
         count=len,
         impact="linhagem e oportunidades de tabelas ficam incompletas",
         next_action="validar glue:GetDatabases e glue:GetTables",
@@ -158,7 +170,7 @@ def collect_account(
     account.glue_crawlers = health.capture(
         "Glue Crawlers",
         lambda: crawlers_collector.collect_crawlers(glue, window=window),
-        [],
+        _nothing(),
         count=len,
         data_through=_latest_data_through,
         impact="falhas, recrawl e schedules de crawlers não são avaliados",
@@ -167,7 +179,7 @@ def collect_account(
     account.glue_triggers = health.capture(
         "Glue Triggers",
         lambda: glue_triggers_collector.collect_triggers(glue),
-        [],
+        _nothing(),
         count=len,
         impact="frequência e grafo de processos podem ficar incompletos",
         next_action="validar glue:GetTriggers",
@@ -175,7 +187,7 @@ def collect_account(
     account.databrew_jobs = health.capture(
         "Glue DataBrew",
         lambda: databrew_collector.collect_jobs(session.client("databrew"), window=window),
-        [],
+        _nothing(),
         count=len,
         data_through=_latest_data_through,
         impact="custos e falhas do DataBrew não são avaliados",
@@ -192,7 +204,7 @@ def collect_account(
             ),
             account.glue_jobs,
         ),
-        [],
+        _nothing(),
         count=lambda jobs: sum(job.avg_cpu_load is not None for job in jobs),
         expected=len(account.glue_jobs),
         impact="recomendações de capacidade permanecem bloqueadas",
@@ -208,7 +220,7 @@ def collect_account(
             ),
             account.glue_jobs,
         ),
-        [],
+        _nothing(),
         count=lambda jobs: sum(
             job.avg_worker_utilization is not None
             or job.max_memory_used_pct is not None
@@ -223,7 +235,7 @@ def collect_account(
     account.interactive_sessions = health.capture(
         "Glue Interactive Sessions",
         lambda: sessions_collector.collect_sessions(glue, window=window),
-        [],
+        _nothing(),
         count=len,
         data_through=_latest_data_through,
         impact="ociosidade e capacidade de sessões não são avaliadas",
@@ -276,7 +288,7 @@ def collect_account(
         lambda: stepfunctions_collector.collect_state_machines(
             session.client("stepfunctions"), window=window
         ),
-        [],
+        _nothing(),
         count=len,
         impact="grafo de processos e frequência podem ficar incompletos",
         next_action="validar states:ListStateMachines e histórico read-only",
@@ -284,7 +296,7 @@ def collect_account(
     account.schedules = health.capture(
         "EventBridge Schedules",
         lambda: schedules_collector.collect_schedules(session.client("events")),
-        [],
+        _nothing(),
         count=len,
         impact="frequência esperada dos processos pode ficar incompleta",
         next_action="validar events:ListRules e events:ListTargetsByRule",
@@ -301,7 +313,7 @@ def collect_account(
                 output_location=athena_output,
                 window=window,
             ),
-            {},
+            _nothing_mapped(),
             count=len,
             impact="uso e consumidores das tabelas ficam incompletos",
             next_action="validar tabela, workgroup e saída Athena configurados",
@@ -322,7 +334,7 @@ def collect_account(
                 lambda: datawarm_collector.mark_publications(account, datawarm_job),
                 account.tables,
             ),
-            [],
+            _nothing(),
             count=lambda tables: sum(table.datawarm_published for table in tables),
             impact="publicações DataWarm podem não ser reconhecidas",
             next_action="validar o identificador informado em --datawarm-job",
@@ -341,7 +353,7 @@ def collect_account(
             lambda: cloudtrail_collector.collect_actor_events(
                 session.client("cloudtrail"), window=window
             ),
-            [],
+            _nothing(),
             count=len,
             impact="responsáveis inferidos podem permanecer desconhecidos",
             next_action="validar cloudtrail:LookupEvents",

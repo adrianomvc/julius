@@ -221,7 +221,7 @@ def validate_agent_output(
             parsed_url = urlparse(url)
             if parsed_url.scheme != "https" or parsed_url.hostname != "docs.aws.amazon.com":
                 raise AgentOutputError(f"documentação fora do domínio oficial permitido: {url}")
-            docs.append(DocumentationReference(title, url, relevance))
+            docs.append(DocumentationReference(str(title), str(url), str(relevance)))
         parsed.append(
             ContextualRecommendation(
                 opportunity_id=opportunity_id,

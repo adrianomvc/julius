@@ -684,14 +684,15 @@ def review(
             )
         if not reviewer.strip():
             raise typer.BadParameter("--reviewer é obrigatório ao registrar uma revisão.")
-        opportunity = next(
+        selected = next(
             (item for item in analysis.opportunities if item.opportunity_id == opportunity_id),
             None,
         )
-        if opportunity is None:
+        if selected is None:
             raise typer.BadParameter(
                 f"Oportunidade {opportunity_id!r} não existe na análise atual."
             )
+        opportunity = selected
 
         history.record_review(
             opportunity,
@@ -718,10 +719,11 @@ def review(
         f"Top 10 revisado {kpis.reviewed_at_10}/10"
     )
     if kpis.precision_at_10 is not None:
+        false_positive_rate = kpis.false_positive_rate_at_10 or 0.0
         typer.echo(
             f"Precision@10 {kpis.precision_at_10*100:.0f}% · "
             f"falsos positivos {kpis.false_positives_at_10} "
-            f"({kpis.false_positive_rate_at_10*100:.0f}%)"
+            f"({false_positive_rate*100:.0f}%)"
         )
 
 

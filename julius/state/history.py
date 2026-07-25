@@ -611,6 +611,8 @@ class HistoryStore:
             """,
             [account],
         ).fetchone()
+        if row is None:
+            return BenefitSummary()
         count = int(row[0] or 0)
         predicted = float(row[1] or 0.0)
         realized = float(row[2] or 0.0)
@@ -667,6 +669,8 @@ class HistoryStore:
             """,
             [account, account],
         ).fetchone()
+        if row is None:
+            return LifecycleLeadTimes()
         return LifecycleLeadTimes(
             detected_to_accepted_days=_round_optional(row[0]),
             accepted_to_implemented_days=_round_optional(row[1]),
@@ -675,7 +679,8 @@ class HistoryStore:
 
     def run_count(self) -> int:
         """Quantidade de snapshots de execução persistidos."""
-        return int(self._db.execute("SELECT count(*) FROM runs").fetchone()[0])
+        row = self._db.execute("SELECT count(*) FROM runs").fetchone()
+        return int(row[0]) if row else 0
 
     def export_parquet(self, directory: str | Path) -> list[Path]:
         """Exporta tabelas analíticas para Parquet comprimido e reproduzível."""

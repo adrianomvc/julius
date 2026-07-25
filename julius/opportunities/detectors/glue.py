@@ -583,7 +583,7 @@ def _autoscaling(
         recommended_action="Habilitar Auto Scaling e revisar o teto de workers",
         how_to_apply=(
             "No job: ativar --enable-auto-scaling e definir max workers ~"
-            f"{max(2, job.number_of_workers // 2)}; testar 1 execução controlada."
+            f"{max(2, (job.number_of_workers or 0) // 2)}; testar 1 execução controlada."
         ),
         how_to_validate="Comparar DPU-h e duração média por execução após a mudança.",
         evidence=[
