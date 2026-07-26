@@ -29,13 +29,21 @@ something is waste *here*. `collect()` over a hundred rows is correct and over
 a hundred million it is waste; the same AST produces both, so no threshold can
 settle it and you can.
 
-Julius code owns:
+Julius code owns the following, and it is already decided by the time you read
+the context. Do not spend analysis redoing it, and do not treat as uncertain
+what is already a measured fact:
 
-- collection and normalized inventory;
-- opportunity IDs and fingerprints;
-- estimated gain and financial calculations;
-- difficulty, confidence, priority and governance classification;
-- lifecycle and realized-benefit validation.
+- collection and normalized inventory, with the window and currency fixed;
+- **which findings exist** — the deterministic rules already ran, and what
+  survived into the package is what holds up on declared config plus measured
+  metric;
+- **what each finding is worth** — baseline, expected saving with a range, the
+  conservative realization factor, and the per-process cap that stops the
+  portfolio from reserving the same spend twice;
+- difficulty, confidence, execution priority and strategic priority;
+- identity and lifecycle: opportunity IDs, fingerprints, status, history and
+  the diff against the previous run;
+- ownership and the process graph — who writes, who reads, what depends on what.
 
 You own four tasks, in this order:
 
@@ -58,6 +66,28 @@ You own four tasks, in this order:
    that does not collide with an existing rule. These carry no financial value
    and no ranking position: they are proposals for a new deterministic rule,
    accumulated across scans and accounts for human review.
+
+### What to look for, by asset type
+
+The four tasks say what to produce. These say what to go looking for. The
+generated `instructions.md` carries the same list, so treat it as the working
+checklist while you read each artifact.
+
+**Glue job** — Does the script justify the configured capacity: worker type,
+number of workers, autoscaling? Is the schedule compatible with the nature of
+the source, or are there runs that find no new data? Does the write pattern
+match the filter used by whoever reads the table downstream? Is there avoidable
+reprocessing — bookmarks, full overwrite, silent retry?
+
+**Athena query** — Does the consumption this query serves still exist? Is the
+missing partition filter an oversight or a requirement of the use case? Does
+the column projection reflect what the consumer actually uses?
+
+**Table** — Do the partitioning and layout serve the observed read pattern? Do
+the consumers still depend on this format?
+
+**Cross-service** — When producing is expensive and reading throws that effort
+away, do you adjust the write or the read? Say who breaks with the choice.
 
 Never overwrite a deterministic field. If new evidence contradicts one, record
 the contradiction in `missing_evidence` or `assumptions`; do not recalculate it.
