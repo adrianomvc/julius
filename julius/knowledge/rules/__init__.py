@@ -20,11 +20,13 @@ from typing import Any
 from julius.collection.models import Account
 from julius.findings.opportunity import Opportunity
 from julius.knowledge.rules.athena import queries as athena_queries
+from julius.knowledge.rules.cross_service import pipelines as cross_service_rules
 from julius.knowledge.rules.data import rules as data_rules
 from julius.knowledge.rules.glue import crawlers as glue_crawlers
 from julius.knowledge.rules.glue import databrew as glue_databrew
 from julius.knowledge.rules.glue import jobs as glue_jobs
 from julius.knowledge.rules.glue import sessions as glue_sessions
+from julius.knowledge.rules.redshift import rules as redshift_rules
 from julius.knowledge.rules.sagemaker import rules as sagemaker_rules
 from julius.knowledge.rules.stepfunctions import rules as stepfunctions_rules
 
@@ -85,6 +87,19 @@ REGISTRY: tuple[RuleFamily, ...] = (
         name="apps_and_endpoints",
         detect=sagemaker_rules.detect,
         requires=("sagemaker_apps", "sagemaker_endpoints"),
+    ),
+    RuleFamily(
+        service="redshift",
+        name="clusters",
+        detect=redshift_rules.detect,
+        requires=("redshift_clusters",),
+    ),
+    RuleFamily(
+        service="cross_service",
+        name="wasted_production",
+        detect=cross_service_rules.detect,
+        # Só existe olhando os dois lados: quem escreve e quem lê.
+        requires=("glue_jobs", "athena_queries"),
     ),
     RuleFamily(
         service="cross_service",

@@ -138,3 +138,40 @@ class ActorEvent:
     identity_type: str = ""
     event_source: str = ""
     is_human: bool = False
+
+
+@dataclass
+class RedshiftCluster:
+    """Cluster provisionado ou workgroup Serverless.
+
+    O que a coleta enxerga é o plano de controle e o CloudWatch. Histórico de
+    query, skew de distribuição e tabelas frias vivem em `SVV_*`/`STL_*`, que
+    exigem conexão de banco ou a Redshift Data API — nenhuma das duas cabe na
+    coleta read-only por API de controle. Os campos correspondentes não existem
+    aqui de propósito: é melhor não ter o dado do que ter um campo que sempre
+    vale zero e parece medido.
+    """
+
+    name: str
+    #: `provisioned` ou `serverless` — a cobrança e as regras diferem.
+    kind: str = "provisioned"
+    node_type: str = ""
+    node_count: int = 0
+    status: str = "available"
+    #: Serverless cobra RPU-hora; provisionado cobra nó-hora.
+    base_rpu: int = 0
+    #: Pausa/retomada agendada existe? Cluster parado não cobra compute.
+    paused: bool = False
+    #: Concurrency scaling e elastic resize deixam rastro no plano de controle.
+    concurrency_scaling: bool = False
+    encrypted: bool = False
+    created_at: str = ""
+    #: CloudWatch, sobre a janela de análise.
+    avg_cpu_load: float | None = None
+    max_cpu_load: float | None = None
+    avg_connections: float | None = None
+    #: `None` significa não medido; zero significa medido e vazio.
+    queries_in_window: int | None = None
+    observed_days: int = 0
+    coverage_days: int = 0
+    owner_tag: str | None = None

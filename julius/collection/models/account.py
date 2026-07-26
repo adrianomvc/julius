@@ -8,6 +8,7 @@ from julius.collection.models.assets import (
     ActorEvent,
     PreviousResult,
     ProducerCandidate,
+    RedshiftCluster,
     SageMakerApp,
     SageMakerEndpoint,
     Schedule,
@@ -61,6 +62,7 @@ class Account:
     state_machines: list[StateMachine] = field(default_factory=list)
     sagemaker_apps: list[SageMakerApp] = field(default_factory=list)
     sagemaker_endpoints: list[SageMakerEndpoint] = field(default_factory=list)
+    redshift_clusters: list[RedshiftCluster] = field(default_factory=list)
     tables: list[Table] = field(default_factory=list)
     schedules: list[Schedule] = field(default_factory=list)
     actor_events: list[ActorEvent] = field(default_factory=list)
