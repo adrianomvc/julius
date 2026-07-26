@@ -59,6 +59,9 @@ class OpportunityVM:
     how_to_apply: str
     how_to_validate: str
     evidence: list[str]
+    # As premissas do cálculo. O HTML não as mostra por linha, mas a planilha
+    # sim: "de onde veio esse número" é onde a conversa costuma terminar.
+    assumptions: list[str]
     doc_url: str
     owner: str
     owner_source: str
@@ -245,6 +248,7 @@ def _opp_vm(o: Opportunity, currency: str) -> OpportunityVM:
         how_to_apply=o.how_to_apply,
         how_to_validate=o.how_to_validate,
         evidence=o.evidence,
+        assumptions=list(estimation.assumptions) if estimation else [],
         doc_url=o.doc_links[0] if o.doc_links else "",
         owner=o.owner or "não identificado",
         owner_source=o.owner_source,

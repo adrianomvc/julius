@@ -17,7 +17,7 @@ from julius.cli._shared import (
 )
 from julius.collection.normalizers import load_account
 from julius.pipeline import analyze
-from julius.reporting import renderer
+from julius.reporting import excel, renderer
 from julius.reporting.contextual import attach_contextual_analysis
 from julius.state import BacklogStore, HistoryStore
 
@@ -26,7 +26,9 @@ from julius.state import BacklogStore, HistoryStore
 def report(
     input: str = typer.Option(_DEFAULT_INPUT, "--input", "-i"),
     output: str = typer.Option("data/reports", "--output", "-o"),
-    fmt: str = typer.Option("all", "--format", "-f", help="html | json | all"),
+    fmt: str = typer.Option(
+        "all", "--format", "-f", help="html | json | excel | all"
+    ),
     store: str = typer.Option(_DEFAULT_STORE, "--store"),
     history_db: str = typer.Option(_DEFAULT_HISTORY, "--history-db"),
     parquet_dir: str = typer.Option(_DEFAULT_PARQUET, "--parquet-dir"),
@@ -36,7 +38,7 @@ def report(
         "", "--artifacts-manifest", help="Manifesto read-only usado na análise de código."
     ),
 ) -> None:
-    """Gera os artefatos (report.html, report.json, email.html/.txt)."""
+    """Gera os artefatos (report.html, report.json, report.xlsx, email.html/.txt)."""
     context, contextual = _load_agent_enrichment(agent_context, agent_result)
     if context and str(context.account["id"]) != load_account(input).account_id:
         raise typer.BadParameter("contexto Devin pertence a outra conta.")
@@ -63,6 +65,9 @@ def report(
             renderer.render_json(a.vm, a.opportunities), encoding="utf-8"
         )
         written.append("report.json")
+    if fmt in ("excel", "all"):
+        excel.write_workbook(a.vm, out / "report.xlsx")
+        written.append("report.xlsx")
     if fmt == "all":
         html, text = renderer.render_email(a.vm, report_url="./report.html")
         (out / "email.html").write_text(html, encoding="utf-8")
