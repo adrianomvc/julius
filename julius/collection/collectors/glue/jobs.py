@@ -104,7 +104,7 @@ def _build_job(glue_client, job: dict, window: AnalysisWindow) -> GlueJob:
         timeout_min=int(job.get("Timeout", 2880) or 2880),
         max_retries=int(job.get("MaxRetries", 0) or 0),
         max_concurrent_runs=int(
-            ((job.get("ExecutionProperty") or {}).get("MaxConcurrentRuns") or 1)
+            (job.get("ExecutionProperty") or {}).get("MaxConcurrentRuns") or 1
         ),
         job_run_queuing_enabled=bool(
             job.get("JobRunQueuingEnabled")
