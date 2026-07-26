@@ -44,6 +44,12 @@ class Thresholds:
     task_skew_high: float = 1.0
     task_duration_cv_high: float = 0.75
     high_job_frequency_monthly: int = 100
+    # Concorrência e telemetria Glue: sempre geram investigação, nunca uma
+    # alteração automática, porque paralelismo e streaming podem ser intencionais.
+    glue_overlapping_runs_min: int = 2
+    glue_streaming_no_input_min_hours: float = 1.0
+    glue_small_files_min_count: int = 100
+    glue_small_file_max_bytes: int = 32 * 1024**2
     # Estimativas conservadoras: parte do desperdício medido que esperamos capturar.
     conservative_realization: float = 0.70
     # Alocação de custo Glue: fração máxima de DPU-hora apenas estimada (sem

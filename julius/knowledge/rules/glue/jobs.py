@@ -17,6 +17,8 @@ _DOC_VERSION = "https://docs.aws.amazon.com/glue/latest/dg/release-notes.html"
 _DOC_FLEX = "https://docs.aws.amazon.com/glue/latest/dg/aws-glue-api-jobs-runs.html"
 _DOC_BOOKMARK = "https://docs.aws.amazon.com/glue/latest/dg/monitor-continuations.html"
 _DOC_MONITORING = "https://docs.aws.amazon.com/glue/latest/dg/monitor-glue.html"
+_DOC_STREAMING = "https://docs.aws.amazon.com/glue/latest/dg/glue-streaming-monitoring-metrics.html"
+_DOC_JOB_PROPERTIES = "https://docs.aws.amazon.com/glue/latest/dg/add-job.html"
 _DOC_COST_EXPLORER = (
     "https://docs.aws.amazon.com/aws-cost-management/latest/APIReference/API_GetCostAndUsage.html"
 )
@@ -100,6 +102,89 @@ def detect(account: Account, config: Config, scan_id: str) -> list[Opportunity]:
             and job.timeout_min > th.timeout_excess_ratio * exec_min
         ):
             out.append(_timeout(account, job, config, scan_id))
+
+        if (
+            job.command_type != "gluestreaming"
+            and job.overlapping_runs_in_window >= th.glue_overlapping_runs_min
+            and job.overlap_seconds_window > 0
+        ):
+            out.append(
+                _investigation(
+                    account,
+                    job,
+                    config,
+                    scan_id,
+                    "GLUE-OVERLAPPING-RUNS",
+                    "Execuções do mesmo job se sobrepõem",
+                    (
+                        "Confirmar se a concorrência é intencional e eliminar "
+                        "disparos duplicados antes de alterar MaxConcurrentRuns"
+                    ),
+                    [
+                        f"{job.overlapping_runs_in_window} runs participaram de sobreposição",
+                        f"{job.overlap_seconds_window / 60:.1f} min com concorrência",
+                        f"MaxConcurrentRuns={job.max_concurrent_runs}",
+                        f"retries ligados a run anterior={job.retry_runs_in_window}",
+                    ],
+                    doc_link=_DOC_JOB_PROPERTIES,
+                )
+            )
+
+        if (
+            job.command_type == "gluestreaming"
+            and job.streaming_records_window == 0
+            and job.active_seconds_window
+            >= th.glue_streaming_no_input_min_hours * 3600
+        ):
+            rate, _quality, _source = glue_est.billing_rate(job, config.pricing)
+            baseline = job.monthly_dpu_hours * rate
+            out.append(
+                _investigation(
+                    account,
+                    job,
+                    config,
+                    scan_id,
+                    "GLUE-STREAMING-NO-INPUT",
+                    "Job streaming permaneceu ativo sem registros observados",
+                    (
+                        "Validar SLA, fonte e janela; avaliar Auto Scaling, "
+                        "capacidade menor ou processamento batch"
+                    ),
+                    [
+                        f"atividade observada={job.active_seconds_window / 3600:.1f}h",
+                        "registros de streaming observados=0",
+                        f"consumo={job.window_dpu_hours:.2f} DPU-h na janela",
+                    ],
+                    baseline_cost=baseline,
+                    doc_link=_DOC_STREAMING,
+                )
+            )
+
+        if (
+            job.command_type != "gluestreaming"
+            and job.bytes_read_window == 0
+            and job.window_dpu_hours > 0
+        ):
+            out.append(
+                _investigation(
+                    account,
+                    job,
+                    config,
+                    scan_id,
+                    "GLUE-NO-INPUT-WASTE",
+                    "Job consumiu DPU sem bytes de entrada observados",
+                    (
+                        "Confirmar fonte vazia, filtros, bookmark e métricas antes "
+                        "de revisar o schedule"
+                    ),
+                    [
+                        "bytes lidos observados=0",
+                        f"consumo={job.window_dpu_hours:.2f} DPU-h na janela",
+                        f"runs na janela={job.runs_in_window}",
+                    ],
+                    doc_link=_DOC_MONITORING,
+                )
+            )
 
         # Worker type grande (G.4X/G.8X) com CPU baixa → type menor bastaria.
         if (
@@ -821,11 +906,14 @@ def _investigation(
     finding: str,
     action: str,
     evidence: list[str],
+    *,
+    baseline_cost: float = 0.0,
+    doc_link: str = _DOC_WORKERS,
 ) -> Opportunity:
     estimation = Estimation(
         method=rule_id.lower().replace("-", "_") + "_v1",
-        baseline_cost=0.0,
-        projected_cost=0.0,
+        baseline_cost=round(baseline_cost, 2),
+        projected_cost=round(baseline_cost, 2),
         estimated_saving=0.0,
         assumptions=["economia não quantificada sem teste controlado"],
         pricing_region=config.pricing.region,
@@ -846,7 +934,7 @@ def _investigation(
             how_to_apply="Analisar as execuções referenciadas e testar uma mudança isolada.",
             how_to_validate="Comparar duração p95, DPU-h e saída antes/depois.",
             risks=["não alterar capacidade antes de confirmar a causa"],
-            docs=[_DOC_WORKERS],
+            docs=[doc_link],
             blocked=True,
         ),
         Evidence(

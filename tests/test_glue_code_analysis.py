@@ -96,6 +96,38 @@ def test_scanner_finds_glue_cost_patterns_without_returning_source():
     assert all("get_item" not in item.signal for item in findings.values())
 
 
+def test_small_files_rule_uses_measured_output_telemetry():
+    job = GlueJob(
+        name="job-code",
+        glue_version="5.1",
+        command_type="glueetl",
+        worker_type="G.1X",
+        number_of_workers=10,
+        runs_in_window=10,
+        observed_runs=10,
+        coverage_days=30,
+        dpu_seconds_window=36000,
+        files_written_window=200,
+        bytes_written_window=2 * 1024**3,
+    )
+    account = Account(account_id="123456789012", glue_jobs=[job])
+
+    found = glue_code.detect(
+        account, [_artifact(SPARK_SCRIPT)], DEFAULT_CONFIG, "scan-small-files"
+    )
+    opportunity = next(
+        item for item in found if item.rule_id == "GLUE-CODE-SMALL-FILES"
+    )
+
+    assert "arquivos escritos=200" in opportunity.evidence
+    assert any("10.24 MiB" in item for item in opportunity.evidence)
+    assert "quantidade e tamanho dos arquivos escritos" not in (
+        opportunity.missing_evidence
+    )
+    assert opportunity.estimation is not None
+    assert opportunity.estimation.estimated_saving > 0
+
+
 def test_python_shell_candidate_requires_complete_non_spark_script():
     job = GlueJob(
         name="job-code",

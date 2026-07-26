@@ -98,6 +98,118 @@ def test_job_cost_separates_reported_and_estimated_dpu_hours():
     assert job.run_ids_in_window == ["jr-estimated", "jr-reported"]
 
 
+def test_streaming_run_started_before_window_is_still_measured():
+    glue = _glue_client()
+    stub = Stubber(glue)
+    now = datetime(2026, 7, 24, tzinfo=timezone.utc)
+    stub.add_response(
+        "get_jobs",
+        {
+            "Jobs": [
+                {
+                    "Name": "stream",
+                    "GlueVersion": "5.1",
+                    "WorkerType": "G.1X",
+                    "NumberOfWorkers": 2,
+                    "DefaultArguments": {},
+                    "Command": {
+                        "Name": "gluestreaming",
+                        "ScriptLocation": "s3://scripts/stream.py",
+                    },
+                }
+            ]
+        },
+    )
+    stub.add_response(
+        "get_job_runs",
+        {
+            "JobRuns": [
+                {
+                    "Id": "jr-stream",
+                    "JobRunState": "RUNNING",
+                    "ExecutionTime": 40 * 86400,
+                    "StartedOn": now - timedelta(days=40),
+                    "WorkerType": "G.1X",
+                    "NumberOfWorkers": 2,
+                }
+            ]
+        },
+    )
+
+    with stub:
+        job = glue_collector.collect_jobs(
+            glue, window=AnalysisWindow.trailing(now=now)
+        )[0]
+
+    assert job.runs_in_window == 1
+    assert job.active_seconds_window == pytest.approx(job.window_days * 86400)
+    assert job.estimated_dpu_hours_window == pytest.approx(
+        job.window_days * 24 * 2
+    )
+
+
+def test_collects_overlap_concurrency_and_retry_signals():
+    glue = _glue_client()
+    stub = Stubber(glue)
+    now = datetime(2026, 7, 24, tzinfo=timezone.utc)
+    start = now - timedelta(days=1)
+    stub.add_response(
+        "get_jobs",
+        {
+            "Jobs": [
+                {
+                    "Name": "overlap",
+                    "GlueVersion": "5.1",
+                    "WorkerType": "G.1X",
+                    "NumberOfWorkers": 2,
+                    "ExecutionProperty": {"MaxConcurrentRuns": 2},
+                    "JobRunQueuingEnabled": True,
+                    "DefaultArguments": {},
+                    "Command": {
+                        "Name": "glueetl",
+                        "ScriptLocation": "s3://scripts/overlap.py",
+                    },
+                }
+            ]
+        },
+    )
+    stub.add_response(
+        "get_job_runs",
+        {
+            "JobRuns": [
+                {
+                    "Id": "jr-b",
+                    "PreviousRunId": "jr-a",
+                    "JobRunState": "SUCCEEDED",
+                    "ExecutionTime": 3600,
+                    "DPUSeconds": 7200.0,
+                    "StartedOn": start + timedelta(minutes=30),
+                    "CompletedOn": start + timedelta(minutes=90),
+                },
+                {
+                    "Id": "jr-a",
+                    "JobRunState": "SUCCEEDED",
+                    "ExecutionTime": 3600,
+                    "DPUSeconds": 7200.0,
+                    "StartedOn": start,
+                    "CompletedOn": start + timedelta(minutes=60),
+                },
+            ]
+        },
+    )
+
+    with stub:
+        job = glue_collector.collect_jobs(
+            glue, window=AnalysisWindow.trailing(now=now)
+        )[0]
+
+    assert job.max_concurrent_runs == 2
+    assert job.job_run_queuing_enabled is True
+    assert job.overlapping_runs_in_window == 2
+    assert job.overlap_seconds_window == 1800
+    assert job.retry_runs_in_window == 1
+
+
 def test_window_consumption_is_measured_and_never_extrapolated():
     """A janela é reportada como medida; o mês vem de um fator explícito.
 
@@ -115,6 +227,89 @@ def test_window_consumption_is_measured_and_never_extrapolated():
     assert job.total_dpu_hours_window == 10.0
     assert job.window_dpu_hours == 10.0
     assert job.monthly_dpu_hours == pytest.approx(10.0 * 365.25 / 12 / 30)
+
+
+def test_detects_overlapping_runs_as_blocked_investigation():
+    job = GlueJob(
+        name="overlap",
+        glue_version="5.1",
+        command_type="glueetl",
+        runs_in_window=2,
+        observed_runs=2,
+        coverage_days=30,
+        overlapping_runs_in_window=2,
+        overlap_seconds_window=1800,
+        max_concurrent_runs=2,
+    )
+
+    found = glue_detector.detect(
+        Account(account_id="123", glue_jobs=[job]),
+        DEFAULT_CONFIG,
+        "scan-overlap",
+    )
+    opportunity = next(
+        item for item in found if item.rule_id == "GLUE-OVERLAPPING-RUNS"
+    )
+
+    assert opportunity.blocked is True
+    assert opportunity.estimated_gain.monthly_expected == 0
+    assert any("30.0 min" in item for item in opportunity.evidence)
+
+
+def test_detects_streaming_cost_without_input_but_does_not_assume_saving():
+    job = GlueJob(
+        name="stream",
+        glue_version="5.1",
+        command_type="gluestreaming",
+        worker_type="G.1X",
+        number_of_workers=2,
+        runs_in_window=1,
+        observed_runs=1,
+        coverage_days=30,
+        active_seconds_window=7200,
+        estimated_dpu_hours_window=4,
+        streaming_records_window=0,
+    )
+
+    found = glue_detector.detect(
+        Account(account_id="123", glue_jobs=[job]),
+        DEFAULT_CONFIG,
+        "scan-stream",
+    )
+    opportunity = next(
+        item for item in found if item.rule_id == "GLUE-STREAMING-NO-INPUT"
+    )
+
+    assert opportunity.blocked is True
+    assert opportunity.estimation is not None
+    assert opportunity.estimation.baseline_cost > 0
+    assert opportunity.estimation.estimated_saving == 0
+
+
+def test_detects_dpu_consumption_with_explicit_zero_input_metric():
+    job = GlueJob(
+        name="empty-input",
+        glue_version="5.1",
+        command_type="glueetl",
+        worker_type="G.1X",
+        number_of_workers=2,
+        runs_in_window=1,
+        observed_runs=1,
+        coverage_days=30,
+        dpu_seconds_window=3600,
+        bytes_read_window=0,
+    )
+
+    rules = {
+        item.rule_id
+        for item in glue_detector.detect(
+            Account(account_id="123", glue_jobs=[job]),
+            DEFAULT_CONFIG,
+            "scan-empty",
+        )
+    }
+
+    assert "GLUE-NO-INPUT-WASTE" in rules
 
 
 def test_flex_requires_supported_spark_batch_job():
@@ -513,6 +708,10 @@ class _CloudWatch:
             "glue.driver.skewness.job": 1.5,
             "glue.driver.ExecutorAllocationManager.executors.numberAllExecutors": 10,
             "glue.driver.ExecutorAllocationManager.executors.numberMaxNeededExecutors": 4,
+            "glue.driver.aggregate.bytesRead": 8 * 1024**3,
+            "glue.driver.throughput.bytesWritten": 4 * 1024**3,
+            "glue.driver.throughput.filesWritten": 200,
+            "glue.driver.streaming.numRecords": 1000,
         }[kwargs["MetricName"]]
         return {"Datapoints": [{statistic: value}]}
 
@@ -533,6 +732,11 @@ def test_collects_observability_metrics_needed_for_capacity_decisions():
     assert job.max_task_skew == 1.5
     assert job.avg_all_executors == 10
     assert job.avg_max_needed_executors == 4
+    assert job.bytes_read_window == 8 * 1024**3
+    assert job.bytes_written_window == 4 * 1024**3
+    assert job.files_written_window == 200
+    assert job.streaming_records_window == 1000
+    assert job.average_output_file_bytes == pytest.approx(4 * 1024**3 / 200)
 
 
 class _CloudWatchPeaks:

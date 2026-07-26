@@ -29,6 +29,27 @@ _OBSERVABILITY_METRICS = {
         "Average",
     ),
 }
+_WINDOW_SUM_METRICS = {
+    # Métrica agregada clássica: cobre S3 e fontes não-S3.
+    "bytes_read_window": ("glue.driver.aggregate.bytesRead", None, None),
+    # Métricas de observabilidade por sink, agregadas em JobRunId=ALL.
+    "bytes_written_window": (
+        "glue.driver.throughput.bytesWritten",
+        "throughput",
+        "Sink",
+    ),
+    "files_written_window": (
+        "glue.driver.throughput.filesWritten",
+        "throughput",
+        "Sink",
+    ),
+    # Métrica do framework de streaming; ausência permanece None.
+    "streaming_records_window": (
+        "glue.driver.streaming.numRecords",
+        None,
+        None,
+    ),
+}
 
 
 def enrich_glue_cpu(
@@ -60,6 +81,20 @@ def enrich_glue_observability(
     for job in jobs:
         for field, (metric_name, statistic) in _OBSERVABILITY_METRICS.items():
             value = _metric(cw_client, job.name, metric_name, statistic, start, now)
+            if value is not None:
+                setattr(job, field, round(value, 3))
+        for field, (metric_name, group, aggregate_dimension) in (
+            _WINDOW_SUM_METRICS.items()
+        ):
+            value = _sum_metric(
+                cw_client,
+                job.name,
+                metric_name,
+                start,
+                now,
+                group,
+                aggregate_dimension,
+            )
             if value is not None:
                 setattr(job, field, round(value, 3))
 
@@ -125,3 +160,43 @@ def _metric(
     # Não suaviza pressão de memória/disco/skew: para métricas pedidas como
     # Maximum, o gate de capacidade precisa preservar o pior pico da janela.
     return max(values) if statistic == "Maximum" else mean(values)
+
+
+def _sum_metric(
+    cw_client,
+    job_name: str,
+    metric_name: str,
+    start: datetime,
+    end: datetime,
+    observability_group: str | None,
+    aggregate_dimension: str | None,
+) -> float | None:
+    dimensions = [
+        {"Name": "JobName", "Value": job_name},
+        {"Name": "JobRunId", "Value": "ALL"},
+        {"Name": "Type", "Value": "count"},
+    ]
+    if observability_group:
+        dimensions.append(
+            {"Name": "ObservabilityGroup", "Value": observability_group}
+        )
+    if aggregate_dimension:
+        dimensions.append({"Name": aggregate_dimension, "Value": "ALL"})
+    try:
+        response = cw_client.get_metric_statistics(
+            Namespace=_NAMESPACE,
+            MetricName=metric_name,
+            Dimensions=dimensions,
+            StartTime=start,
+            EndTime=end,
+            Period=86400,
+            Statistics=["Sum"],
+        )
+    except Exception:
+        return None
+    values = [
+        float(point["Sum"])
+        for point in response.get("Datapoints", [])
+        if "Sum" in point
+    ]
+    return sum(values) if values else None
