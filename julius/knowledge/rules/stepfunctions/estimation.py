@@ -11,7 +11,9 @@ def standard_to_express_saving(sm: StateMachine, config: Config) -> Estimation:
     """Standard cobra por state transition; Express por request (~25× mais barato)
     para cargas curtas, de alto volume e idempotentes."""
     pricing = config.pricing
-    standard = sm.executions_per_month * sm.avg_state_transitions * pricing.sfn_standard_per_transition
+    standard = (
+        sm.executions_per_month * sm.avg_state_transitions * pricing.sfn_standard_per_transition
+    )
     express = sm.executions_per_month * pricing.sfn_express_per_request
     saving = max(0.0, standard - express)
     return Estimation(
@@ -37,7 +39,12 @@ def polling_loop_saving(sm: StateMachine, config: Config) -> Estimation:
     saving = extra * pricing.sfn_standard_per_transition
     return Estimation(
         method="sfn_polling_loop_v1",
-        baseline_cost=round(sm.executions_per_month * sm.avg_state_transitions * pricing.sfn_standard_per_transition, 2),
+        baseline_cost=round(
+            sm.executions_per_month
+            * sm.avg_state_transitions
+            * pricing.sfn_standard_per_transition,
+            2,
+        ),
         projected_cost=0.0,
         estimated_saving=round(saving, 2),
         assumptions=[

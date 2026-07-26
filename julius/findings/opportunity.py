@@ -44,6 +44,9 @@ class Estimation:
     baseline_bytes: int | None = None
     projected_bytes: int | None = None
     avoidable_bytes: int | None = None
+    # Ganho não financeiro (migração, governança): existe economia de risco ou
+    # de esforço, mas não um número em USD a somar no portfólio.
+    is_strategic: bool = False
 
 
 @dataclass

@@ -1,15 +1,37 @@
-"""Builder compartilhado: monta uma `Opportunity` a partir de uma Estimation."""
+"""Montagem de uma `Opportunity` a partir das quatro coisas que a compõem.
+
+`build` pedia 27 parâmetros. O sintoma era chamada longa; o problema era
+amplificação de mudança — acrescentar um campo na entidade obrigava a tocar
+todas as regras, que foi como `blocked`, `source_process` e `today` se
+acumularam. Agora cada regra monta o que lhe diz respeito e entrega quatro
+objetos coesos mais o contexto do scan.
+"""
 
 from __future__ import annotations
 
 import hashlib
+from dataclasses import dataclass
 from datetime import date
+from typing import Any
 
-from julius.config import JULIUS_VERSION, KNOWLEDGE_VERSION, Config
+from julius.config import JULIUS_VERSION, KNOWLEDGE_VERSION
+from julius.findings.evidence import Evidence
+from julius.findings.finding import Finding
 from julius.findings.opportunity import Estimation, Opportunity
+from julius.findings.recommendation import Recommendation
 from julius.scoring import build_gain, impact
 from julius.scoring import confidence as conf_mod
 from julius.scoring import priority as prioritizer
+
+
+@dataclass(frozen=True)
+class RuleContext:
+    """O que é igual para toda regra dentro de um scan."""
+
+    account: str
+    config: Any
+    scan_id: str
+    today: date | None = None
 
 
 def resolve_owner(owner_tag: str | None) -> tuple[str | None, str, float]:
@@ -20,98 +42,104 @@ def resolve_owner(owner_tag: str | None) -> tuple[str | None, str, float]:
 
 
 def build(
-    *,
-    account: str,
-    asset_type: str,
-    asset_name: str,
-    rule_id: str,
-    rule_version: str,
-    difficulty: int,
+    finding: Finding,
+    recommendation: Recommendation,
+    evidence: Evidence,
     estimation: Estimation,
-    finding: str,
-    why: str,
-    recommended_action: str,
-    how_to_apply: str,
-    how_to_validate: str,
-    evidence: list[str],
-    risks: list[str],
-    doc_links: list[str],
-    data_sources: list[str],
-    observed_runs: int,
-    coverage_days: int,
-    has_optional_metrics: bool,
-    owner_tag: str | None,
-    config: Config,
-    scan_id: str,
-    risk: float = 0.6,
-    is_strategic: bool = False,
-    blocked: bool = False,
-    today: date | None = None,
-    source_process: str | None = None,
+    ctx: RuleContext,
 ) -> Opportunity:
+    config = ctx.config
     estimation.currency = config.pricing.currency
-    confidence, conf_label = conf_mod.score_and_label(
-        observed_runs, coverage_days, has_optional_metrics, config
+
+    confidence, conf_label = _confidence(evidence, estimation, config)
+    coverage = conf_mod.coverage_ratio(
+        evidence.observed_runs, evidence.coverage_days, config
     )
-    if estimation.saving_quality == "modeled_rule":
-        confidence, conf_label = min(confidence, 0.50), "Baixa"
-    elif estimation.saving_quality == "modeled_evidence":
-        confidence = min(confidence, 0.70)
-        conf_label = "Média" if confidence >= 0.55 else "Baixa"
-    coverage = conf_mod.coverage_ratio(observed_runs, coverage_days, config)
     gain = build_gain(
         estimation.estimated_saving,
-        difficulty,
+        recommendation.difficulty,
         config,
         monthly_low=estimation.estimated_saving_low,
         monthly_high=estimation.estimated_saving_high,
-        today=today,
-        is_strategic=is_strategic,
+        today=ctx.today,
+        is_strategic=estimation.is_strategic,
     )
-    gain_score = impact.gain_score(estimation.estimated_saving, config, is_strategic=is_strategic)
-    owner, owner_source, owner_conf = resolve_owner(owner_tag)
+    owner, owner_source, owner_conf = resolve_owner(evidence.owner_tag)
 
-    # `hash()` muda entre processos Python; o ID precisa permanecer estável para
-    # que a revisão humana continue ligada à mesma oportunidade.
-    asset_digest = hashlib.sha1(asset_name.encode("utf-8")).hexdigest()[:8]
-    slug = f"{rule_id}-{asset_digest}"
-    missing_evidence = [] if has_optional_metrics else ["métricas operacionais parciais"]
-    if estimation.saving_quality == "unavailable":
-        missing_evidence.append("contrafactual de bytes/custo ainda não medido")
-    o = Opportunity(
-        opportunity_id=slug,
-        account=account,
-        asset_type=asset_type,
-        asset_name=asset_name,
+    opportunity = Opportunity(
+        # `hash()` muda entre processos Python; o ID precisa permanecer estável
+        # para que a revisão humana continue ligada à mesma oportunidade.
+        opportunity_id=f"{finding.rule_id}-{_digest(finding.asset_name)}",
+        account=ctx.account,
+        asset_type=finding.asset_type,
+        asset_name=finding.asset_name,
         category="cost_optimization",
-        rule_id=rule_id,
-        finding=finding,
-        why=why,
-        recommended_action=recommended_action,
-        how_to_apply=how_to_apply,
-        how_to_validate=how_to_validate,
-        evidence=evidence,
-        risks=risks,
-        doc_links=doc_links,
+        rule_id=finding.rule_id,
+        finding=finding.title,
+        why=finding.why,
+        recommended_action=recommendation.action,
+        how_to_apply=recommendation.how_to_apply,
+        how_to_validate=recommendation.how_to_validate,
+        evidence=list(evidence.items),
+        risks=list(recommendation.risks),
+        doc_links=list(recommendation.docs),
         estimated_gain=gain,
         estimation=estimation,
-        gain_score=gain_score,
-        difficulty_score=difficulty,
+        gain_score=impact.gain_score(
+            estimation.estimated_saving,
+            config,
+            is_strategic=estimation.is_strategic,
+        ),
+        difficulty_score=recommendation.difficulty,
         confidence=confidence,
         confidence_label=conf_label,
         evidence_coverage=coverage,
-        missing_evidence=missing_evidence,
-        data_sources=data_sources,
+        missing_evidence=_missing(evidence, estimation),
+        data_sources=list(evidence.sources),
         owner=owner,
         owner_source=owner_source,
         owner_confidence=owner_conf,
-        rule_version=rule_version,
+        rule_version=finding.rule_version,
         knowledge_version=KNOWLEDGE_VERSION,
         julius_version=JULIUS_VERSION,
-        scan_id=scan_id,
-        source_process=source_process,
-        blocked=blocked,
+        scan_id=ctx.scan_id,
+        source_process=finding.source_process,
+        blocked=recommendation.blocked,
     )
-    o.confidence_label = conf_label
-    prioritizer.assign(o, risk=risk, blocked=blocked)
-    return o
+    prioritizer.assign(
+        opportunity, risk=recommendation.risk, blocked=recommendation.blocked
+    )
+    return opportunity
+
+
+def _confidence(
+    evidence: Evidence, estimation: Estimation, config: Any
+) -> tuple[float, str]:
+    """Confiança da coleta, com teto pela qualidade da economia estimada.
+
+    Economia modelada por faixa de regra não pode ser apresentada com a mesma
+    confiança de economia medida, por mais execuções que a coleta tenha visto.
+    """
+    confidence, label = conf_mod.score_and_label(
+        evidence.observed_runs,
+        evidence.coverage_days,
+        evidence.has_optional_metrics,
+        config,
+    )
+    if estimation.saving_quality == "modeled_rule":
+        return min(confidence, 0.50), "Baixa"
+    if estimation.saving_quality == "modeled_evidence":
+        capped = min(confidence, 0.70)
+        return capped, ("Média" if capped >= 0.55 else "Baixa")
+    return confidence, label
+
+
+def _missing(evidence: Evidence, estimation: Estimation) -> list[str]:
+    missing = [] if evidence.has_optional_metrics else ["métricas operacionais parciais"]
+    if estimation.saving_quality == "unavailable":
+        missing.append("contrafactual de bytes/custo ainda não medido")
+    return missing
+
+
+def _digest(asset_name: str) -> str:
+    return hashlib.sha1(asset_name.encode("utf-8")).hexdigest()[:8]

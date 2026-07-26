@@ -4,8 +4,11 @@ from __future__ import annotations
 
 from julius.collection.models import Account, GlueCrawler
 from julius.config import Config
-from julius.findings.build import build
+from julius.findings.build import RuleContext, build
+from julius.findings.evidence import Evidence
+from julius.findings.finding import Finding
 from julius.findings.opportunity import Estimation, Opportunity
+from julius.findings.recommendation import Recommendation
 
 _DOC = "https://docs.aws.amazon.com/glue/latest/dg/aws-glue-api-crawler-crawling.html"
 _DOC_INCREMENTAL = "https://docs.aws.amazon.com/glue/latest/dg/incremental-crawls.html"
@@ -34,11 +37,7 @@ def detect(account: Account, config: Config, scan_id: str) -> list[Opportunity]:
                     ],
                 )
             )
-        changes = (
-            crawler.tables_created
-            + crawler.tables_updated
-            + crawler.tables_deleted
-        )
+        changes = crawler.tables_created + crawler.tables_updated + crawler.tables_deleted
         if crawler.runs_in_window >= 4 and changes == 0 and baseline > 0:
             out.append(
                 _opportunity(
@@ -57,10 +56,7 @@ def detect(account: Account, config: Config, scan_id: str) -> list[Opportunity]:
                     ],
                 )
             )
-        if (
-            crawler.runs_in_window >= 4
-            and crawler.recrawl_behavior == "CRAWL_EVERYTHING"
-        ):
+        if crawler.runs_in_window >= 4 and crawler.recrawl_behavior == "CRAWL_EVERYTHING":
             out.append(
                 _opportunity(
                     account,
@@ -78,18 +74,13 @@ def detect(account: Account, config: Config, scan_id: str) -> list[Opportunity]:
                     [
                         "RecrawlBehavior=CRAWL_EVERYTHING",
                         f"{crawler.runs_in_window} crawls no mês",
-                        (
-                            f"{changes} alterações de catálogo observadas"
-                        ),
+                        (f"{changes} alterações de catálogo observadas"),
                     ],
                     blocked=True,
                     doc_link=_DOC_INCREMENTAL,
                 )
             )
-        if (
-            crawler.schedule_expression
-            and crawler.schedule_state == "NOT_SCHEDULED"
-        ):
+        if crawler.schedule_expression and crawler.schedule_state == "NOT_SCHEDULED":
             out.append(
                 _opportunity(
                     account,
@@ -136,27 +127,35 @@ def _opportunity(
         estimation_version=config.pricing.version,
     )
     return build(
-        account=account.account_id,
-        asset_type="glue_crawler",
-        asset_name=crawler.name,
-        rule_id=rule_id,
-        rule_version="1.0.0",
-        difficulty=2,
-        estimation=estimation,
-        finding=finding,
-        why=finding,
-        recommended_action=action,
-        how_to_apply="Revisar configuração e histórico; qualquer alteração exige aprovação humana.",
-        how_to_validate="Comparar status, alterações do catálogo e DPU-h no mês seguinte.",
-        evidence=evidence,
-        risks=["mudança de frequência pode atrasar descoberta de schema"],
-        doc_links=[doc_link],
-        data_sources=["Glue GetCrawlers", "GetCrawlerMetrics", "ListCrawls"],
-        observed_runs=crawler.runs_in_window,
-        coverage_days=crawler.window_days,
-        has_optional_metrics=crawler.dpu_hours_window > 0,
-        owner_tag=crawler.owner_tag,
-        config=config,
-        scan_id=scan_id,
-        blocked=blocked,
+        Finding(
+            asset_type="glue_crawler",
+            asset_name=crawler.name,
+            rule_id=rule_id,
+            rule_version="1.0.0",
+            title=finding,
+            why=finding,
+        ),
+        Recommendation(
+            difficulty=2,
+            action=action,
+            how_to_apply="Revisar configuração e histórico; qualquer alteração exige aprovação humana.",
+            how_to_validate="Comparar status, alterações do catálogo e DPU-h no mês seguinte.",
+            risks=["mudança de frequência pode atrasar descoberta de schema"],
+            docs=[doc_link],
+            blocked=blocked,
+        ),
+        Evidence(
+            items=evidence,
+            sources=["Glue GetCrawlers", "GetCrawlerMetrics", "ListCrawls"],
+            observed_runs=crawler.runs_in_window,
+            coverage_days=crawler.window_days,
+            has_optional_metrics=crawler.dpu_hours_window > 0,
+            owner_tag=crawler.owner_tag,
+        ),
+        estimation,
+        RuleContext(
+            account=account.account_id,
+            config=config,
+            scan_id=scan_id,
+        ),
     )

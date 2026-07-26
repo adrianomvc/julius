@@ -20,11 +20,7 @@ def _cost(bytes_scanned: int, pricing) -> float:
 
 def _baseline(query: AthenaQuery, pricing) -> tuple[float, str, str]:
     if query.allocated_cost is not None:
-        quality = (
-            "allocated"
-            if query.cost_quality == "reconciled"
-            else "allocated_partial"
-        )
+        quality = "allocated" if query.cost_quality == "reconciled" else "allocated_partial"
         return query.allocated_cost, "custo líquido alocado", quality
     return (
         _cost(query.monthly_bytes_scanned, pricing),
@@ -39,8 +35,13 @@ def modeled_saving(
     profile: str,
     *,
     evidence: list[str] | None = None,
+    strategic: bool = False,
 ) -> Estimation:
-    """Aplica faixa por regra somente quando não existe contrafactual melhor."""
+    """Aplica faixa por regra somente quando não existe contrafactual melhor.
+
+    `strategic` marca o ganho que não entra na soma financeira do portfólio —
+    confiabilidade, governança — mesmo tendo um baseline calculável.
+    """
     pricing = config.pricing
     baseline, source, baseline_quality = _baseline(query, pricing)
     rates = ATHENA_RECOVERY_RATES[profile]
@@ -49,10 +50,7 @@ def modeled_saving(
     high = baseline * rates.high
     assumptions = [
         f"{query.executions_per_month} execuções/mês",
-        (
-            f"faixa da regra {profile}: "
-            f"{rates.low:.0%}/{rates.expected:.0%}/{rates.high:.0%}"
-        ),
+        (f"faixa da regra {profile}: {rates.low:.0%}/{rates.expected:.0%}/{rates.high:.0%}"),
         source,
         f"modelo {ATHENA_RECOVERY_VERSION}; substituir por benchmark quando disponível",
     ]
@@ -69,6 +67,7 @@ def modeled_saving(
         estimation_version=ATHENA_RECOVERY_VERSION,
         baseline_quality=baseline_quality,
         saving_quality="modeled_rule",
+        is_strategic=strategic,
         baseline_bytes=query.billed_bytes or query.monthly_bytes_scanned or None,
         projected_bytes=(
             round((query.billed_bytes or query.monthly_bytes_scanned) * (1 - rates.expected))
@@ -137,9 +136,7 @@ def result_reuse_saving(query: AthenaQuery, config: Config) -> Estimation:
             baseline_quality=baseline_quality,
             saving_quality="measured",
             baseline_bytes=query.billed_bytes or None,
-            projected_bytes=max(
-                0, query.billed_bytes - query.reuse_avoidable_billed_bytes
-            ),
+            projected_bytes=max(0, query.billed_bytes - query.reuse_avoidable_billed_bytes),
             avoidable_bytes=query.reuse_avoidable_billed_bytes,
         )
 
@@ -163,9 +160,7 @@ def result_reuse_saving(query: AthenaQuery, config: Config) -> Estimation:
             baseline_quality=baseline_quality,
             saving_quality="modeled_evidence",
             baseline_bytes=query.billed_bytes,
-            projected_bytes=max(
-                0, query.billed_bytes - query.reuse_avoidable_billed_bytes
-            ),
+            projected_bytes=max(0, query.billed_bytes - query.reuse_avoidable_billed_bytes),
             avoidable_bytes=query.reuse_avoidable_billed_bytes,
         )
 

@@ -57,8 +57,10 @@ def scan_glue_script(source: str) -> list[CodeFinding]:
             clean = tuple(sorted(set(current.lines) | set(clean)))
         findings[rule_id] = CodeFinding(rule_id, signal, clean)
 
-    if is_spark and _has_catalog_read(source) and not re.search(
-        r"\b(?:push_down_predicate|catalogPartitionPredicate)\b", source
+    if (
+        is_spark
+        and _has_catalog_read(source)
+        and not re.search(r"\b(?:push_down_predicate|catalogPartitionPredicate)\b", source)
     ):
         add(
             "GLUE-CODE-PUSHDOWN",
@@ -144,8 +146,10 @@ def scan_glue_script(source: str) -> list[CodeFinding]:
         )
 
     overwrite = _string_arg_call_lines(tree, "mode", "overwrite")
-    if is_spark and overwrite and not re.search(
-        r"partitionOverwriteMode|replaceWhere|overwritePartitions", source
+    if (
+        is_spark
+        and overwrite
+        and not re.search(r"partitionOverwriteMode|replaceWhere|overwritePartitions", source)
     ):
         add(
             "GLUE-CODE-FULL-OVERWRITE",
@@ -186,8 +190,10 @@ def scan_glue_script(source: str) -> list[CodeFinding]:
             swallowed,
         )
 
-    if is_spark and re.search(r"\bjob\.init\s*\(", source) and not re.search(
-        r"\btransformation_ctx\s*=", source
+    if (
+        is_spark
+        and re.search(r"\bjob\.init\s*\(", source)
+        and not re.search(r"\btransformation_ctx\s*=", source)
     ):
         add(
             "GLUE-CODE-BOOKMARK-CONTEXT",
@@ -263,9 +269,7 @@ def _call_lines(
     return sorted(set(result))
 
 
-def _string_arg_call_lines(
-    tree: ast.AST | None, name: str, value: str
-) -> list[int]:
+def _string_arg_call_lines(tree: ast.AST | None, name: str, value: str) -> list[int]:
     if tree is None:
         return []
     result = []
@@ -378,9 +382,7 @@ def _swallowed_exception_lines(tree: ast.AST | None) -> list[int]:
                 and isinstance(item.value.value, str)
             )
         ]
-        if not meaningful or all(
-            isinstance(item, (ast.Pass, ast.Continue)) for item in meaningful
-        ):
+        if not meaningful or all(isinstance(item, (ast.Pass, ast.Continue)) for item in meaningful):
             result.append(node.lineno)
     return sorted(set(result))
 
@@ -396,10 +398,10 @@ def _external_io_in_row_functions(tree: ast.AST | None) -> list[int]:
             functions[node.name] = (node, node.lineno)
         if isinstance(node, (ast.Assign, ast.AnnAssign)):
             value = node.value
-            if (
-                isinstance(value, ast.Call)
-                and _dotted_name(value.func) in {"boto3.client", "boto3.resource"}
-            ):
+            if isinstance(value, ast.Call) and _dotted_name(value.func) in {
+                "boto3.client",
+                "boto3.resource",
+            }:
                 targets = node.targets if isinstance(node, ast.Assign) else [node.target]
                 external_clients.update(
                     target.id for target in targets if isinstance(target, ast.Name)

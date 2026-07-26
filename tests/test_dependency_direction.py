@@ -172,3 +172,52 @@ def test_known_coupling_is_still_real():
     """Dívida que já foi paga sai da lista em vez de virar folclore."""
     stale = sorted(KNOWN_COUPLING - _edges())
     assert stale == []
+
+
+def test_the_finding_builder_takes_cohesive_objects_not_scalars():
+    """27 parâmetros viravam amplificação de mudança, não só chamada longa.
+
+    Cada campo novo na entidade obrigava a tocar todas as regras — foi assim que
+    `blocked`, `source_process` e `today` se acumularam na assinatura.
+    """
+    import inspect
+
+    from julius.findings.build import build
+
+    parameters = list(inspect.signature(build).parameters)
+    assert parameters == [
+        "finding",
+        "recommendation",
+        "evidence",
+        "estimation",
+        "ctx",
+    ]
+
+
+def test_the_finding_identity_formula_is_frozen():
+    """`fingerprint` e `evidence_signature` religam revisões humanas já feitas.
+
+    Mudar a fórmula desconecta decisões de seus achados no backlog e no DuckDB,
+    silenciosamente. Estes valores são o contrato.
+    """
+    from julius.findings.opportunity import Opportunity
+
+    item = Opportunity(
+        opportunity_id="X-1",
+        account="123456789012",
+        asset_type="glue_job",
+        asset_name="processa",
+        category="cost_optimization",
+        rule_id="GLUE-AUTOSCALING",
+        finding="…",
+        recommended_action="…",
+        evidence=["b", "a"],
+        missing_evidence=["c"],
+        data_sources=["Glue GetJobRuns"],
+        confidence=0.75,
+    )
+
+    assert item.fingerprint() == (
+        "123456789012|glue_job:processa|GLUE-AUTOSCALING|default#a88fc96c"
+    )
+    assert item.evidence_signature() == "b602f1305203ce3a"

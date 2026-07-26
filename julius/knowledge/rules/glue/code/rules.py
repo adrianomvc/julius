@@ -7,8 +7,11 @@ from dataclasses import dataclass
 from julius.collection.artifacts import GlueCodeArtifact
 from julius.collection.models import Account, GlueJob
 from julius.config import Config
-from julius.findings.build import build
+from julius.findings.build import RuleContext, build
+from julius.findings.evidence import Evidence
+from julius.findings.finding import Finding
 from julius.findings.opportunity import Opportunity
+from julius.findings.recommendation import Recommendation
 from julius.knowledge.rules.glue.code.scanner import scan_glue_script
 from julius.knowledge.rules.glue.estimation import (
     code_pattern_saving,
@@ -44,7 +47,10 @@ _RULES: dict[str, RuleSpec] = {
         "Aplicar push_down_predicate ou catalogPartitionPredicate",
         "Mover filtros de partição para a leitura e preservar a mesma semântica do dataset.",
         "Comparar bytes lidos, DPUSeconds, duração e contagem de saída no mesmo volume.",
-        0.20, 2, 0.45, _DOC_PUSHDOWN,
+        0.20,
+        2,
+        0.45,
+        _DOC_PUSHDOWN,
     ),
     "GLUE-CODE-S3-FULL-SCAN": RuleSpec(
         "Leitura direta de prefixo S3 filtrada somente depois",
@@ -52,7 +58,10 @@ _RULES: dict[str, RuleSpec] = {
         "Particionar a origem e podar caminhos/partições antes da leitura",
         "Usar tabela catalogada com pushdown ou construir somente os caminhos necessários.",
         "Comparar bytes/arquivos lidos, duração, DPUSeconds e resultado.",
-        0.20, 3, 0.55, _DOC_PUSHDOWN,
+        0.20,
+        3,
+        0.55,
+        _DOC_PUSHDOWN,
     ),
     "GLUE-CODE-JDBC-SINGLE-READER": RuleSpec(
         "Leitura JDBC sem paralelismo explícito",
@@ -60,7 +69,10 @@ _RULES: dict[str, RuleSpec] = {
         "Avaliar leitura JDBC particionada",
         "Escolher coluna uniforme, limites e número de partições sem sobrecarregar a origem.",
         "Comparar conexões, throughput, carga no banco, duração e DPUSeconds.",
-        0.15, 4, 0.70, _DOC_PUSHDOWN,
+        0.15,
+        4,
+        0.70,
+        _DOC_PUSHDOWN,
     ),
     "GLUE-CODE-SINGLE-PARTITION": RuleSpec(
         "Código força processamento em uma única partição",
@@ -68,7 +80,10 @@ _RULES: dict[str, RuleSpec] = {
         "Remover a partição única ou separar compactação da transformação",
         "Escolher partições pelo volume de saída e compactar somente quando necessário.",
         "Comparar duração, tasks ativas, tamanho e quantidade dos arquivos de saída.",
-        0.15, 2, 0.50, _DOC_TUNING,
+        0.15,
+        2,
+        0.50,
+        _DOC_TUNING,
     ),
     "GLUE-CODE-DRIVER-MATERIALIZATION": RuleSpec(
         "Código materializa dados distribuídos no driver",
@@ -76,7 +91,10 @@ _RULES: dict[str, RuleSpec] = {
         "Manter processamento distribuído ou limitar explicitamente o conjunto",
         "Substituir a materialização por agregação/filtro distribuído e coleta de resultado pequeno.",
         "Validar memória do driver, duração, falhas e equivalência da saída.",
-        0.10, 3, 0.60, _DOC_TUNING,
+        0.10,
+        3,
+        0.60,
+        _DOC_TUNING,
     ),
     "GLUE-CODE-PYTHON-UDF": RuleSpec(
         "Python UDF pode impedir otimizações do Spark",
@@ -84,7 +102,10 @@ _RULES: dict[str, RuleSpec] = {
         "Preferir funções Spark SQL nativas",
         "Substituir a UDF quando existir função nativa equivalente; manter teste de paridade.",
         "Executar benchmark A/B e comparar CPU, duração, DPUSeconds e resultado.",
-        0.10, 3, 0.55, _DOC_TUNING,
+        0.10,
+        3,
+        0.55,
+        _DOC_TUNING,
     ),
     "GLUE-CODE-REPEATED-ACTIONS": RuleSpec(
         "Múltiplas ações Spark podem recomputar o plano",
@@ -92,7 +113,10 @@ _RULES: dict[str, RuleSpec] = {
         "Eliminar ações de diagnóstico ou materializar somente o resultado reutilizado",
         "Remover count/show/collect redundantes e persistir apenas quando houver reutilização comprovada.",
         "Comparar número de jobs/stages, bytes lidos, duração e DPUSeconds.",
-        0.10, 2, 0.45, _DOC_TUNING,
+        0.10,
+        2,
+        0.45,
+        _DOC_TUNING,
     ),
     "GLUE-CODE-CACHE-LIFECYCLE": RuleSpec(
         "Cache Spark sem encerramento observável",
@@ -100,7 +124,10 @@ _RULES: dict[str, RuleSpec] = {
         "Remover cache sem reutilização ou executar unpersist após o último uso",
         "Confirmar reutilização do DataFrame e delimitar o ciclo de vida do cache.",
         "Validar memória, spill, duração e recomputações antes/depois.",
-        0.05, 2, 0.45, _DOC_TUNING,
+        0.05,
+        2,
+        0.45,
+        _DOC_TUNING,
     ),
     "GLUE-CODE-ITERATIVE-PLAN": RuleSpec(
         "Plano Spark construído iterativamente",
@@ -108,7 +135,10 @@ _RULES: dict[str, RuleSpec] = {
         "Consolidar expressões e uniões",
         "Usar uma projeção única ou unionByName sobre uma coleção balanceada.",
         "Comparar tamanho do plano, stages, duração e DPUSeconds.",
-        0.10, 3, 0.50, _DOC_TUNING,
+        0.10,
+        3,
+        0.50,
+        _DOC_TUNING,
     ),
     "GLUE-CODE-ROW-EXTERNAL-IO": RuleSpec(
         "I/O externo executado por registro",
@@ -116,7 +146,10 @@ _RULES: dict[str, RuleSpec] = {
         "Mover I/O para operações em lote ou por partição",
         "Buscar dados de referência antes da transformação ou agrupar chamadas com limites e retry.",
         "Validar quantidade de chamadas, duração, throttling, falhas e resultado.",
-        0.15, 4, 0.70, _DOC_TUNING,
+        0.15,
+        4,
+        0.70,
+        _DOC_TUNING,
     ),
     "GLUE-CODE-FULL-OVERWRITE": RuleSpec(
         "Overwrite sem escopo incremental observável",
@@ -124,7 +157,10 @@ _RULES: dict[str, RuleSpec] = {
         "Avaliar escrita incremental ou sobrescrita dinâmica de partições",
         "Restringir a escrita às partições afetadas e preservar atomicidade e retenção.",
         "Comparar bytes escritos, arquivos, duração e reconciliação da saída.",
-        0.20, 4, 0.65, _DOC_PUSHDOWN,
+        0.20,
+        4,
+        0.65,
+        _DOC_PUSHDOWN,
     ),
     "GLUE-CODE-SMALL-FILES": RuleSpec(
         "Código pode produzir quantidade excessiva de arquivos",
@@ -132,7 +168,10 @@ _RULES: dict[str, RuleSpec] = {
         "Dimensionar partições de saída e consolidar writes",
         "Calibrar repartition/coalesce pelo volume, sem forçar partição única.",
         "Medir quantidade/tamanho dos arquivos, duração e DPUSeconds.",
-        0.10, 3, 0.55, _DOC_TUNING,
+        0.10,
+        3,
+        0.55,
+        _DOC_TUNING,
     ),
     "GLUE-CODE-SHUFFLE": RuleSpec(
         "Transformações com potencial de shuffle relevante",
@@ -140,7 +179,10 @@ _RULES: dict[str, RuleSpec] = {
         "Revisar chaves, particionamento e estratégia de join",
         "Correlacionar o trecho com Spark UI; aplicar broadcast somente se o lado menor couber no executor.",
         "Comparar shuffle read/write, spill, skew, duração e resultado.",
-        0.15, 4, 0.65, _DOC_SHUFFLE,
+        0.15,
+        4,
+        0.65,
+        _DOC_SHUFFLE,
     ),
     "GLUE-CODE-SHUFFLE-PARTITIONS": RuleSpec(
         "Número fixo extremo de partições de shuffle",
@@ -148,7 +190,10 @@ _RULES: dict[str, RuleSpec] = {
         "Calibrar spark.sql.shuffle.partitions com métricas do workload",
         "Preferir AQE quando suportado e ajustar somente após observar tamanho e tasks.",
         "Comparar tasks, skew, shuffle, spill, duração e DPUSeconds.",
-        0.10, 3, 0.60, _DOC_SHUFFLE,
+        0.10,
+        3,
+        0.60,
+        _DOC_SHUFFLE,
     ),
     "GLUE-CODE-SWALLOWED-EXCEPTION": RuleSpec(
         "Código descarta exceções silenciosamente",
@@ -156,7 +201,10 @@ _RULES: dict[str, RuleSpec] = {
         "Registrar contexto seguro e falhar ou tratar explicitamente",
         "Definir quais erros são recuperáveis; aplicar retry limitado somente nesses casos.",
         "Injetar falha controlada e confirmar status, logs, retry e consistência da saída.",
-        0.05, 3, 0.70, _DOC_TUNING,
+        0.05,
+        3,
+        0.70,
+        _DOC_TUNING,
     ),
     "GLUE-CODE-BOOKMARK-CONTEXT": RuleSpec(
         "Contexto de transformação necessário para bookmark não foi observado",
@@ -164,7 +212,10 @@ _RULES: dict[str, RuleSpec] = {
         "Revisar transformation_ctx nas fontes e transformações relevantes",
         "Usar identificadores estáveis e validar a semântica do bookmark em ambiente controlado.",
         "Executar duas cargas incrementais e confirmar que dados antigos não são reprocessados.",
-        0.10, 3, 0.65, _DOC_BOOKMARK,
+        0.10,
+        3,
+        0.65,
+        _DOC_BOOKMARK,
     ),
     "GLUE-CODE-BOOKMARK-COMMIT": RuleSpec(
         "Job inicializado sem commit do estado do bookmark",
@@ -172,7 +223,10 @@ _RULES: dict[str, RuleSpec] = {
         "Garantir job.commit após conclusão bem-sucedida",
         "Adicionar commit no caminho de sucesso sem mascarar falhas anteriores.",
         "Executar duas cargas incrementais e confirmar avanço do bookmark e ausência de reprocessamento.",
-        0.15, 2, 0.65, _DOC_BOOKMARK,
+        0.15,
+        2,
+        0.65,
+        _DOC_BOOKMARK,
     ),
 }
 
@@ -189,10 +243,7 @@ def detect(
         if job is None:
             continue
         for code_finding in scan_glue_script(artifact.content):
-            if (
-                code_finding.rule_id.startswith("GLUE-CODE-BOOKMARK-")
-                and not job.job_bookmark
-            ):
+            if code_finding.rule_id.startswith("GLUE-CODE-BOOKMARK-") and not job.job_bookmark:
                 continue
             if code_finding.rule_id == "GLUE-SPARK-TO-PYTHON-SHELL":
                 opportunity = _python_shell_candidate(
@@ -202,8 +253,14 @@ def detect(
                 spec = _RULES.get(code_finding.rule_id)
                 opportunity = (
                     _code_opportunity(
-                        account, job, artifact, code_finding.lines, spec,
-                        code_finding.rule_id, config, scan_id
+                        account,
+                        job,
+                        artifact,
+                        code_finding.lines,
+                        spec,
+                        code_finding.rule_id,
+                        config,
+                        scan_id,
                     )
                     if spec
                     else None
@@ -232,37 +289,45 @@ def _code_opportunity(
         assumption=spec.why,
     )
     opportunity = build(
-        account=account.account_id,
-        asset_type="glue_job",
-        asset_name=job.name,
-        rule_id=rule_id,
-        rule_version="1.0.0",
-        difficulty=spec.difficulty,
-        estimation=estimation,
-        finding=spec.finding,
-        why=spec.why,
-        recommended_action=spec.action,
-        how_to_apply=spec.apply,
-        how_to_validate=spec.validate,
-        evidence=[
-            f"script sha256={artifact.sha256[:16]}",
-            f"linhas={_line_text(lines)}",
-            f"artefato {'truncado' if artifact.truncated else 'completo'}",
-        ],
-        risks=[
-            "alteração de código exige teste de regressão e comparação com o mesmo volume",
-        ],
-        doc_links=[spec.doc],
-        data_sources=["Glue ScriptLocation (S3)", "scanner estático Julius"],
-        observed_runs=job.observed_runs,
-        coverage_days=job.coverage_days,
-        has_optional_metrics=correlated and not artifact.truncated,
-        owner_tag=job.owner_tag,
-        config=config,
-        scan_id=scan_id,
-        risk=spec.risk,
-        blocked=True,
-        source_process=job.name,
+        Finding(
+            asset_type="glue_job",
+            asset_name=job.name,
+            rule_id=rule_id,
+            rule_version="1.0.0",
+            title=spec.finding,
+            why=spec.why,
+            source_process=job.name,
+        ),
+        Recommendation(
+            difficulty=spec.difficulty,
+            action=spec.action,
+            how_to_apply=spec.apply,
+            how_to_validate=spec.validate,
+            risks=[
+                "alteração de código exige teste de regressão e comparação com o mesmo volume",
+            ],
+            docs=[spec.doc],
+            risk=spec.risk,
+            blocked=True,
+        ),
+        Evidence(
+            items=[
+                f"script sha256={artifact.sha256[:16]}",
+                f"linhas={_line_text(lines)}",
+                f"artefato {'truncado' if artifact.truncated else 'completo'}",
+            ],
+            sources=["Glue ScriptLocation (S3)", "scanner estático Julius"],
+            observed_runs=job.observed_runs,
+            coverage_days=job.coverage_days,
+            has_optional_metrics=correlated and not artifact.truncated,
+            owner_tag=job.owner_tag,
+        ),
+        estimation,
+        RuleContext(
+            account=account.account_id,
+            config=config,
+            scan_id=scan_id,
+        ),
     )
     opportunity.missing_evidence = _missing_runtime_evidence(rule_id, job, artifact)
     opportunity.next_action = spec.validate
@@ -296,57 +361,64 @@ def _python_shell_candidate(
         return None
     estimation = python_shell_migration_saving(job, config)
     opportunity = build(
-        account=account.account_id,
-        asset_type="glue_job",
-        asset_name=job.name,
-        rule_id="GLUE-SPARK-TO-PYTHON-SHELL",
-        rule_version="1.0.0",
-        difficulty=4,
-        estimation=estimation,
-        finding="Glue Spark ETL executa script sem uso distribuído detectado",
-        why=(
-            "O job inicializa capacidade Spark, mas o script completo não contém APIs "
-            "Spark/Glue distribuídas; Python Shell pode executar integração Python leve."
+        Finding(
+            asset_type="glue_job",
+            asset_name=job.name,
+            rule_id="GLUE-SPARK-TO-PYTHON-SHELL",
+            rule_version="1.0.0",
+            title="Glue Spark ETL executa script sem uso distribuído detectado",
+            why=(
+                "O job inicializa capacidade Spark, mas o script completo não contém APIs "
+                "Spark/Glue distribuídas; Python Shell pode executar integração Python leve."
+            ),
+            source_process=job.name,
         ),
-        recommended_action="Executar piloto equivalente em Glue Python Shell 0,0625 DPU",
-        how_to_apply=(
-            "Criar definição de teste separada com Command.Name=pythonshell e Python 3.9; "
-            "não alterar o job atual antes da validação."
+        Recommendation(
+            difficulty=4,
+            action="Executar piloto equivalente em Glue Python Shell 0,0625 DPU",
+            how_to_apply=(
+                "Criar definição de teste separada com Command.Name=pythonshell e Python 3.9; "
+                "não alterar o job atual antes da validação."
+            ),
+            how_to_validate=(
+                "Comparar resultado, duração, memória, dependências, logs e custo por execução "
+                "em execuções representativas."
+            ),
+            risks=[
+                "Python Shell não suporta job bookmarks",
+                "Python Shell não suporta --extra-files",
+                "armazenamento temporário e memória são locais e limitados",
+                "AWS orienta avaliar runtimes alternativos para workloads Python Shell",
+            ],
+            docs=[_DOC_PYTHON_SHELL, _DOC_JOB, _DOC_PYTHON_MIGRATION],
+            risk=0.75,
+            blocked=True,
         ),
-        how_to_validate=(
-            "Comparar resultado, duração, memória, dependências, logs e custo por execução "
-            "em execuções representativas."
+        Evidence(
+            items=[
+                f"Command.Name atual={job.command_type}",
+                "nenhuma API Spark/Glue distribuída detectada",
+                f"script completo sha256={artifact.sha256[:16]}",
+                f"capacidade atual={job.configured_dpu:.4g} DPU",
+            ],
+            sources=[
+                "Glue GetJobs",
+                "Glue ScriptLocation (S3)",
+                "scanner estático Julius",
+            ],
+            observed_runs=job.observed_runs,
+            coverage_days=job.coverage_days,
+            has_optional_metrics=(
+                job.avg_worker_utilization is not None or job.avg_cpu_load is not None
+            ),
+            owner_tag=job.owner_tag,
         ),
-        evidence=[
-            f"Command.Name atual={job.command_type}",
-            "nenhuma API Spark/Glue distribuída detectada",
-            f"script completo sha256={artifact.sha256[:16]}",
-            f"capacidade atual={job.configured_dpu:.4g} DPU",
-        ],
-        risks=[
-            "Python Shell não suporta job bookmarks",
-            "Python Shell não suporta --extra-files",
-            "armazenamento temporário e memória são locais e limitados",
-            "AWS orienta avaliar runtimes alternativos para workloads Python Shell",
-        ],
-        doc_links=[_DOC_PYTHON_SHELL, _DOC_JOB, _DOC_PYTHON_MIGRATION],
-        data_sources=[
-            "Glue GetJobs",
-            "Glue ScriptLocation (S3)",
-            "scanner estático Julius",
-        ],
-        observed_runs=job.observed_runs,
-        coverage_days=job.coverage_days,
-        has_optional_metrics=(
-            job.avg_worker_utilization is not None
-            or job.avg_cpu_load is not None
+        estimation,
+        RuleContext(
+            account=account.account_id,
+            config=config,
+            scan_id=scan_id,
         ),
-        owner_tag=job.owner_tag,
-        config=config,
-        scan_id=scan_id,
-        risk=0.75,
-        blocked=True,
-        source_process=job.name,
     )
     opportunity.missing_evidence = [
         "benchmark Python Shell com o mesmo volume",
@@ -379,9 +451,7 @@ def _has_runtime_correlation(rule_id: str, job: GlueJob) -> bool:
     return job.spark_event_log_evidence_complete
 
 
-def _missing_runtime_evidence(
-    rule_id: str, job: GlueJob, artifact: GlueCodeArtifact
-) -> list[str]:
+def _missing_runtime_evidence(rule_id: str, job: GlueJob, artifact: GlueCodeArtifact) -> list[str]:
     missing = ["benchmark A/B com mesmo input e validação funcional"]
     if artifact.truncated:
         missing.append("script completo")

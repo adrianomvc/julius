@@ -108,8 +108,7 @@ def families_without_evidence(account: Account) -> list[RuleFamily]:
     return [
         family
         for family in REGISTRY
-        if family.requires
-        and not any(getattr(account, name, None) for name in family.requires)
+        if family.requires and not any(getattr(account, name, None) for name in family.requires)
     ]
 
 

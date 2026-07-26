@@ -345,11 +345,7 @@ def python_shell_migration_saving(job: GlueJob, config: Config) -> Estimation:
     """
     pricing = config.pricing
     baseline, source, quality = _baseline(job, pricing)
-    projected = (
-        baseline * 0.0625 / job.configured_dpu
-        if job.configured_dpu > 0
-        else baseline
-    )
+    projected = baseline * 0.0625 / job.configured_dpu if job.configured_dpu > 0 else baseline
     projected = min(baseline, projected)
     return Estimation(
         method="glue_spark_to_python_shell_v1",
