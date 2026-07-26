@@ -1,0 +1,56 @@
+# Como cada tarifa é identificada na Price List API.
+#
+# Este arquivo é a parte que ninguém consegue adivinhar com segurança: quais
+# atributos de produto identificam "Glue DPU-hora STANDARD". Ele existe para
+# que essa escolha seja conferida uma vez, por uma pessoa, olhando o que a API
+# realmente devolve — e não fique chutada dentro do código.
+#
+# Fluxo:
+#
+#   1. julius pricing inspect --service AWSGlue --region sa-east-1
+#      mostra as combinações de atributos e o preço de cada uma.
+#   2. ajuste os blocos abaixo para casar com o que apareceu.
+#   3. julius pricing refresh --region sa-east-1
+#      escreve a tabela. Se qualquer tarifa não casar, nada é escrito.
+#
+# `match` é uma igualdade exata sobre os atributos do produto. `pick` resolve o
+# caso de o produto ter várias dimensões de preço: "min" pega a menor, "max" a
+# maior, "only" exige exatamente uma.
+#
+# ATENÇÃO: os valores abaixo são um ponto de partida plausível, NÃO conferidos
+# contra a API. Rodar `inspect` antes do primeiro `refresh` não é opcional.
+
+[glue.dpu_hour]
+service = "AWSGlue"
+match = { group = "ETL Job run", operation = "jobrun" }
+pick = "only"
+
+[glue.flex_dpu_hour]
+service = "AWSGlue"
+match = { group = "ETL Job run", operation = "jobrunflex" }
+pick = "only"
+
+[glue.ray_mdpu_hour]
+service = "AWSGlue"
+match = { group = "Ray Job run", operation = "jobrun" }
+pick = "only"
+
+[glue.databrew_node_hour]
+service = "AWSGlue"
+match = { group = "DataBrew Job Run" }
+pick = "only"
+
+[athena.per_tb]
+service = "AmazonAthena"
+match = { group = "Athena-Query", operation = "AmazonAthena" }
+pick = "only"
+
+[stepfunctions.standard_per_transition]
+service = "AWSStepFunctions"
+match = { group = "SFN-StateTransitions" }
+pick = "min"
+
+[stepfunctions.express_per_request]
+service = "AWSStepFunctions"
+match = { group = "SFN-ExpressWorkflows-Requests" }
+pick = "min"
