@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
+from julius.collection.models import AthenaQuery
 from julius.config import (
     ATHENA_RECOVERY_RATES,
     ATHENA_RECOVERY_VERSION,
     Config,
 )
-from julius.inventory.model import AthenaQuery
 from julius.opportunities.base import Estimation
 
 _TB = 1024**4

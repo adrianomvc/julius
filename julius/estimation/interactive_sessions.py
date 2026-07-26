@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
+from julius.collection.models import InteractiveSession
 from julius.config import Config
-from julius.inventory.model import InteractiveSession
 from julius.opportunities.base import Estimation
 
 

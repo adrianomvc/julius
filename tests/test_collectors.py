@@ -8,18 +8,16 @@ import boto3
 import pytest
 from botocore.stub import Stubber
 
-from julius.aws import (
-    cloudwatch_collector,
-    cost_explorer,
-    datawarm_collector,
-    glue_collector,
-    schedules_collector,
-    stepfunctions_collector,
-    touches_collector,
-)
-from julius.aws.window import AnalysisWindow, BillingMonth
-from julius.estimation.currency import UnsupportedCurrencyError
-from julius.inventory.model import Account, GlueJob, Table
+from julius.collection.collectors import cloudwatch as cloudwatch_collector
+from julius.collection.collectors import cost_explorer as cost_explorer
+from julius.collection.collectors import datawarm as datawarm_collector
+from julius.collection.collectors import schedules as schedules_collector
+from julius.collection.collectors import stepfunctions as stepfunctions_collector
+from julius.collection.collectors import touches as touches_collector
+from julius.collection.collectors.glue import jobs as glue_collector
+from julius.collection.currency import UnsupportedCurrencyError
+from julius.collection.models import Account, GlueJob, Table
+from julius.collection.window import AnalysisWindow, BillingMonth
 
 
 def _client(service: str):

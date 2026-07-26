@@ -7,8 +7,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from julius.collection.models import Account, PreviousResult, ProducerCandidate
 from julius.governance import recommend
-from julius.inventory.model import Account, PreviousResult, ProducerCandidate
 from julius.opportunities.base import Opportunity
 from julius.report import formatters as fmt
 from julius.report.pareto import Pareto

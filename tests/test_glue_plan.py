@@ -8,24 +8,14 @@ import boto3
 import pytest
 from botocore.stub import Stubber
 
-from julius.aws import (
-    cloudwatch_collector,
-    crawlers_collector,
-    databrew_collector,
-    glue_collector,
-    glue_triggers_collector,
-    sessions_collector,
-    spark_event_logs_collector,
-)
-from julius.aws.schedule_frequency import expected_runs_per_month
-from julius.aws.window import AnalysisWindow
-from julius.config import DEFAULT_CONFIG
-from julius.estimation.process_cost import (
-    apply_conservative_caps,
-    build_process_costs,
-)
-from julius.graph.ownership import resolve_owner
-from julius.inventory.model import (
+from julius.collection.collectors import cloudwatch as cloudwatch_collector
+from julius.collection.collectors.glue import crawlers as crawlers_collector
+from julius.collection.collectors.glue import databrew as databrew_collector
+from julius.collection.collectors.glue import jobs as glue_collector
+from julius.collection.collectors.glue import sessions as sessions_collector
+from julius.collection.collectors.glue import spark_logs as spark_event_logs_collector
+from julius.collection.collectors.glue import triggers as glue_triggers_collector
+from julius.collection.models import (
     Account,
     ActorEvent,
     GlueJob,
@@ -33,6 +23,14 @@ from julius.inventory.model import (
     Schedule,
     StateMachine,
 )
+from julius.collection.schedule_frequency import expected_runs_per_month
+from julius.collection.window import AnalysisWindow
+from julius.config import DEFAULT_CONFIG
+from julius.estimation.process_cost import (
+    apply_conservative_caps,
+    build_process_costs,
+)
+from julius.graph.ownership import resolve_owner
 from julius.opportunities import prioritizer
 from julius.opportunities.base import Estimation, Opportunity
 from julius.opportunities.detectors import glue as glue_detector

@@ -3,20 +3,22 @@ from __future__ import annotations
 import json
 from datetime import datetime, timedelta, timezone
 
-from julius.aws.athena_collector import (
-    _has_partition_predicate,
-    _result_reuse_eligible,
-    _small_file_evidence,
+from julius.collection.collectors.athena.actors import resolve_actor
+from julius.collection.collectors.athena.catalog import (
+    has_partition_predicate,
+    small_file_evidence,
+)
+from julius.collection.collectors.athena.evidence import (
     billable_bytes,
-    collect_analysis,
     fingerprints,
     recurrence,
-    resolve_actor,
 )
+from julius.collection.collectors.athena.executions import result_reuse_eligible
+from julius.collection.collectors.athena.monthly import collect_analysis
+from julius.collection.models import Account, AthenaQuery
+from julius.collection.normalizers.dump import account_to_dataset
 from julius.config import DEFAULT_CONFIG
 from julius.estimation import athena as athena_estimation
-from julius.ingest.dump import account_to_dataset
-from julius.inventory.model import Account, AthenaQuery
 from julius.opportunities.detectors import athena as athena_detector
 from julius.pipeline import analyze_account
 from julius.report import renderer
@@ -52,8 +54,8 @@ def test_partition_ast_respects_aliases_joins_and_ctes():
         )
         SELECT * FROM filtered
     """
-    assert _has_partition_predicate(sql, "db.sales", "dt") is True
-    assert _has_partition_predicate(sql, "db.people", "dt") is False
+    assert has_partition_predicate(sql, "db.sales", "dt") is True
+    assert has_partition_predicate(sql, "db.people", "dt") is False
 
 
 def test_small_files_requires_complete_s3_size_evidence():
@@ -64,7 +66,7 @@ def test_small_files_requires_complete_s3_size_evidence():
                 lambda **_: [{"Contents": [{"Key": f"k-{i}", "Size": MB} for i in range(100)]}]
             )
 
-    count, average, confirmed = _small_file_evidence(S3(), "s3://bucket/prefix")
+    count, average, confirmed = small_file_evidence(S3(), "s3://bucket/prefix")
     assert (count, average, confirmed) == (100, MB, True)
 
 
@@ -98,13 +100,13 @@ def test_identity_precedence_and_automation_classification():
 
 
 def test_result_reuse_gate_rejects_nondeterministic_queries():
-    assert _result_reuse_eligible(
+    assert result_reuse_eligible(
         "SELECT customer_id FROM db.sales", "DML", "on_demand"
     )
-    assert not _result_reuse_eligible(
+    assert not result_reuse_eligible(
         "SELECT random() FROM db.sales", "DML", "on_demand"
     )
-    assert not _result_reuse_eligible(
+    assert not result_reuse_eligible(
         "SELECT customer_id FROM db.sales", "DML", "federated"
     )
 
@@ -610,3 +612,80 @@ def test_requested_rules_are_grouped_by_pattern_and_actor():
     assert account.athena_actor_usage[0].opportunity_refs == [
         athena_opportunities[0].opportunity_id
     ]
+
+
+def test_each_athena_dependency_reports_its_own_health():
+    """CloudTrail caindo e Glue Catalog sem permissão são falhas distintas.
+
+    Antes, as duas viravam texto livre dentro de uma única entrada chamada
+    "Athena Queries", e nenhuma podia ser agregada ou alertada.
+    """
+
+    class _BrokenCloudTrail:
+        def get_paginator(self, name):
+            raise PermissionError("acesso negado")
+
+    class _BrokenGlue:
+        def get_table(self, **kwargs):
+            raise PermissionError("acesso negado")
+
+    executions = [
+        {
+            "QueryExecutionId": "q-1",
+            "WorkGroup": "one",
+            "Query": "SELECT id FROM db.sales",
+            "Status": {
+                "State": "SUCCEEDED",
+                "SubmissionDateTime": datetime.now(timezone.utc) - timedelta(days=1),
+            },
+            "Statistics": {"DataScannedInBytes": 20 * MB},
+            "StatementType": "DML",
+        }
+    ]
+
+    analysis = collect_analysis(
+        _Athena(executions),
+        cloudtrail_client=_BrokenCloudTrail(),
+        glue_client=_BrokenGlue(),
+    )
+
+    by_source = {item.source: item for item in analysis.health}
+    assert by_source["Athena API"].status == "ok"
+    assert by_source["Athena CloudTrail"].status == "unavailable"
+    assert by_source["Athena CloudTrail"].error_category == "permission_denied"
+    assert by_source["Athena Glue Catalog"].error_category == "permission_denied"
+    # Fonte não consultada não inventa entrada.
+    assert "Athena Identity Center" not in by_source
+
+    # Cada fonte diz o que quebra e o que fazer, como o resto da coleta.
+    for entry in analysis.health:
+        if entry.status == "unavailable":
+            assert entry.impact and entry.next_action
+
+    # E nenhuma mensagem de exceção vaza para o dataset.
+    assert "acesso negado" not in json.dumps(
+        [item.__dict__ for item in analysis.health], ensure_ascii=False
+    )
+
+
+def test_reconciliation_asks_telemetry_instead_of_matching_gap_text():
+    """A trava de reconciliação olha fontes, não trechos de string."""
+    from julius.collection.collectors.athena.cost import reconciled
+    from julius.collection.collectors.athena.telemetry import AthenaTelemetry
+    from julius.collection.models import AthenaCoverage
+
+    coverage = AthenaCoverage(
+        workgroups_total=1, workgroups_covered=1, reconciliation_ratio=1.0
+    )
+    telemetry = AthenaTelemetry(coverage)
+    assert reconciled(coverage, telemetry) is True
+
+    telemetry.failed("Athena CloudWatch", PermissionError("x"))
+    assert reconciled(coverage, telemetry) is False
+
+    # Falha numa fonte não bloqueante não impede reconciliar o volume.
+    other = AthenaTelemetry(
+        AthenaCoverage(workgroups_total=1, workgroups_covered=1, reconciliation_ratio=1.0)
+    )
+    other.failed("Athena Identity Center", PermissionError("x"))
+    assert reconciled(other.coverage, other) is True

@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
+from julius.collection.models import Account
 from julius.config import JULIUS_VERSION, KNOWLEDGE_VERSION, Config
-from julius.inventory.model import Account
 
 
 def new_scan_id(now: datetime | None = None) -> str:

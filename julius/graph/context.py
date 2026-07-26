@@ -4,12 +4,12 @@ from __future__ import annotations
 
 from typing import Any
 
+from julius.collection.models import Account
 from julius.graph.actor import resolve_actor
 from julius.graph.assets import AssetKey
 from julius.graph.edges import EdgeType
 from julius.graph.ownership import resolve_owner
 from julius.graph.process_builder import ProcessGraph
-from julius.inventory.model import Account
 from julius.opportunities import prioritizer
 from julius.opportunities.base import Opportunity
 

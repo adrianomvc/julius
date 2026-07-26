@@ -4,14 +4,14 @@ from __future__ import annotations
 
 import json
 
-from julius.aws.technical_artifacts import (
+from julius.code_analysis import GlueCodeArtifact, load_glue_artifacts, scan_glue_script
+from julius.collection.collectors.glue.scripts import (
     ArtifactBundle,
     TechnicalArtifact,
     write_artifact_bundle,
 )
-from julius.code_analysis import GlueCodeArtifact, load_glue_artifacts, scan_glue_script
+from julius.collection.models import Account, GlueJob
 from julius.config import DATASET_SCHEMA_VERSION, DEFAULT_CONFIG
-from julius.inventory.model import Account, GlueJob
 from julius.opportunities.detectors import glue_code
 from julius.pipeline import analyze
 from julius.report import renderer

@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from julius.inventory.model import Account, ProducerCandidate, Table
+from julius.collection.models import Account, ProducerCandidate, Table
 
 _CAND_HIGH = 60
 _READY_HIGH = 55

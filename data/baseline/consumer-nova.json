@@ -1,0 +1,382 @@
+{
+  "account": "consumer-nova",
+  "ai_analysis": {
+    "executive_summary": "",
+    "implementation_order": [],
+    "recommendations": [],
+    "source": null
+  },
+  "athena": {
+    "actor_usage": [],
+    "coverage": {},
+    "gaps": [],
+    "query_patterns": []
+  },
+  "collection_health": {
+    "label": "Não informada",
+    "sources": [],
+    "status": "not_reported",
+    "summary": "Dataset sem telemetria de coleta; cobertura das fontes não informada."
+  },
+  "currency": "USD",
+  "lifecycle": {
+    "diff_events": [
+      {
+        "asset": "explora-nova",
+        "current": 30.49,
+        "previous": null,
+        "rule_id": "GLUE-IS-IDLE",
+        "type": "new_opportunity"
+      },
+      {
+        "asset": "amostra_diaria",
+        "current": 0.69,
+        "previous": null,
+        "rule_id": "ATHENA-RESULT-REUSE",
+        "type": "new_opportunity"
+      },
+      {
+        "asset": "AWS Glue",
+        "current": 0.0,
+        "previous": null,
+        "rule_id": "GLUE-UNATTRIBUTED-COST",
+        "type": "new_opportunity"
+      }
+    ],
+    "lead_times": [],
+    "validated_results": []
+  },
+  "opportunities": [
+    {
+      "account": "consumer-nova",
+      "actionable": true,
+      "actor": "Squad Nova",
+      "actor_confidence": 1.0,
+      "actor_source": "tag Owner do recurso",
+      "asset_name": "explora-nova",
+      "asset_type": "glue_session",
+      "blocked": false,
+      "bucket": "monitorar",
+      "calibration_factor": 1.0,
+      "category": "cost_optimization",
+      "confidence": 0.86,
+      "confidence_label": "Alta",
+      "data_sources": [
+        "Glue GetSession",
+        "CloudWatch"
+      ],
+      "difficulty_score": 1,
+      "doc_links": [
+        "https://docs.aws.amazon.com/glue/latest/dg/interactive-sessions.html"
+      ],
+      "downstream_consumers": 0,
+      "estimated_gain": {
+        "annual_potential": 365.9,
+        "is_strategic": false,
+        "likely_implementation_date": "2026-07",
+        "monthly_expected": 30.49,
+        "monthly_high": 41.17,
+        "monthly_low": 19.82,
+        "realizable_year": 121.97,
+        "realization_factor": 0.8
+      },
+      "estimation": {
+        "assumptions": [
+          "idle atual 2.1h/dia × 18 dias",
+          "cobrança inclui tempo READY ocioso até o stop",
+          "novo idle_timeout ~60 min",
+          "economia esperada aplica fator conservador de realização de 70%"
+        ],
+        "avoidable_bytes": null,
+        "baseline_bytes": null,
+        "baseline_cost": 83.16,
+        "baseline_quality": "modeled",
+        "currency": "USD",
+        "estimated_saving": 30.49,
+        "estimated_saving_high": 41.17,
+        "estimated_saving_low": 19.82,
+        "estimation_version": "2.0-usd",
+        "method": "glue_session_idle_v1",
+        "pricing_region": "sa-east-1",
+        "projected_bytes": null,
+        "projected_cost": 52.67,
+        "saving_quality": "modeled"
+      },
+      "evidence": [
+        "idle_timeout=2880 min (default)",
+        "média 2.1h READY ocioso/dia",
+        "DPU=5 (mín. útil 2)"
+      ],
+      "evidence_coverage": 1.0,
+      "evidence_refs": [
+        {
+          "collected_at": "2026-07-23",
+          "execution_ids": [],
+          "resource_name": "explora-nova",
+          "resource_type": "glue_session",
+          "source": "Glue ListStatements"
+        }
+      ],
+      "execution_priority": 17,
+      "finding": "Sessão interativa ociosa",
+      "first_seen": "",
+      "gain_score": 20,
+      "how_to_apply": "Ajustar %idle_timeout para 60 min (era 2880) e revisar DPU 5→2.",
+      "how_to_validate": "Medir tempo READY ocioso e DPU-h por sessão na próxima semana.",
+      "julius_version": "0.6.0",
+      "knowledge_version": "aws-glue-guidance-2026-07",
+      "last_seen": "",
+      "missing_evidence": [],
+      "next_action": null,
+      "opportunity_id": "GLUE-IS-IDLE-7c53df13",
+      "owner": "Squad Nova",
+      "owner_confidence": 1.0,
+      "owner_event_name": "",
+      "owner_event_time": "",
+      "owner_source": "tag oficial",
+      "process_cost_monthly": 0.0,
+      "process_cost_window": 0.0,
+      "process_criticality": 0.0,
+      "recommended_action": "Reduzir idle_timeout e a DPU da sessão",
+      "risks": [
+        "perder estado da sessão em uso ativo"
+      ],
+      "rule_id": "GLUE-IS-IDLE",
+      "rule_version": "1.0.0",
+      "scan_id": "baseline",
+      "source_process": null,
+      "status": "detected",
+      "strategic_priority": 10,
+      "urgency": 1.0,
+      "why": "Sessões ficam READY ociosas ~2.1h/dia; idle_timeout=2880 min (default) e DPU=5.",
+      "window_end": "2026-07-23"
+    },
+    {
+      "account": "consumer-nova",
+      "actionable": true,
+      "actor": "Squad Nova",
+      "actor_confidence": 1.0,
+      "actor_source": "tag Owner do recurso",
+      "asset_name": "amostra_diaria",
+      "asset_type": "athena_query",
+      "blocked": false,
+      "bucket": "monitorar",
+      "calibration_factor": 1.0,
+      "category": "cost_optimization",
+      "confidence": 0.5,
+      "confidence_label": "Baixa",
+      "data_sources": [
+        "Athena workgroup history"
+      ],
+      "difficulty_score": 1,
+      "doc_links": [
+        "https://docs.aws.amazon.com/athena/latest/ug/reusing-query-results.html"
+      ],
+      "downstream_consumers": 0,
+      "estimated_gain": {
+        "annual_potential": 8.23,
+        "is_strategic": false,
+        "likely_implementation_date": "2026-07",
+        "monthly_expected": 0.69,
+        "monthly_high": 1.02,
+        "monthly_low": 0.34,
+        "realizable_year": 2.74,
+        "realization_factor": 0.8
+      },
+      "estimation": {
+        "assumptions": [
+          "20 execuções/mês",
+          "faixa da regra legacy_result_reuse: 10%/20%/30%",
+          "preço de tabela aplicado aos bytes faturáveis",
+          "modelo athena-recovery-1.0; substituir por benchmark quando disponível",
+          "economia esperada aplica fator conservador de realização de 70%"
+        ],
+        "avoidable_bytes": 214748364800,
+        "baseline_bytes": 1073741824000,
+        "baseline_cost": 4.88,
+        "baseline_quality": "modeled",
+        "currency": "USD",
+        "estimated_saving": 0.69,
+        "estimated_saving_high": 1.02,
+        "estimated_saving_low": 0.34,
+        "estimation_version": "athena-recovery-1.0",
+        "method": "athena_legacy_result_reuse_modeled_rule_v1",
+        "pricing_region": "sa-east-1",
+        "projected_bytes": 858993459200,
+        "projected_cost": 4.19,
+        "saving_quality": "modeled_rule"
+      },
+      "evidence": [
+        "custo evitável indisponível sem reconciliação completa"
+      ],
+      "evidence_coverage": 1.0,
+      "evidence_refs": [],
+      "execution_priority": 0,
+      "finding": "Repetições exatas elegíveis sem query result reuse",
+      "first_seen": "",
+      "gain_score": 0,
+      "how_to_apply": "Definir ResultReuseByAgeConfiguration com janela compatível com a atualização da origem.",
+      "how_to_validate": "Comparar bytes faturáveis, custo líquido alocado e ReusedPreviousResult.",
+      "julius_version": "0.6.0",
+      "knowledge_version": "aws-glue-guidance-2026-07",
+      "last_seen": "",
+      "missing_evidence": [],
+      "next_action": null,
+      "opportunity_id": "ATHENA-RESULT-REUSE-988dc55a",
+      "owner": "Squad Nova",
+      "owner_confidence": 1.0,
+      "owner_event_name": "",
+      "owner_event_time": "",
+      "owner_source": "tag oficial",
+      "process_cost_monthly": null,
+      "process_cost_window": null,
+      "process_criticality": 0.0,
+      "recommended_action": "Configurar result reuse no cliente que submete a query",
+      "risks": [
+        "resultado defasado se a janela de reuso for longa demais"
+      ],
+      "rule_id": "ATHENA-RESULT-REUSE",
+      "rule_version": "1.0.0",
+      "scan_id": "baseline",
+      "source_process": null,
+      "status": "detected",
+      "strategic_priority": 0,
+      "urgency": 1.0,
+      "why": "Query roda 20×/mês sem reutilização confirmada.",
+      "window_end": null
+    },
+    {
+      "account": "consumer-nova",
+      "actionable": false,
+      "actor": null,
+      "actor_confidence": 0.0,
+      "actor_source": null,
+      "asset_name": "AWS Glue",
+      "asset_type": "glue_service",
+      "blocked": true,
+      "bucket": "investigar_primeiro",
+      "calibration_factor": 1.0,
+      "category": "cost_optimization",
+      "confidence": 0.45,
+      "confidence_label": "Baixa",
+      "data_sources": [
+        "Cost Explorer GetCostAndUsage",
+        "modelo de processos Julius"
+      ],
+      "difficulty_score": 2,
+      "doc_links": [
+        "https://docs.aws.amazon.com/aws-cost-management/latest/APIReference/API_GetCostAndUsage.html"
+      ],
+      "downstream_consumers": 0,
+      "estimated_gain": {
+        "annual_potential": 0.0,
+        "is_strategic": false,
+        "likely_implementation_date": null,
+        "monthly_expected": 0.0,
+        "monthly_high": 0.0,
+        "monthly_low": 0.0,
+        "realizable_year": 0.0,
+        "realization_factor": 0.8
+      },
+      "estimation": {
+        "assumptions": [
+          "diferença não é economia até identificar os tipos de uso",
+          "Cost Explorer e modelo usam a mesma moeda"
+        ],
+        "avoidable_bytes": null,
+        "baseline_bytes": null,
+        "baseline_cost": 514.5,
+        "baseline_quality": "modeled",
+        "currency": "USD",
+        "estimated_saving": 0.0,
+        "estimated_saving_high": null,
+        "estimated_saving_low": null,
+        "estimation_version": "2.0-usd",
+        "method": "glue_unattributed_cost_v1",
+        "pricing_region": "sa-east-1",
+        "projected_bytes": null,
+        "projected_cost": 514.5,
+        "saving_quality": "modeled"
+      },
+      "evidence": [
+        "Cost Explorer Glue na janela=514.50",
+        "modelo atribuído na janela=0.00",
+        "data_through=2026-07-23",
+        "catalog=24.50 USD"
+      ],
+      "evidence_coverage": 0.6,
+      "evidence_refs": [],
+      "execution_priority": 0,
+      "finding": "Cobrança Glue relevante ainda não atribuída aos processos",
+      "first_seen": "",
+      "gain_score": 0,
+      "how_to_apply": "Investigar somente por consultas read-only; ativação de tags ou CUR exige aprovação administrativa separada.",
+      "how_to_validate": "Reconciliar jobs, sessions, crawlers, DataBrew, Data Catalog, Data Quality e table optimizers até explicar a diferença.",
+      "julius_version": "0.6.0",
+      "knowledge_version": "aws-glue-guidance-2026-07",
+      "last_seen": "",
+      "missing_evidence": [],
+      "next_action": "identificar responsável",
+      "opportunity_id": "GLUE-UNATTRIBUTED-COST-b98e101d",
+      "owner": null,
+      "owner_confidence": 0.0,
+      "owner_event_name": "",
+      "owner_event_time": "",
+      "owner_source": "desconhecido",
+      "process_cost_monthly": null,
+      "process_cost_window": null,
+      "process_criticality": 0.0,
+      "recommended_action": "Detalhar Cost Explorer/CUR por usage type, operação e tag de alocação",
+      "risks": [
+        "diferença pode conter atraso ou modalidades ainda não modeladas"
+      ],
+      "rule_id": "GLUE-UNATTRIBUTED-COST",
+      "rule_version": "1.0.0",
+      "scan_id": "baseline",
+      "source_process": null,
+      "status": "detected",
+      "strategic_priority": 0,
+      "urgency": 1.0,
+      "why": "Cost Explorer na janela=514.50 e modelo por processo=0.00; diferença=514.50 USD. Buckets sem rateio: catalog=24.50 USD.",
+      "window_end": null
+    }
+  ],
+  "period": "jul/2026",
+  "process_costs": [
+    {
+      "actual_cost_window_value": 0.0,
+      "allocation": "direct",
+      "components": "explora-nova",
+      "cost_monthly": "US$ 0",
+      "cost_window": "US$ 0",
+      "currency": "USD",
+      "dpu_actual": "0.00",
+      "dpu_estimated": "0.00",
+      "estimated_cost_window_value": 0.0,
+      "monthly_cost_value": 0.0,
+      "name": "explora-nova",
+      "owner": "Squad Nova",
+      "owner_event_name": "—",
+      "owner_event_time": "—",
+      "owner_source": "tag oficial",
+      "root_type": "glue_session",
+      "total_cost_window_value": 0.0,
+      "window_days": 30,
+      "window_end": "2026-07-23",
+      "window_start": ""
+    }
+  ],
+  "scan_id": "baseline",
+  "summary": {
+    "billing_cost_mtd": "US$ 846,16",
+    "committed_monthly": "US$ 0",
+    "high_confidence_monthly": "US$ 30,49",
+    "identified_monthly": "US$ 31,18",
+    "pareto_count": 1,
+    "pareto_pct": 98,
+    "realizable_year": "US$ 124,71",
+    "realization_rate": "—",
+    "realized_monthly": "US$ 0",
+    "recommendation": "Ainda não há ação de baixo risco pronta — o próximo passo é coletar evidência nas oportunidades de maior potencial."
+  }
+}

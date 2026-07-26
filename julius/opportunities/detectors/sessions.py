@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
+from julius.collection.models import Account
 from julius.config import Config
 from julius.estimation import interactive_sessions as sess_est
-from julius.inventory.model import Account
 from julius.opportunities.base import Estimation, Opportunity
 from julius.opportunities.detectors._build import build
 

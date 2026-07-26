@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
+from julius.collection.models import StateMachine
 from julius.config import Config
-from julius.inventory.model import StateMachine
 from julius.opportunities.base import Estimation
 
 

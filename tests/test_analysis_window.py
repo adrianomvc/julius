@@ -7,11 +7,15 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from julius.aws import athena_collector, cost_explorer, glue_collector, glue_cost
-from julius.aws.window import AnalysisWindow, BillingMonth
+from julius.collection.collectors import cost_explorer
+from julius.collection.collectors.athena import cost as athena_cost
+from julius.collection.collectors.athena.telemetry import AthenaTelemetry
+from julius.collection.collectors.glue import cost as glue_cost
+from julius.collection.collectors.glue import jobs as glue_collector
+from julius.collection.models import Account, AthenaCoverage, AthenaQuery
+from julius.collection.normalizers.loader import UnsupportedDatasetVersionError, load_account
+from julius.collection.window import AnalysisWindow, BillingMonth
 from julius.config import DATASET_SCHEMA_VERSION, DEFAULT_CONFIG, MIN_DAYS_FOR_FORECAST
-from julius.ingest.loader import UnsupportedDatasetVersionError, load_account
-from julius.inventory.model import Account, AthenaCoverage, AthenaQuery
 from julius.opportunities.detectors import athena as athena_detector
 
 # 22h de Brasília no último dia de julho já é 1º de agosto em UTC. Era esse o
@@ -58,7 +62,12 @@ def test_glue_and_athena_costs_cover_the_same_days():
     athena_client = _RecordingCostExplorer()
 
     glue_cost.collect_glue_costs(glue_client, window=window)
-    athena_collector._costs(athena_client, window.start, window.end, [])
+    athena_cost.costs(
+        athena_client,
+        window.start,
+        window.end,
+        AthenaTelemetry(AthenaCoverage()),
+    )
 
     assert glue_client.periods == athena_client.periods
     assert glue_client.periods[0] == {
@@ -205,7 +214,7 @@ def test_dataset_from_the_previous_schema_is_refused_not_reinterpreted(tmp_path)
 
 
 def test_current_schema_round_trips_with_its_window(tmp_path):
-    from julius.ingest.dump import account_to_dataset
+    from julius.collection.normalizers.dump import account_to_dataset
 
     account = Account(
         account_id="123456789012",

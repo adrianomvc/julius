@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from julius.collection.normalizers import load_account
 from julius.governance import compute_candidates, recommend
-from julius.ingest import load_account
 from julius.pipeline import analyze
 
 SAMPLE_DIR = Path(__file__).resolve().parents[1] / "data" / "sample"

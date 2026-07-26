@@ -13,6 +13,8 @@ from julius.code_analysis import (
     load_glue_artifacts,
     summarize_glue_artifact_health,
 )
+from julius.collection.models import Account, CollectionHealth, PreviousResult
+from julius.collection.normalizers import load_account
 from julius.config import DEFAULT_CONFIG, Config
 from julius.estimation.calibration import apply_calibrations
 from julius.estimation.process_cost import (
@@ -21,8 +23,6 @@ from julius.estimation.process_cost import (
 )
 from julius.governance import compute_candidates
 from julius.graph import ProcessGraph, build_process_graph, enrich_opportunities
-from julius.ingest import load_account
-from julius.inventory.model import Account, CollectionHealth, PreviousResult
 from julius.metrics import ProductKPIs, compute_kpis
 from julius.opportunities.base import Opportunity
 from julius.opportunities.detectors import glue_code, run_all

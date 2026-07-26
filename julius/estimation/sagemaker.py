@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
+from julius.collection.models import SageMakerApp, SageMakerEndpoint
 from julius.config import Config, sagemaker_hourly
-from julius.inventory.model import SageMakerApp, SageMakerEndpoint
 from julius.opportunities.base import Estimation
 
 _HOURS_MONTH = 730.0

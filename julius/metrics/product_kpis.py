@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from julius.inventory.model import Account
+from julius.collection.models import Account
 from julius.opportunities.base import Opportunity
 
 # serviço AWS por tipo de ativo (para cobertura financeira).

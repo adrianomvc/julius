@@ -69,6 +69,10 @@ no_implicit_optional = true
 exclude = "(^|/)(\\.worktrees|data|design)/"
 
 [[tool.mypy.overrides]]
-module = ["julius.inventory.model", "julius.aws.window", "julius.opportunities.base"]
+module = [
+    "julius.collection.models.*",
+    "julius.collection.window",
+    "julius.opportunities.base",
+]
 disallow_untyped_defs = true
 check_untyped_defs = true

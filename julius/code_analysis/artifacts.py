@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
-from julius.inventory.model import Account, CollectionHealth
+from julius.collection.models import Account, CollectionHealth
 
 
 @dataclass(frozen=True)
