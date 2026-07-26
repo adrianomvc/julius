@@ -5,8 +5,9 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from julius.config import Config
-from julius.opportunities import impact, prioritizer
-from julius.opportunities.base import Opportunity
+from julius.findings.opportunity import Opportunity
+from julius.scoring import impact
+from julius.scoring import priority as prioritizer
 
 if TYPE_CHECKING:
     from julius.state.history import HistoryStore

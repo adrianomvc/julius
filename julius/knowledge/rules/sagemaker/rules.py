@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from julius.collection.models import Account, SageMakerApp, SageMakerEndpoint
 from julius.config import Config, is_gpu_instance
-from julius.knowledge.rules._build import build
+from julius.findings.build import build
+from julius.findings.opportunity import Opportunity
 from julius.knowledge.rules.sagemaker import estimation as sm_est
-from julius.opportunities.base import Opportunity
 
 _DOC_IDLE = "https://docs.aws.amazon.com/sagemaker/latest/dg/studio-jl-admin-idle.html"
 _DOC_ENDPOINT = "https://docs.aws.amazon.com/sagemaker/latest/dg/realtime-endpoints.html"

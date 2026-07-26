@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from julius.collection.models import InteractiveSession
 from julius.config import Config
-from julius.opportunities.base import Estimation
+from julius.findings.opportunity import Estimation
 
 
 def idle_saving(session: InteractiveSession, config: Config) -> Estimation:

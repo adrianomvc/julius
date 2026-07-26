@@ -6,7 +6,7 @@ import math
 
 from julius.collection.models import GlueJob
 from julius.config import Config
-from julius.opportunities.base import Estimation
+from julius.findings.opportunity import Estimation
 
 
 def _rate(job: GlueJob, pricing, execution_class: str | None = None) -> float:

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from julius.collection.models import GlueJob, Table
 from julius.config import Config
-from julius.opportunities.base import Estimation
+from julius.findings.opportunity import Estimation
 
 
 def unused_output_saving(table: Table, writer: GlueJob, config: Config) -> Estimation:

@@ -9,10 +9,10 @@ import pytest
 
 from julius.collection.normalizers import load_account
 from julius.config import DEFAULT_CONFIG
-from julius.estimation.calibration import apply_calibrations
-from julius.opportunities.base import EstimatedGain, Estimation, Opportunity
-from julius.opportunities.lifecycle import can_transition
+from julius.findings.lifecycle import can_transition
+from julius.findings.opportunity import EstimatedGain, Estimation, Opportunity
 from julius.pipeline import analyze_account
+from julius.scoring.calibration import apply_calibrations
 from julius.state import BacklogStore, HistoryStore, validate_benefit
 
 SAMPLE = Path(__file__).resolve().parents[1] / "data" / "sample" / "consumer-avi.json"

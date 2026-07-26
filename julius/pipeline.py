@@ -16,23 +16,23 @@ from julius.code_analysis import (
 from julius.collection.models import Account, CollectionHealth, PreviousResult
 from julius.collection.normalizers import load_account
 from julius.config import DEFAULT_CONFIG, Config
-from julius.estimation.calibration import apply_calibrations
-from julius.estimation.process_cost import (
-    apply_conservative_caps,
-    build_process_costs,
-)
+from julius.findings.grouping import group_by_asset
+from julius.findings.lifecycle import transition
+from julius.findings.opportunity import Opportunity
 from julius.governance import compute_candidates
 from julius.graph import ProcessGraph, build_process_graph, enrich_opportunities
 from julius.knowledge.rules import run_all
 from julius.knowledge.rules.glue.code import rules as glue_code
 from julius.metrics import ProductKPIs, compute_kpis
-from julius.opportunities.base import Opportunity
-from julius.opportunities.grouping import group_by_asset
-from julius.opportunities.lifecycle import transition
-from julius.opportunities.prioritizer import tiebreak_key
 from julius.report.formatters import money
 from julius.report.view_models import ReportViewModel
 from julius.report.view_models import build as build_vm
+from julius.scoring.calibration import apply_calibrations
+from julius.scoring.priority import tiebreak_key
+from julius.scoring.process_cost import (
+    apply_conservative_caps,
+    build_process_costs,
+)
 from julius.state import (
     BacklogStore,
     BenefitSummary,

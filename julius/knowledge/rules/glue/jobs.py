@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from julius.collection.models import Account, GlueJob
 from julius.config import UNATTRIBUTED_GLUE_BUCKETS, Config
-from julius.knowledge.rules._build import build
+from julius.findings.build import build
+from julius.findings.opportunity import Estimation, Opportunity
 from julius.knowledge.rules.glue import estimation as glue_est
-from julius.opportunities.base import Estimation, Opportunity
 
 _DOC_AUTOSCALING = "https://docs.aws.amazon.com/glue/latest/dg/auto-scaling.html"
 _DOC_WORKERS = "https://docs.aws.amazon.com/glue/latest/dg/monitor-spark-ui.html"

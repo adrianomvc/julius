@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from julius.opportunities.base import Opportunity
+from julius.findings.opportunity import Opportunity
 
 _FINANCIAL_TARGET = 0.80
 

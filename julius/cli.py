@@ -38,6 +38,7 @@ from julius.collection.targets import (
     write_verified_accounts,
 )
 from julius.config import ANALYSIS_WINDOW_DAYS, DEFAULT_CONFIG
+from julius.findings.lifecycle import can_transition
 from julius.knowledge.pricing import (
     DEFAULT_REGION,
     Pricing,
@@ -54,7 +55,6 @@ from julius.notification import (
     load_settings,
 )
 from julius.notification.transports import DryRunTransport, SmtpTransport
-from julius.opportunities.lifecycle import can_transition
 from julius.pipeline import analyze
 from julius.portfolio import analyze_portfolio, discover_inputs
 from julius.report import renderer

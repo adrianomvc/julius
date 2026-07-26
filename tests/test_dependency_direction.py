@@ -5,14 +5,12 @@ As seis inversões que existiam antes da reestruturação — coleta importando
 cada uma parecendo razoável no momento. Sem um teste, a estrutura nova junta
 seis novas em dois anos.
 
-Duas regras, com forças diferentes e por um motivo:
+A ordem das camadas, de baixo para cima:
 
-- **`collection` não importa nada acima dela.** É a camada que a fase 2 criou e
-  a única cuja direção já está limpa. Regra dura.
-- **O resto é catraca.** As camadas superiores ainda têm acoplamentos cruzados
-  reais, listados abaixo. Enquanto as fases 3 e 4 não separam `knowledge/`,
-  `findings/` e `scoring/`, o que dá para garantir é que nenhum acoplamento
-  *novo* entre em silêncio.
+    collection → findings → scoring → knowledge → grafo/estado → relatório
+
+Cada uma só enxerga o que está abaixo. As exceções que restam estão nomeadas
+em `KNOWN_COUPLING`, com o motivo de cada uma — são dívida, não permissão.
 """
 
 from __future__ import annotations
@@ -22,25 +20,50 @@ import pathlib
 
 ROOT = pathlib.Path(__file__).resolve().parents[1] / "julius"
 
-# `config` virou ponto de composição na fase 3: importa de baixo e ninguém de
-# baixo importa dele. Os módulos de topo compõem tudo por natureza.
+# `config` é ponto de composição: importa de baixo e ninguém de baixo importa
+# dele. Os módulos de topo compõem tudo por natureza.
 NEUTRAL = {"config", "pipeline", "portfolio", "cli"}
 
-# Acoplamentos cruzados que existem hoje entre as camadas de cima. Cada um é uma
-# dívida nomeada, não uma permissão: a fase 4 quebra `Opportunity` em
-# `findings/` e `scoring/`, e é ela que deve esvaziar esta lista.
+# O que cada camada pode importar.
+ALLOWED: dict[str, set[str]] = {
+    # Base: fala com a AWS e preenche o próprio modelo.
+    "collection": set(),
+    # O achado e seu ciclo de vida, sobre o inventário coletado.
+    "findings": {"collection"},
+    # Pontuação: transforma achado em prioridade.
+    "scoring": {"collection", "findings"},
+    # Conhecimento de domínio: lê inventário, devolve achados.
+    "knowledge": {"collection", "findings", "scoring"},
+    "graph": {"collection", "findings", "scoring", "governance"},
+    "governance": {"collection"},
+    "audit": {"collection"},
+    "metrics": {"collection", "findings"},
+    "state": {"collection", "findings", "scoring", "metrics"},
+    "report": {
+        "collection", "findings", "scoring", "knowledge", "graph",
+        "governance", "state", "metrics", "code_analysis",
+    },
+    "notification": {"collection", "findings", "report"},
+    "agent": {
+        "collection", "findings", "scoring", "knowledge", "graph", "state",
+        "report", "code_analysis",
+    },
+    "code_analysis": {"collection", "knowledge"},
+}
+
+# Dívida nomeada. Cada entrada é uma seta que aponta para cima e o motivo de
+# ainda existir — não é permissão, é lembrete com endereço.
 KNOWN_COUPLING = {
-    # O grafo enriquece oportunidades com contexto de processo.
-    ("graph", "opportunities"),
+    # `findings.build` monta o ganho chamando a pontuação. A assinatura de
+    # `build` é o item [SOLID/I] da fase 4: quando a regra devolver só uma
+    # `Estimation` e a pontuação a transformar em ganho, esta seta some.
+    ("findings", "scoring"),
     # A calibração lê o histórico persistido para ajustar estimativas.
-    ("estimation", "state"),
-    # A validação de benefício calcula KPIs para comparar previsto × realizado.
-    ("state", "metrics"),
+    ("scoring", "state"),
+    # O custo por processo precisa do grafo para saber quais raízes existem.
+    ("scoring", "graph"),
     # O relatório embute a análise contextual produzida pelo agente.
     ("report", "agent"),
-    # `code_analysis` sobrou como fachada de topo depois que o scanner foi para
-    # `knowledge/rules/glue/code/`. Some quando o CLI passar a importar direto.
-    ("code_analysis", "knowledge"),
 }
 
 
@@ -72,6 +95,16 @@ def _edges() -> set[tuple[str, str]]:
     return edges
 
 
+def _violations() -> list[str]:
+    problems = []
+    for package, imported in sorted(_edges()):
+        if (package, imported) in KNOWN_COUPLING:
+            continue
+        if imported not in ALLOWED.get(package, set()):
+            problems.append(f"julius.{package} -> julius.{imported}")
+    return problems
+
+
 def _reaching_up_from(package: str) -> list[str]:
     """Arquivos de `package` que importam qualquer outra camada."""
     offenders = []
@@ -84,18 +117,17 @@ def _reaching_up_from(package: str) -> list[str]:
     return offenders
 
 
+def test_layers_only_import_downward():
+    assert _violations() == []
+
+
 def test_collection_depends_on_nothing_above_it():
-    """A camada base não conhece estimativa, detecção, relatório nem agente."""
+    """A camada base não conhece regra, pontuação, relatório nem agente."""
     assert _reaching_up_from("collection") == []
 
 
 def test_collection_does_not_even_import_the_composition_root():
-    """Nem `config`: a coleta recebe configuração, não a busca.
-
-    A taxonomia de cobrança Glue é conhecimento de domínio de que a coleta
-    precisa. Ela chega pelo objeto de configuração, montado acima das duas
-    camadas — importá-la aqui reintroduziria a seta para cima com outro nome.
-    """
+    """Nem `config`: a coleta recebe configuração, não a busca."""
     importers = [
         path.relative_to(ROOT.parent).as_posix()
         for path in sorted((ROOT / "collection").rglob("*.py"))
@@ -104,109 +136,39 @@ def test_collection_does_not_even_import_the_composition_root():
     assert importers == []
 
 
-def test_knowledge_reads_the_inventory_and_produces_findings():
-    """Conhecimento lê o inventário e devolve achados. Nada além disso.
-
-    `opportunities` é onde a entidade de achado mora hoje; a fase 4 a divide em
-    `findings/` e `scoring/`, e esta permissão acompanha o rename. O que a regra
-    proíbe é o que importa: conhecimento não chama coletor, não persiste e não
-    formata relatório.
-    """
-    # `estimation` guarda `build_gain`, que a fase 4 leva para `scoring/gain.py`.
-    # Quando isso acontecer a regra devolve só uma `Estimation` e quem a
-    # transforma em ganho é a camada de cima — esta permissão sai daqui.
-    allowed = {"collection", "opportunities", "estimation"}
+def test_findings_do_not_depend_on_the_rules_that_produce_them():
+    """A entidade de achado não conhece regra nem coletor de serviço."""
+    forbidden = {"knowledge", "report", "notification", "agent", "state"}
     offenders = [
         f"{path.relative_to(ROOT.parent).as_posix()} -> julius.{imported}"
-        for path in sorted((ROOT / "knowledge").rglob("*.py"))
+        for path in sorted((ROOT / "findings").rglob("*.py"))
         for imported in sorted(_imported_packages(path))
-        if imported not in allowed | {"knowledge"} | NEUTRAL
+        if imported in forbidden
     ]
     assert offenders == []
 
 
-def test_no_new_cross_layer_coupling():
-    """Catraca: acoplamento novo entre camadas superiores falha aqui."""
-    layers = {package for package, _ in _edges()} | {
-        imported for _, imported in _edges()
-    }
-    downward = {
-        ("knowledge", "collection"),
-        ("knowledge", "opportunities"),
-        ("knowledge", "estimation"),
-        ("graph", "collection"),
-        ("governance", "collection"),
-        ("estimation", "collection"),
-        ("estimation", "opportunities"),
-        ("estimation", "graph"),
-        ("opportunities", "collection"),
-        ("opportunities", "estimation"),
-        ("code_analysis", "collection"),
-        ("state", "collection"),
-        ("state", "opportunities"),
-        ("metrics", "collection"),
-        ("metrics", "opportunities"),
-        ("audit", "collection"),
-        ("report", "collection"),
-        ("report", "opportunities"),
-        ("report", "estimation"),
-        ("report", "governance"),
-        ("report", "graph"),
-        ("report", "state"),
-        ("notification", "collection"),
-        ("notification", "opportunities"),
-        ("notification", "report"),
-        ("agent", "collection"),
-        ("agent", "opportunities"),
-        ("agent", "report"),
-        ("agent", "graph"),
-        ("agent", "state"),
-        ("agent", "code_analysis"),
-        ("agent", "estimation"),
-        ("graph", "governance"),
-        ("report", "code_analysis"),
-        ("report", "metrics"),
-    }
-    assert layers, "nenhuma camada encontrada — o varredor quebrou"
-    unexpected = sorted(_edges() - downward - KNOWN_COUPLING)
-    assert unexpected == []
+def test_every_declared_layer_exists():
+    """Regra apontando para pacote inexistente para de valer em silêncio."""
+    missing = [name for name in ALLOWED if not (ROOT / name).is_dir()]
+    assert missing == []
 
 
-def test_the_rule_actually_fails_when_a_layer_reaches_upward(tmp_path):
+def test_the_rule_actually_fails_when_a_layer_reaches_upward():
     """Um teste de arquitetura que nunca falhou não prova nada."""
     offender = ROOT / "collection" / "_direction_probe.py"
     offender.write_text(
         "from julius.report import formatters  # noqa: F401\n", encoding="utf-8"
     )
     try:
-        assert _reaching_up_from("collection"), (
-            "a regra deixou de detectar uma seta invertida"
-        )
+        assert _violations(), "a regra deixou de detectar uma seta invertida"
     finally:
         offender.unlink()
 
-    assert _reaching_up_from("collection") == []
+    assert _violations() == []
 
 
 def test_known_coupling_is_still_real():
     """Dívida que já foi paga sai da lista em vez de virar folclore."""
     stale = sorted(KNOWN_COUPLING - _edges())
     assert stale == []
-
-
-def test_the_rule_registry_is_the_only_way_rules_run():
-    """Regra nova é uma entrada de `REGISTRY`, não uma linha em `run_all`."""
-    import inspect
-
-    from julius.knowledge import rules
-
-    source = inspect.getsource(rules.run_all)
-    # `run_all` percorre o registro; não enumera famílias.
-    assert "REGISTRY" in source
-    assert "detect(" in source
-    assert source.count("detect(") == 1
-
-    services = {family.service for family in rules.REGISTRY}
-    assert {"glue", "athena", "sagemaker", "stepfunctions"} <= services
-    # Toda família diz de que parte do inventário depende.
-    assert all(family.requires for family in rules.REGISTRY)

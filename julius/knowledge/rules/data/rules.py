@@ -5,8 +5,8 @@ from __future__ import annotations
 from julius.collection.models import Account, Table
 from julius.config import Config
 from julius.knowledge.rules.data import estimation as data_est
-from julius.opportunities.base import Opportunity
-from julius.knowledge.rules._build import build
+from julius.findings.opportunity import Opportunity
+from julius.findings.build import build
 
 _DOC = "https://docs.aws.amazon.com/glue/latest/dg/tables-described.html"
 

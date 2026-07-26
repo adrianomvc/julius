@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from julius.collection.models import Account, GlueCrawler
 from julius.config import Config
-from julius.knowledge.rules._build import build
-from julius.opportunities.base import Estimation, Opportunity
+from julius.findings.build import build
+from julius.findings.opportunity import Estimation, Opportunity
 
 _DOC = "https://docs.aws.amazon.com/glue/latest/dg/aws-glue-api-crawler-crawling.html"
 _DOC_INCREMENTAL = "https://docs.aws.amazon.com/glue/latest/dg/incremental-crawls.html"

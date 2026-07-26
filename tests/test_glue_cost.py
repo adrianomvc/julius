@@ -25,10 +25,10 @@ from julius.config import (
     DEFAULT_CONFIG,
     GLUE_USAGE_TYPE_MARKERS,
 )
-from julius.estimation.process_cost import build_process_costs
 from julius.knowledge.rules.glue import estimation as glue_est
 from julius.pipeline import analyze_account
 from julius.report import renderer
+from julius.scoring.process_cost import build_process_costs
 
 TODAY = date(2026, 7, 25)
 WINDOW = AnalysisWindow.trailing(

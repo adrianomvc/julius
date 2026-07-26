@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from julius.collection.models import Account, AthenaQuery
 from julius.config import Config
-from julius.knowledge.rules._build import build
+from julius.findings.build import build
+from julius.findings.opportunity import Opportunity
 from julius.knowledge.rules.athena import estimation as athena_est
-from julius.opportunities.base import Opportunity
 
 _DOC_PARTITION = "https://docs.aws.amazon.com/athena/latest/ug/partitions.html"
 _DOC_REUSE = "https://docs.aws.amazon.com/athena/latest/ug/reusing-query-results.html"

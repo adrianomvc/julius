@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from julius.collection.models import StateMachine
 from julius.config import Config
-from julius.opportunities.base import Estimation
+from julius.findings.opportunity import Estimation
 
 
 def standard_to_express_saving(sm: StateMachine, config: Config) -> Estimation:

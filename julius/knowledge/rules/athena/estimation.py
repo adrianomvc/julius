@@ -8,7 +8,7 @@ from julius.config import (
     ATHENA_RECOVERY_VERSION,
     Config,
 )
-from julius.opportunities.base import Estimation
+from julius.findings.opportunity import Estimation
 
 _TB = 1024**4
 

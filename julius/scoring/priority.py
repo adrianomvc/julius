@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from julius.opportunities.base import Opportunity
+from julius.findings.opportunity import Opportunity
 
 # Campos mínimos para uma oportunidade ser acionável (gate do Top 10).
 _REQUIRED = (

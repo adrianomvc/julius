@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 
-from julius.opportunities.base import Opportunity
+from julius.findings.opportunity import Opportunity
 
 
 def _key(o: Opportunity) -> tuple[str, str, str]:

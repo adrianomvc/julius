@@ -17,9 +17,9 @@ from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
 
-from julius.opportunities import prioritizer
-from julius.opportunities.base import Opportunity
-from julius.opportunities.lifecycle import LifecycleEvent, transition
+from julius.findings.lifecycle import LifecycleEvent, transition
+from julius.findings.opportunity import Opportunity
+from julius.scoring import priority as prioritizer
 
 
 @dataclass

@@ -8,8 +8,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from julius.collection.models import Account, PreviousResult, ProducerCandidate
+from julius.findings.opportunity import Opportunity
 from julius.governance import recommend
-from julius.opportunities.base import Opportunity
 from julius.report import formatters as fmt
 from julius.report.pareto import Pareto
 from julius.report.pareto import compute as compute_pareto
@@ -273,7 +273,7 @@ def _opp_vm(o: Opportunity, currency: str) -> OpportunityVM:
 
 
 def _diff_label(difficulty: int) -> str:
-    from julius.opportunities.effort import label
+    from julius.scoring.difficulty import label
 
     return label(difficulty)
 
@@ -670,7 +670,7 @@ def build(
     opportunities: list[Opportunity],
     manifest: list[dict],
 ) -> ReportViewModel:
-    from julius.estimation import months_remaining_in_year
+    from julius.scoring import months_remaining_in_year
 
     pareto: Pareto = compute_pareto(opportunities)
 

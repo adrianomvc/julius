@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import date
 
 from julius.config import IMPL_OFFSET_BY_DIFFICULTY, Config
-from julius.opportunities.base import EstimatedGain
+from julius.findings.opportunity import EstimatedGain
 
 
 def months_remaining_in_year(today: date | None = None) -> int:

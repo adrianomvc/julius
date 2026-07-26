@@ -6,10 +6,10 @@ import hashlib
 from datetime import date
 
 from julius.config import JULIUS_VERSION, KNOWLEDGE_VERSION, Config
-from julius.estimation import build_gain
-from julius.opportunities import confidence as conf_mod
-from julius.opportunities import impact, prioritizer
-from julius.opportunities.base import Estimation, Opportunity
+from julius.findings.opportunity import Estimation, Opportunity
+from julius.scoring import build_gain, impact
+from julius.scoring import confidence as conf_mod
+from julius.scoring import priority as prioritizer
 
 
 def resolve_owner(owner_tag: str | None) -> tuple[str | None, str, float]:

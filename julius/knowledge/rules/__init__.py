@@ -18,6 +18,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from julius.collection.models import Account
+from julius.findings.opportunity import Opportunity
 from julius.knowledge.rules.athena import queries as athena_queries
 from julius.knowledge.rules.data import rules as data_rules
 from julius.knowledge.rules.glue import crawlers as glue_crawlers
@@ -26,7 +27,6 @@ from julius.knowledge.rules.glue import jobs as glue_jobs
 from julius.knowledge.rules.glue import sessions as glue_sessions
 from julius.knowledge.rules.sagemaker import rules as sagemaker_rules
 from julius.knowledge.rules.stepfunctions import rules as stepfunctions_rules
-from julius.opportunities.base import Opportunity
 
 
 @dataclass(frozen=True)
