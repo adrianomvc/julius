@@ -36,17 +36,15 @@ ALLOWED: dict[str, set[str]] = {
     "knowledge": {"collection", "findings", "scoring"},
     "graph": {"collection", "findings", "scoring", "governance"},
     "governance": {"collection"},
-    "audit": {"collection"},
     "state": {"collection", "findings", "scoring", "reporting"},
     "reporting": {
         "collection", "findings", "scoring", "knowledge", "graph",
-        "governance", "state", "code_analysis",
+        "governance", "state",
     },
     "analysis": {
         "collection", "findings", "scoring", "knowledge", "graph", "state",
-        "reporting", "code_analysis",
+        "reporting",
     },
-    "code_analysis": {"collection", "knowledge"},
 }
 
 # Dívida nomeada. Cada entrada é uma seta que aponta para cima e o motivo de
