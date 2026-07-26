@@ -10,7 +10,7 @@ from pathlib import Path
 
 import typer
 
-from julius.agent import (
+from julius.analysis import (
     AgentOutputError,
     load_agent_context,
     prepare_agent_workspace,

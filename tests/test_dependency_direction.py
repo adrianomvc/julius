@@ -41,10 +41,10 @@ ALLOWED: dict[str, set[str]] = {
     "state": {"collection", "findings", "scoring", "metrics"},
     "report": {
         "collection", "findings", "scoring", "knowledge", "graph",
-        "governance", "state", "metrics", "code_analysis",
+        "governance", "state", "metrics", "code_analysis", "analysis",
     },
     "notification": {"collection", "findings", "report"},
-    "agent": {
+    "analysis": {
         "collection", "findings", "scoring", "knowledge", "graph", "state",
         "report", "code_analysis",
     },
@@ -62,8 +62,8 @@ KNOWN_COUPLING = {
     ("scoring", "state"),
     # O custo por processo precisa do grafo para saber quais raízes existem.
     ("scoring", "graph"),
-    # O relatório embute a análise contextual produzida pelo agente.
-    ("report", "agent"),
+    # O relatório embute a análise contextual produzida por um provedor.
+    ("report", "analysis"),
 }
 
 

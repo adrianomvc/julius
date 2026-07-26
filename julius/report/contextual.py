@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import asdict
 
-from julius.agent.schema import ContextualAnalysis
+from julius.analysis.response_validator import ContextualAnalysis
 from julius.report.view_models import OpportunityVM, ReportViewModel
 
 
