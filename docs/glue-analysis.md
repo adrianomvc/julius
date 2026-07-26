@@ -100,10 +100,26 @@ The active rules cover:
 - bookmark transformation context and missing commit review; and
 - Spark ETL scripts with no distributed API usage that may fit Python Shell.
 
-Static evidence alone is not treated as realized saving. Code findings remain
-blocked investigations until runtime metrics and an A/B benchmark confirm the
-same input, equivalent output, duration and DPUSeconds. Blocked findings do not
-reserve the shared financial cap of confirmed actions.
+A static pattern is not a finding. The same `collect()` is correct over a
+hundred rows and wasteful over a hundred million, and neither the AST nor a
+threshold can tell the two apart. So the split is made by measured runtime
+evidence:
+
+- with a correlated runtime metric — memory, disk, spill, shuffle bytes, files
+  and bytes written — the pattern becomes an `Opportunity`. It stays a blocked
+  investigation until an A/B benchmark confirms the same input, equivalent
+  output, duration and DPUSeconds, and it does not reserve the shared financial
+  cap of confirmed actions;
+- without that metric it becomes a `Signal`: the same observation, carrying the
+  artifact hash, the line numbers and the evidence still missing, but with no
+  estimated saving, no backlog entry and no position in the ranking. It is
+  judged by the contextual analysis against the complete script, which either
+  confirms it, rejects it, or names the evidence it needs.
+
+Two patterns are exempt because the code closes the conclusion on its own: a job
+with bookmarks enabled and no observable `job.commit()`, and the
+Spark-to-Python-Shell candidate, whose gates already require a complete script,
+a `glueetl` command, no bookmarks and no incompatible arguments.
 
 The small-files code finding uses measured `filesWritten` and `bytesWritten`
 when available. Static evidence without those metrics remains uncorrelated and

@@ -296,6 +296,9 @@ def _non_financial(
             has_optional_metrics=True,
             owner_tag=q.owner_tag,
         ),
+        # A config é fato — a tabela declara NONE/UNCOMPRESSED, o projection não
+        # está ativo —, mas quanto isso rende depende do padrão de acesso. O
+        # achado permanece; a faixa modelada não entra na soma do portfólio.
         athena_est.modeled_saving(
             q,
             config,
@@ -304,6 +307,7 @@ def _non_financial(
                 "ATHENA-COLUMNAR-COMPRESSION": "columnar_compression",
                 "ATHENA-PARTITION-PROJECTION": "partition_projection",
             }[rule_id],
+            strategic=True,
         ),
         RuleContext(
             account=account.account_id,

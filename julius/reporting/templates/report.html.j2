@@ -106,6 +106,9 @@
         <span class="chip mono" style="color:#0053b3;background:#e6effa;">{{ item.position }} · {{ item.title }}</span>
         {% endfor %}
       </div>
+      {% if r.ai_coverage %}
+      <div style="margin-top:10px;font-size:11.5px;color:#4b5159;">Cobertura: {{ r.ai_coverage.analyzed }} de {{ r.ai_coverage.total }} oportunidades receberam análise contextual{% if r.ai_coverage.analyzed < r.ai_coverage.total %}; as demais permanecem apenas com a análise determinística{% endif %}.</div>
+      {% endif %}
       <div style="margin-top:10px;font-size:11px;color:#7d8795;">A IA adiciona contexto, sequência e documentação; economia, dificuldade, confiança e prioridades permanecem determinísticas.</div>
     </div>
     {% endif %}
@@ -135,6 +138,22 @@
       {% endfor %}
       {% else %}
       <div style="padding:13px 18px;background:#fff8ec;color:#8a5b18;font-size:12px;">Esse arquivo foi produzido sem telemetria por fonte. Os valores podem ser analisados, mas a completude da coleta não pode ser comprovada.</div>
+      {% endif %}
+      {% if r.inventory_integrity %}
+      <div style="padding:13px 18px;border-top:1px solid #edeee8;font-size:12px;line-height:1.5;">
+        <b style="color:#12233f;">Integridade do inventário</b>
+        <div style="margin-top:3px;color:#7d8795;font-size:11px;">Medem a qualidade da coleta e do processo, não economia — por isso ficam fora do portfólio e do ranking.</div>
+        {% for i in r.inventory_integrity %}
+        <div style="margin-top:8px;color:#4b5159;"><span class="mono" style="font-size:10px;color:#8a9082;">{{ i.rule_id }}</span> · <b style="color:#12233f;">{{ i.asset }}</b> — {{ i.finding }}<div style="margin-top:2px;color:#9a5b10;">Próximo: {{ i.action }}</div></div>
+        {% endfor %}
+      </div>
+      {% endif %}
+      {% if r.rule_families_without_evidence %}
+      <div style="padding:13px 18px;border-top:1px solid #edeee8;background:#fff8ec;color:#8a5b18;font-size:12px;line-height:1.5;">
+        <b>Famílias de regra sem evidência:</b>
+        {% for f in r.rule_families_without_evidence %}{{ f.service }}/{{ f.name }}{% if not loop.last %}, {% endif %}{% endfor %}.
+        Nada foi analisado nessas famílias porque o inventário exigido chegou vazio — ausência de achado aqui não significa ausência de problema.
+      </div>
       {% endif %}
     </div>
 
@@ -422,6 +441,48 @@
         </div>
       </div>
     </div>
+
+    {% if r.ai_signal_verdicts or r.ai_uncovered_findings %}
+    <!-- FORA DO CATÁLOGO -->
+    <div class="sec" style="margin-top:44px;"><span class="n mono" style="color:#0053b3;">AI</span><h2>Fora do catálogo</h2></div>
+    <p class="lead">Observações da análise contextual que <b>não</b> são achados determinísticos: não têm economia calculada e não ocupam posição no ranking. Servem para decidir o que investigar e o que vale virar regra.</p>
+
+    {% if r.ai_signal_verdicts %}
+    <div style="margin-top:16px;">
+      <div class="kicker" style="color:#0053b3;">Sinais julgados contra o artefato</div>
+      <div style="margin-top:10px;display:flex;flex-direction:column;gap:8px;">
+        {% for v in r.ai_signal_verdicts %}
+        <div style="border:1px solid #e2e4dc;border-radius:9px;padding:12px 15px;">
+          <div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;align-items:center;">
+            <div class="mono" style="font-size:11px;color:#7c8374;">{{ v.rule_id }} · {{ v.asset_name }}</div>
+            <span class="chip" style="font-size:9.5px;{% if v.verdict == 'confirmed' %}color:#8a3b12;background:#fdeee0;{% else %}color:#4b5159;background:#eef0ea;{% endif %}">{{ 'confirmado' if v.verdict == 'confirmed' else 'evidência pendente' }}</span>
+          </div>
+          <div style="margin-top:6px;font-size:13px;line-height:1.5;color:#3a3f46;">{{ v.rationale }}</div>
+          <div class="mono" style="margin-top:5px;font-size:9.5px;color:#8a9082;">artefato {{ v.evidence_ref.sha256[:16] }}{% if v.evidence_ref.lines %} · linhas {{ v.evidence_ref.lines | join(", ") }}{% endif %}</div>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+
+    {% if r.ai_uncovered_findings %}
+    <div style="margin-top:20px;">
+      <div class="kicker" style="color:#0053b3;">Padrões sem regra correspondente</div>
+      <p class="lead" style="margin-top:6px;">Candidatos a virar regra determinística depois de revisão humana. Nenhum tem valor financeiro atribuído.</p>
+      <div style="margin-top:10px;display:flex;flex-direction:column;gap:8px;">
+        {% for u in r.ai_uncovered_findings %}
+        <div style="border:1px solid #cdd9ea;background:#f4f7fb;border-radius:9px;padding:12px 15px;">
+          <div style="font-size:13.5px;font-weight:600;color:#12233f;">{{ u.title }}</div>
+          <div class="mono" style="margin-top:3px;font-size:11px;color:#7c8374;">{{ u.asset_type }} · {{ u.asset_name }} · regra proposta {{ u.proposed_rule_id }}</div>
+          <div style="margin-top:6px;font-size:13px;line-height:1.5;color:#3a3f46;">{{ u.why_not_covered }}</div>
+          <div style="margin-top:5px;font-size:12px;color:#4b5159;"><b>Base da confiança:</b> {{ u.confidence_basis }}</div>
+          <div class="mono" style="margin-top:5px;font-size:9.5px;color:#8a9082;">artefato {{ u.evidence_ref.sha256[:16] }}{% if u.evidence_ref.lines %} · linhas {{ u.evidence_ref.lines | join(", ") }}{% endif %}</div>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+    {% endif %}
 
     {% if r.producers %}
     <!-- 06 PRODUCER -->

@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, field
 
 from julius.collection.redaction import redact_secrets
+from julius.knowledge.rules import families_without_evidence
 from julius.pipeline import Analysis
 
 
@@ -14,9 +15,14 @@ class AgentContext:
     account: dict
     scan_id: str
     constraints: dict
+    # Quanto do portfólio este pacote representa. Sem isso o recorte de `top`
+    # fica invisível e as oportunidades não enviadas parecem não existir.
+    portfolio: dict
     opportunities: list[dict]
     graph_edges: list[dict] = field(default_factory=list)
     technical_artifacts: list[dict] = field(default_factory=list)
+    # Hipóteses a julgar, não achados a executar.
+    signals: list[dict] = field(default_factory=list)
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -50,7 +56,7 @@ def build_agent_context(
         or (edge.target.kind, edge.target.name) in relevant_assets
     ]
     return AgentContext(
-        schema_version="1.0",
+        schema_version="1.1",
         account={
             "id": analysis.account.account_id,
             "region": analysis.account.region,
@@ -74,6 +80,16 @@ def build_agent_context(
                 }
                 for item in analysis.account.collection_health
             ],
+            # Silêncio explicado: uma família cujo inventário chegou vazio não
+            # produziu nada porque não teve o que ler — não porque está tudo bem.
+            "rule_families_without_evidence": [
+                {
+                    "service": family.service,
+                    "name": family.name,
+                    "requires": list(family.requires),
+                }
+                for family in families_without_evidence(analysis.account)
+            ],
             "official_documentation_domain": "docs.aws.amazon.com",
             "deterministic_fields_are_immutable": [
                 "estimated_gain",
@@ -83,9 +99,22 @@ def build_agent_context(
                 "strategic_priority",
             ],
         },
+        portfolio={
+            "total_opportunities": len(analysis.opportunities),
+            "analyzed": len(opportunities),
+            "selection": f"top_{top}_by_execution_priority",
+        },
         opportunities=opportunities,
         graph_edges=edges,
         technical_artifacts=technical_artifacts or [],
+        signals=[
+            {
+                **signal.to_dict(),
+                "observation": redact_secrets(signal.observation),
+                "question": redact_secrets(signal.question),
+            }
+            for signal in analysis.signals
+        ],
     )
 
 

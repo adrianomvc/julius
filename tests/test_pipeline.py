@@ -148,3 +148,62 @@ def test_html_has_no_unrendered_template(analysis):
     assert "consumer-avi" in html
     assert "Candidatos à Producer" in html
     assert "Resultado das recomendações anteriores" in html
+
+
+def test_config_signals_leave_the_backlog_and_reach_the_analysis_package(analysis):
+    """O que depende de intenção não disputa vaga no ranking.
+
+    Versão abaixo da preferencial e frequência alta são fatos, mas migrar
+    runtime depende de bibliotecas que só o script revela, e rodar 720 vezes
+    pode ser exatamente o certo para a fonte. Viram hipótese, não achado.
+    """
+    reclassified = {
+        "GLUE-VERSION-REVIEW",
+        "GLUE-FREQUENCY-REVIEW",
+        "GLUE-IS-CAPACITY-REVIEW",
+    }
+    backlog_rules = {o.rule_id for o in analysis.opportunities}
+
+    assert not reclassified & backlog_rules
+    for signal in analysis.signals:
+        assert signal.kind in {"code", "config"}
+        assert signal.observation and signal.question
+
+    # O desperdício aritmético continua sendo achado determinístico: abaixo de
+    # 2.0 o faturamento em blocos de 10 min é tabelado, não é julgamento.
+    detected = {
+        o.rule_id for o in run_all(load_account(SAMPLE), DEFAULT_CONFIG, "scan-split")
+    }
+    assert "GLUE-VERSION-OLD" in detected
+    assert not reclassified & detected
+
+
+def test_inventory_integrity_is_reported_outside_the_portfolio(analysis):
+    """Divergência de cron e cobrança não atribuída medem coleta, não economia."""
+    integrity = [
+        o for o in analysis.opportunities if o.category == "inventory_integrity"
+    ]
+    assert integrity, "esperava ao menos um achado de integridade"
+    assert {"GLUE-UNATTRIBUTED-COST"} <= {o.rule_id for o in integrity}
+
+    ranked_ids = {o.id for o in analysis.vm.table}
+    assert not ranked_ids & {o.opportunity_id for o in integrity}
+    assert {row["rule_id"] for row in analysis.vm.inventory_integrity} == {
+        o.rule_id for o in integrity
+    }
+
+
+def test_athena_layout_findings_carry_no_financial_claim(analysis):
+    """Config é fato; quanto ela rende depende do padrão de acesso."""
+    layout = [
+        o
+        for o in analysis.opportunities
+        if o.rule_id
+        in {
+            "ATHENA-PARTITION-PROJECTION",
+            "ATHENA-UNCOMPRESSED-ROW-FORMAT",
+            "ATHENA-COLUMNAR-COMPRESSION",
+        }
+    ]
+    for opportunity in layout:
+        assert opportunity.estimated_gain.is_strategic is True

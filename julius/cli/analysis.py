@@ -9,6 +9,7 @@ import typer
 
 from julius.analysis import (
     AgentOutputError,
+    append_candidates,
     prepare_agent_workspace,
     validate_result_file,
     write_validated_result,
@@ -144,10 +145,18 @@ def agent_validate(
     context: str = typer.Option("data/agent/context.json", "--context"),
     result: str = typer.Option("data/agent/result.json", "--result"),
     output: str = typer.Option("", "--output", "-o"),
+    rule_candidates: str = typer.Option(
+        "data/state/rule-candidates.json",
+        "--rule-candidates",
+        help="Fila de padrões fora do catálogo, acumulada entre scans e contas.",
+    ),
 ) -> None:
     """Valida a análise escrita pelo Devin contra o scan e os guardrails."""
     try:
         analysis = validate_result_file(context, result)
+        registered = (
+            append_candidates(analysis, rule_candidates) if rule_candidates else 0
+        )
     except (
         AgentOutputError,
         FileNotFoundError,
@@ -163,8 +172,15 @@ def agent_validate(
         else Path(result).with_name("validated-result.json")
     )
     write_validated_result(analysis, output_path)
+    confirmed = sum(1 for v in analysis.signal_verdicts if v.verdict == "confirmed")
     typer.echo(
         f"Análise Devin válida: conta {analysis.account} · scan {analysis.scan_id} · "
         f"{len(analysis.recommendations)} recomendações"
     )
+    typer.echo(
+        f"Sinais julgados: {len(analysis.signal_verdicts)} "
+        f"({confirmed} confirmados) · achados fora do catálogo: {registered}"
+    )
+    if registered:
+        typer.echo(f"Candidatos a nova regra: {rule_candidates}")
     typer.echo(f"Resultado validado: {output_path}")

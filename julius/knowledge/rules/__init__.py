@@ -19,6 +19,7 @@ from typing import Any
 
 from julius.collection.models import Account
 from julius.findings.opportunity import Opportunity
+from julius.findings.signal import Signal
 from julius.knowledge.rules.athena import queries as athena_queries
 from julius.knowledge.rules.cross_service import pipelines as cross_service_rules
 from julius.knowledge.rules.data import rules as data_rules
@@ -43,6 +44,10 @@ class RuleFamily:
     # por que a família não produziu nada em vez de o silêncio parecer "tudo ok".
     requires: tuple[str, ...] = ()
     docs: Sequence[str] = field(default_factory=tuple)
+    # O que a família observa mas não consegue concluir. Fica fora de `detect`
+    # de propósito: sinal não é achado, não recebe economia e não entra no
+    # ranking — vai para a análise contextual julgar.
+    signals: Callable[[Account, Any], list[Signal]] | None = None
 
 
 REGISTRY: tuple[RuleFamily, ...] = (
@@ -51,12 +56,14 @@ REGISTRY: tuple[RuleFamily, ...] = (
         name="jobs",
         detect=glue_jobs.detect,
         requires=("glue_jobs",),
+        signals=glue_jobs.signals,
     ),
     RuleFamily(
         service="glue",
         name="sessions",
         detect=glue_sessions.detect,
         requires=("interactive_sessions",),
+        signals=glue_sessions.signals,
     ),
     RuleFamily(
         service="glue",
@@ -118,6 +125,15 @@ def run_all(account: Account, config: Any, scan_id: str) -> list[Opportunity]:
     return found
 
 
+def collect_signals(account: Account, config: Any) -> list[Signal]:
+    """Reúne o que as famílias observaram sem conseguir concluir."""
+    found: list[Signal] = []
+    for family in REGISTRY:
+        if family.signals is not None:
+            found += family.signals(account, config)
+    return found
+
+
 def families_without_evidence(account: Account) -> list[RuleFamily]:
     """Famílias cujo inventário chegou vazio — silêncio explicado, não implícito."""
     return [
@@ -127,4 +143,10 @@ def families_without_evidence(account: Account) -> list[RuleFamily]:
     ]
 
 
-__all__ = ["REGISTRY", "RuleFamily", "families_without_evidence", "run_all"]
+__all__ = [
+    "REGISTRY",
+    "RuleFamily",
+    "collect_signals",
+    "families_without_evidence",
+    "run_all",
+]

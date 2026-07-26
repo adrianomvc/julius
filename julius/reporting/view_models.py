@@ -10,6 +10,7 @@ from dataclasses import dataclass, field
 from julius.collection.models import Account, PreviousResult, ProducerCandidate
 from julius.findings.opportunity import Opportunity
 from julius.governance import recommend
+from julius.knowledge.rules import families_without_evidence
 from julius.reporting import formatters as fmt
 from julius.reporting.pareto import Pareto
 from julius.reporting.pareto import compute as compute_pareto
@@ -327,6 +328,10 @@ class ReportViewModel:
     collection_status_bg: str
     collection_health_summary: str
     collection_health: list[dict]
+    # Famílias de regra cujo inventário chegou vazio: o relatório precisa dizer
+    # que ali não houve o que analisar, senão o silêncio se lê como "tudo ok".
+    rule_families_without_evidence: list[dict]
+    inventory_integrity: list[dict]
 
     focus: list[OpportunityVM]
     table: list[OpportunityVM]
@@ -345,6 +350,9 @@ class ReportViewModel:
     ai_summary: str = ""
     ai_implementation_order: list[dict] = field(default_factory=list)
     ai_recommendations: list[dict] = field(default_factory=list)
+    ai_coverage: dict = field(default_factory=dict)
+    ai_signal_verdicts: list[dict] = field(default_factory=list)
+    ai_uncovered_findings: list[dict] = field(default_factory=list)
     athena_coverage: dict = field(default_factory=dict)
     athena_queries: list[dict] = field(default_factory=list)
     athena_actors: list[dict] = field(default_factory=list)
@@ -675,6 +683,11 @@ def build(
 ) -> ReportViewModel:
     from julius.scoring import months_remaining_in_year
 
+    # Divergência entre cron e execuções, ou cobrança não atribuída, mede a
+    # qualidade do inventário — não é economia e não disputa vaga no portfólio.
+    integrity = [o for o in opportunities if o.category == "inventory_integrity"]
+    opportunities = [o for o in opportunities if o.category != "inventory_integrity"]
+
     pareto: Pareto = compute_pareto(opportunities)
 
     identified = sum(
@@ -773,6 +786,24 @@ def build(
         collection_status_bg=collection_status_bg,
         collection_health_summary=collection_health_summary,
         collection_health=collection_health,
+        rule_families_without_evidence=[
+            {
+                "service": family.service,
+                "name": family.name,
+                "requires": ", ".join(family.requires),
+            }
+            for family in families_without_evidence(account)
+        ],
+        inventory_integrity=[
+            {
+                "rule_id": o.rule_id,
+                "asset": o.asset_name,
+                "finding": o.finding,
+                "action": o.recommended_action,
+                "evidence": list(o.evidence),
+            }
+            for o in integrity
+        ],
         focus=[_opp_vm(o, account_currency) for o in pareto.financial_focus],
         table=[_opp_vm(o, account_currency) for o in table_sorted],
         do_now=[_opp_vm(o, account_currency) for o in do_now],

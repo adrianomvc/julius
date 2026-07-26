@@ -7,8 +7,9 @@ from julius.config import Config
 from julius.findings.build import RuleContext, build
 from julius.findings.evidence import Evidence
 from julius.findings.finding import Finding
-from julius.findings.opportunity import Estimation, Opportunity
+from julius.findings.opportunity import Opportunity
 from julius.findings.recommendation import Recommendation
+from julius.findings.signal import Signal
 from julius.knowledge.rules.glue import sessions_estimation as sess_est
 
 _DOC = "https://docs.aws.amazon.com/glue/latest/dg/interactive-sessions.html"
@@ -22,8 +23,6 @@ def detect(account: Account, config: Config, scan_id: str) -> list[Opportunity]:
         actually_idle = s.idle_hours_per_day > 1.0 and (
             s.activity_evidence or s.idle_hours_per_day > 0
         )
-        if s.dpu > 5 and s.status == "READY":
-            out.append(_capacity_review(account, s, config, scan_id))
         if not (idle_high and actually_idle):
             continue
         est = sess_est.idle_saving(s, config)
@@ -75,49 +74,33 @@ def detect(account: Account, config: Config, scan_id: str) -> list[Opportunity]:
     return out
 
 
-def _capacity_review(account, session, config: Config, scan_id: str) -> Opportunity:
-    return build(
-        Finding(
+def signals(account: Account, config: Config) -> list[Signal]:
+    """Capacidade acima do default não é desperdício comprovado.
+
+    A regra anterior disparava em `dpu > 5 and status == "READY"` — nenhuma
+    medida de uso entrava na conta, só a distância de um default. Quem sabe se
+    a capacidade é excessiva é quem vê o que a sessão executa.
+    """
+    return [
+        Signal(
+            kind="config",
+            rule_id="GLUE-IS-CAPACITY-REVIEW",
             asset_type="glue_session",
             asset_name=session.session_id,
-            rule_id="GLUE-IS-CAPACITY-REVIEW",
-            rule_version="1.0.0",
-            title="Sessão com capacidade acima do default",
-            why=f"Sessão READY configurada com {session.dpu:.1f} DPU.",
-        ),
-        Recommendation(
-            difficulty=2,
-            action="Coletar atividade e revisar MaxCapacity/workers",
-            how_to_apply="Analisar statements, logs e Spark UI antes de alterar a sessão.",
-            how_to_validate="Comparar DPU-h e tempo de resposta em sessão controlada.",
-            risks=["capacidade menor pode degradar desenvolvimento interativo"],
-            docs=[_DOC],
-            blocked=True,
-        ),
-        Evidence(
-            items=[
-                f"DPU={session.dpu:.1f}",
-                f"worker_type={session.worker_type or 'não informado'}",
-                f"number_of_workers={session.number_of_workers or 'não informado'}",
+            observation=(
+                f"Sessão READY com {session.dpu:.1f} DPU "
+                f"(worker_type={session.worker_type or 'não informado'})."
+            ),
+            question=(
+                "O trabalho executado nesta sessão justifica a capacidade "
+                "configurada, ou ela foi dimensionada por hábito?"
+            ),
+            missing_evidence=[
+                "statements executados na sessão",
+                "uso de executores pela Spark UI",
             ],
-            sources=["Glue ListSessions"],
-            observed_runs=max(session.observed_runs, 1),
-            coverage_days=session.coverage_days,
-            has_optional_metrics=False,
-            owner_tag=session.owner_tag,
-        ),
-        Estimation(
-            method="glue_session_capacity_review_v1",
-            baseline_cost=0.0,
-            projected_cost=0.0,
-            estimated_saving=0.0,
-            assumptions=["capacidade não é reduzida sem Spark UI/logs de executores"],
-            pricing_region=config.pricing.region,
-            estimation_version=config.pricing.version,
-        ),
-        RuleContext(
-            account=account.account_id,
-            config=config,
-            scan_id=scan_id,
-        ),
-    )
+            doc_links=[_DOC],
+        )
+        for session in account.interactive_sessions
+        if session.dpu > 5 and session.status == "READY"
+    ]
