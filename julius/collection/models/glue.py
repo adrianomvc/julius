@@ -21,6 +21,8 @@ class GlueJob:
     execution_class: str = "STANDARD"
     job_bookmark: bool = False
     timeout_min: int = 2880
+    max_concurrent_runs: int = 1
+    job_run_queuing_enabled: bool = False
     avg_execution_sec: float = 0.0
     p50_execution_sec: float = 0.0
     p95_execution_sec: float = 0.0
@@ -36,6 +38,10 @@ class GlueJob:
     shuffle_spill_bytes: float | None = None
     shuffle_read_bytes: float | None = None
     shuffle_write_bytes: float | None = None
+    bytes_read_window: float | None = None
+    bytes_written_window: float | None = None
+    files_written_window: float | None = None
+    streaming_records_window: float | None = None
     has_spill_evidence: bool = False
     spark_event_log_objects_scanned: int = 0
     spark_event_log_evidence_complete: bool = False
@@ -44,6 +50,10 @@ class GlueJob:
     dpu_seconds_window: float = 0.0
     estimated_dpu_hours_window: float = 0.0
     runs_in_window: int = 0
+    active_seconds_window: float = 0.0
+    overlap_seconds_window: float = 0.0
+    overlapping_runs_in_window: int = 0
+    retry_runs_in_window: int = 0
     window_end: str = ""
     window_days: int = ANALYSIS_WINDOW_DAYS
     # Custo alocado por rateio da cobrança real do bucket no Cost Explorer.
@@ -123,6 +133,12 @@ class GlueJob:
     @property
     def runs_per_month(self) -> float:
         return round(self.runs_in_window * self.monthly_factor, 1)
+
+    @property
+    def average_output_file_bytes(self) -> float | None:
+        if not self.files_written_window or self.bytes_written_window is None:
+            return None
+        return self.bytes_written_window / self.files_written_window
 
 
 @dataclass

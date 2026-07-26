@@ -50,6 +50,32 @@ realization factor and capped by both its measured baseline and the attributed
 process forecast. Findings that lack memory, disk, spill, incremental-volume,
 or activity evidence remain investigations with no quantified saving.
 
+## Runtime cost analysis
+
+In addition to capacity, failure, timeout, version, FLEX, bookmark, schedule,
+and reconciliation rules, the runtime analysis records:
+
+- active and overlapping time for job runs in the analysis window;
+- runs linked to a previous run as retry evidence;
+- `MaxConcurrentRuns` and job-run queuing;
+- bytes read, bytes written, files written, and streaming records when
+  CloudWatch publishes the corresponding datapoints; and
+- long-running streaming executions that started before the analysis window
+  but remained active inside it.
+
+The following runtime findings are conservative investigations:
+
+- `GLUE-OVERLAPPING-RUNS` identifies concurrent runs of the same batch job,
+  but does not assume that parameterized parallelism is duplicate work;
+- `GLUE-STREAMING-NO-INPUT` identifies a streaming job that consumed capacity
+  while an explicit CloudWatch datapoint reported zero records; and
+- `GLUE-NO-INPUT-WASTE` identifies a batch job that consumed DPU-hours while
+  an explicit throughput datapoint reported zero bytes read.
+
+Missing CloudWatch datapoints remain `None` and never become synthetic zero.
+These findings do not estimate savings until schedule, SLA, input, arguments,
+and output equivalence are confirmed.
+
 ## Glue code cost analysis
 
 When a verified read-only artifact manifest is supplied, Julius validates each
@@ -78,6 +104,10 @@ Static evidence alone is not treated as realized saving. Code findings remain
 blocked investigations until runtime metrics and an A/B benchmark confirm the
 same input, equivalent output, duration and DPUSeconds. Blocked findings do not
 reserve the shared financial cap of confirmed actions.
+
+The small-files code finding uses measured `filesWritten` and `bytesWritten`
+when available. Static evidence without those metrics remains uncorrelated and
+does not receive a modeled saving.
 
 The Spark-to-Python-Shell rule additionally requires a complete script, a
 `glueetl` job, no bookmarks and no incompatible extra-file/JAR arguments. Its
@@ -113,6 +143,11 @@ Glue Job -> catalog table -> consumer
 Jobs without a known orchestrator become their own process root. Interactive
 Sessions and DataBrew jobs remain separate roots unless an explicit
 relationship is collected.
+
+Data Catalog metadata is used only as read-only evidence for tables created in
+the account's shared database, ownership, and lineage. Julius does not produce
+Data Quality, global Data Catalog, partition-index, column-statistics, or table
+optimizer recommendations.
 
 ## Evidence used
 

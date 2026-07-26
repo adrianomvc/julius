@@ -280,7 +280,18 @@ def _code_opportunity(
     config: Config,
     scan_id: str,
 ) -> Opportunity:
-    correlated = _has_runtime_correlation(rule_id, job)
+    correlated = _has_runtime_correlation(rule_id, job, config)
+    runtime_items: list[str] = []
+    if rule_id == "GLUE-CODE-SMALL-FILES" and job.average_output_file_bytes is not None:
+        runtime_items.extend(
+            [
+                f"arquivos escritos={job.files_written_window:.0f}",
+                (
+                    "tamanho médio observado="
+                    f"{job.average_output_file_bytes / 1024**2:.2f} MiB"
+                ),
+            ]
+        )
     estimation = code_pattern_saving(
         job,
         config,
@@ -315,6 +326,7 @@ def _code_opportunity(
                 f"script sha256={artifact.sha256[:16]}",
                 f"linhas={_line_text(lines)}",
                 f"artefato {'truncado' if artifact.truncated else 'completo'}",
+                *runtime_items,
             ],
             sources=["Glue ScriptLocation (S3)", "scanner estático Julius"],
             observed_runs=job.observed_runs,
@@ -329,7 +341,9 @@ def _code_opportunity(
             scan_id=scan_id,
         ),
     )
-    opportunity.missing_evidence = _missing_runtime_evidence(rule_id, job, artifact)
+    opportunity.missing_evidence = _missing_runtime_evidence(
+        rule_id, job, artifact, config
+    )
     opportunity.next_action = spec.validate
     opportunity.evidence_refs.append(
         {
@@ -437,7 +451,7 @@ def _python_shell_candidate(
     return opportunity
 
 
-def _has_runtime_correlation(rule_id: str, job: GlueJob) -> bool:
+def _has_runtime_correlation(rule_id: str, job: GlueJob, config: Config) -> bool:
     if rule_id in {"GLUE-CODE-SHUFFLE", "GLUE-CODE-SINGLE-PARTITION"}:
         return bool(
             job.has_spill_evidence
@@ -447,11 +461,22 @@ def _has_runtime_correlation(rule_id: str, job: GlueJob) -> bool:
     if rule_id in {"GLUE-CODE-DRIVER-MATERIALIZATION", "GLUE-CODE-CACHE-LIFECYCLE"}:
         return job.max_memory_used_pct is not None
     if rule_id == "GLUE-CODE-SMALL-FILES":
-        return job.spark_event_log_evidence_complete
+        average = job.average_output_file_bytes
+        return bool(
+            average is not None
+            and (job.files_written_window or 0)
+            >= config.thresholds.glue_small_files_min_count
+            and average <= config.thresholds.glue_small_file_max_bytes
+        )
     return job.spark_event_log_evidence_complete
 
 
-def _missing_runtime_evidence(rule_id: str, job: GlueJob, artifact: GlueCodeArtifact) -> list[str]:
+def _missing_runtime_evidence(
+    rule_id: str,
+    job: GlueJob,
+    artifact: GlueCodeArtifact,
+    config: Config,
+) -> list[str]:
     missing = ["benchmark A/B com mesmo input e validação funcional"]
     if artifact.truncated:
         missing.append("script completo")
@@ -465,6 +490,10 @@ def _missing_runtime_evidence(rule_id: str, job: GlueJob, artifact: GlueCodeArti
         missing.append("pico de memória do driver/executores")
     if rule_id in {"GLUE-CODE-PUSHDOWN", "GLUE-CODE-FULL-OVERWRITE"}:
         missing.append("bytes e partições lidos/escritos antes e depois")
+    if rule_id == "GLUE-CODE-SMALL-FILES" and not _has_runtime_correlation(
+        rule_id, job, config
+    ):
+        missing.append("quantidade e tamanho dos arquivos escritos")
     return missing
 
 

@@ -153,6 +153,30 @@ da coleta read-only atual:
   ponto de partida plausível, **não validado** — rodar `inspect` antes do
   primeiro `refresh` não é opcional.
 
+## Redshift — escopo da coleta, e por quê
+
+A coleta de Redshift fica no **plano de controle e no CloudWatch**:
+`DescribeClusters`, `ListWorkgroups`, CPU, conexões e estado. Isso sustenta
+regras de capacidade e ociosidade.
+
+Não sustenta regra de query. Histórico de execução, skew de distribuição e
+tabelas nunca lidas vivem em `SVV_*` e `STL_*`, alcançáveis só por conexão de
+banco ou pela Redshift Data API — credencial de banco, permissão nova e um raio
+de acesso diferente do resto da coleta, que hoje só fala com API de controle.
+
+A decisão foi **manter o escopo limitado** até que ampliá-lo seja uma escolha
+explícita. As consequências estão visíveis, não escondidas:
+
+- `RedshiftCluster` não tem campo para o que não é medido. Um campo que sempre
+  vale zero pareceria medido.
+- `queries_in_window` é `None`, nunca `0`.
+- As duas regras (`REDSHIFT-IDLE-CLUSTER`, `REDSHIFT-OVERSIZED`) nascem
+  **bloqueadas**, com `saving_quality = unavailable`: aparecem no relatório,
+  nomeiam a evidência que falta e não reservam economia.
+
+Ampliar o escopo é adicionar um coletor que use a Data API e preencher os campos
+correspondentes — as regras existentes passam a poder afirmar economia.
+
 ## Fontes de dados
 
 Além das já listadas em [glue-analysis.md](glue-analysis.md):

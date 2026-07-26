@@ -38,13 +38,18 @@ def collect_jobs(glue_client, *, window: AnalysisWindow) -> list[GlueJob]:
 def _build_job(glue_client, job: dict, window: AnalysisWindow) -> GlueJob:
     name = job["Name"]
     args = job.get("DefaultArguments", {}) or {}
-    runs = _job_runs(glue_client, name, window.start)
+    command_type = str((job.get("Command", {}) or {}).get("Name") or "glueetl")
+    runs = _job_runs(
+        glue_client,
+        name,
+        window.start,
+        include_overlapping=command_type == "gluestreaming",
+    )
 
     completed = [r for r in runs if r.get("JobRunState") == "SUCCEEDED"]
     failed = [r for r in runs if r.get("JobRunState") in _FAILED_STATES]
     exec_times = [r.get("ExecutionTime", 0) for r in completed if r.get("ExecutionTime")]
     failed_times = [r.get("ExecutionTime", 0) for r in failed if r.get("ExecutionTime")]
-    command_type = str((job.get("Command", {}) or {}).get("Name") or "glueetl")
     if command_type == "gluestreaming":
         # Job contínuo: o que conta é a sobreposição com a janela, não o início.
         window_runs = [
@@ -54,6 +59,9 @@ def _build_job(glue_client, job: dict, window: AnalysisWindow) -> GlueJob:
         ]
     else:
         window_runs = [r for r in runs if window.contains(_as_utc(r.get("StartedOn")))]
+    active_seconds, overlap_seconds, overlapping_runs = _interval_stats(
+        window_runs, window
+    )
     dpu_seconds = 0.0
     estimated_dpu_hours = 0.0
     worker_type = job.get("WorkerType")
@@ -95,6 +103,13 @@ def _build_job(glue_client, job: dict, window: AnalysisWindow) -> GlueJob:
         job_bookmark=str(args.get("--job-bookmark-option", "")) == "job-bookmark-enable",
         timeout_min=int(job.get("Timeout", 2880) or 2880),
         max_retries=int(job.get("MaxRetries", 0) or 0),
+        max_concurrent_runs=int(
+            ((job.get("ExecutionProperty") or {}).get("MaxConcurrentRuns") or 1)
+        ),
+        job_run_queuing_enabled=bool(
+            job.get("JobRunQueuingEnabled")
+            or any(run.get("JobRunQueuingEnabled") for run in window_runs)
+        ),
         avg_execution_sec=round(mean(exec_times), 1) if exec_times else 0.0,
         p50_execution_sec=round(median(exec_times), 1) if exec_times else 0.0,
         p95_execution_sec=round(_percentile(exec_times, 0.95), 1) if exec_times else 0.0,
@@ -109,6 +124,12 @@ def _build_job(glue_client, job: dict, window: AnalysisWindow) -> GlueJob:
         dpu_seconds_window=round(dpu_seconds, 3),
         estimated_dpu_hours_window=round(estimated_dpu_hours, 4),
         runs_in_window=len(window_runs),
+        active_seconds_window=round(active_seconds, 3),
+        overlap_seconds_window=round(overlap_seconds, 3),
+        overlapping_runs_in_window=overlapping_runs,
+        retry_runs_in_window=sum(
+            1 for run in window_runs if run.get("PreviousRunId")
+        ),
         window_end=window.data_through.isoformat(),
         trigger_names=sorted(
             {
@@ -188,16 +209,75 @@ def _percentile(values: list[float], quantile: float) -> float:
     return ordered[index]
 
 
-def _job_runs(glue_client, name: str, cutoff: datetime) -> list[dict]:
+def _job_runs(
+    glue_client,
+    name: str,
+    cutoff: datetime,
+    *,
+    include_overlapping: bool = False,
+) -> list[dict]:
     runs: list[dict] = []
     paginator = glue_client.get_paginator("get_job_runs")
     for page in paginator.paginate(JobName=name):
         for run in page.get("JobRuns", []):
-            started = run.get("StartedOn")
-            if started and started.replace(tzinfo=started.tzinfo or timezone.utc) < cutoff:
+            started = _as_utc(run.get("StartedOn"))
+            if started and started < cutoff:
+                completed = _as_utc(run.get("CompletedOn"))
+                if include_overlapping and (completed is None or completed >= cutoff):
+                    runs.append(run)
+                    continue
+                if include_overlapping:
+                    continue
                 return runs  # execuções vêm mais recentes primeiro
             runs.append(run)
     return runs
+
+
+def _interval_stats(
+    runs: list[dict],
+    window: AnalysisWindow,
+) -> tuple[float, float, int]:
+    """Tempo ativo, tempo com concorrência e nº de runs que se sobrepõem."""
+    intervals: list[tuple[datetime, datetime, str]] = []
+    for index, run in enumerate(runs):
+        started = _as_utc(run.get("StartedOn"))
+        if started is None:
+            continue
+        completed = _as_utc(run.get("CompletedOn")) or window.end
+        start = max(started, window.start)
+        end = min(completed, window.end)
+        if end <= start:
+            continue
+        intervals.append((start, end, str(run.get("Id") or index)))
+
+    participants: set[str] = set()
+    for index, (start, end, run_id) in enumerate(intervals):
+        for other_start, other_end, other_id in intervals[index + 1 :]:
+            if max(start, other_start) < min(end, other_end):
+                participants.update((run_id, other_id))
+
+    events = sorted(
+        [
+            event
+            for start, end, _run_id in intervals
+            for event in ((start, 1), (end, -1))
+        ],
+        key=lambda item: (item[0], item[1]),
+    )
+    active = 0
+    previous: datetime | None = None
+    active_seconds = 0.0
+    overlap_seconds = 0.0
+    for instant, delta in events:
+        if previous is not None and instant > previous:
+            seconds = (instant - previous).total_seconds()
+            if active > 0:
+                active_seconds += seconds
+            if active > 1:
+                overlap_seconds += seconds
+        active += delta
+        previous = instant
+    return active_seconds, overlap_seconds, len(participants)
 
 
 def collect_tables(glue_client) -> list[Table]:

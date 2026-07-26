@@ -21,6 +21,8 @@ from julius.collection.collectors import (
     cloudwatch,
     cost_explorer,
     datawarm,
+    redshift,
+    sagemaker,
     schedules,
     stepfunctions,
     touches,
@@ -395,6 +397,39 @@ SOURCES: tuple[Source, ...] = (
         count=lambda analysis: len(analysis.queries) if analysis else 0,
         impact="linhagem de leitura e oportunidades Athena ficam incompletas",
         next_action="validar permissões read-only do Athena",
+    ),
+    Source(
+        name="SageMaker Studio",
+        collect=lambda ctx: sagemaker.collect_apps(
+            ctx.client("sagemaker"), ctx.client("cloudwatch"), window=ctx.window
+        ),
+        into="sagemaker_apps",
+        count=len,
+        impact="apps ociosos do Studio não são avaliados",
+        next_action="validar sagemaker:ListApps e métricas do namespace Studio",
+    ),
+    Source(
+        name="SageMaker Endpoints",
+        collect=lambda ctx: sagemaker.collect_endpoints(
+            ctx.client("sagemaker"), ctx.client("cloudwatch"), window=ctx.window
+        ),
+        into="sagemaker_endpoints",
+        count=len,
+        impact="endpoints sem uso não são avaliados",
+        next_action="validar sagemaker:ListEndpoints e DescribeEndpoint",
+    ),
+    Source(
+        name="Amazon Redshift",
+        collect=lambda ctx: redshift.collect_clusters(
+            ctx.client("redshift"),
+            ctx.client("cloudwatch"),
+            ctx.client("redshift-serverless"),
+            window=ctx.window,
+        ),
+        into="redshift_clusters",
+        count=len,
+        impact="capacidade e ociosidade de Redshift não são avaliadas",
+        next_action="validar redshift:DescribeClusters e redshift-serverless:ListWorkgroups",
     ),
     Source(
         name="Step Functions",
