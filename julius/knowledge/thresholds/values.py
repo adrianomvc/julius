@@ -62,6 +62,8 @@ class Thresholds:
     # Step Functions: volume/duração para avaliar Standard → Express.
     sfn_express_min_executions: int = 5000
     sfn_short_duration_sec: int = 300
+    # Retry acima disso deixa de parecer resiliência e passa a merecer pergunta.
+    sfn_retry_attempts_high: int = 3
     # SageMaker: idle shutdown "alto" (min) e horas ociosas/dia relevantes.
     sm_idle_shutdown_high_min: int = 120
     sm_idle_hours_min: float = 1.0

@@ -43,7 +43,11 @@ what is already a measured fact:
 - difficulty, confidence, execution priority and strategic priority;
 - identity and lifecycle: opportunity IDs, fingerprints, status, history and
   the diff against the previous run;
-- ownership and the process graph — who writes, who reads, what depends on what.
+- ownership and the process graph — who writes, who reads, what depends on what;
+- **what was measured rather than assumed** — state transitions counted from the
+  Step Functions execution history, idle hours and invocations from CloudWatch,
+  idle shutdown and autoscaling read from declared configuration. Do not
+  re-estimate any of these; when one is missing, the package says so.
 
 You own four tasks, in this order:
 
@@ -85,6 +89,21 @@ the column projection reflect what the consumer actually uses?
 
 **Table** — Do the partitioning and layout serve the observed read pattern? Do
 the consumers still depend on this format?
+
+**State machine** — Does the ASL tolerate at-least-once semantics, or is there
+a Task with a non-idempotent side effect — a write without a deduplication key,
+a notification, a charge — that an Express re-run would duplicate? Does the wait
+loop exist because the integration requires it, or out of habit where `.sync`
+or a callback would serve? Do Retry and Catch cover transient failure, or hide a
+recurring error that re-pays for work already billed on every attempt?
+
+**SageMaker app** — Does the work being run justify this instance type, or is
+it an idle GPU? Does it need Studio running, or does it fit an on-demand
+training or processing job?
+
+**SageMaker endpoint** — Does the consumption justify real-time inference, or
+would Serverless/Async serve? Who calls this endpoint today, and does that
+consumer still exist?
 
 **Cross-service** — When producing is expensive and reading throws that effort
 away, do you adjust the write or the read? Say who breaks with the choice.
