@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import asdict
 
 from julius.analysis.response_validator import ContextualAnalysis
-from julius.report.view_models import OpportunityVM, ReportViewModel
+from julius.reporting.view_models import OpportunityVM, ReportViewModel
 
 
 def attach_contextual_analysis(

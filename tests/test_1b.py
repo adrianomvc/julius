@@ -5,9 +5,9 @@ from __future__ import annotations
 from datetime import date
 from pathlib import Path
 
-from julius.metrics import compute_kpis
 from julius.pipeline import analyze
 from julius.portfolio import analyze_portfolio, discover_inputs
+from julius.reporting import compute_kpis
 from julius.state import BacklogStore, HistoryStore
 
 SAMPLE_DIR = Path(__file__).resolve().parents[1] / "data" / "sample"

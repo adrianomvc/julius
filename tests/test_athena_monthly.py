@@ -21,8 +21,8 @@ from julius.config import DEFAULT_CONFIG
 from julius.knowledge.rules.athena import estimation as athena_estimation
 from julius.knowledge.rules.athena import queries as athena_detector
 from julius.pipeline import analyze_account
-from julius.report import renderer
-from julius.report.formatters import money
+from julius.reporting import renderer
+from julius.reporting.formatters import money
 from julius.state.history import HistoryStore
 
 MB = 1024**2

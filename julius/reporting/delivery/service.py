@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from julius.notification.models import EmailMessage, SendResult
-from julius.notification.policy import NotificationPolicy
-from julius.notification.send_log import SendLog
-from julius.notification.transports.base import EmailTransport
+from julius.reporting.delivery.models import EmailMessage, SendResult
+from julius.reporting.delivery.policy import NotificationPolicy
+from julius.reporting.delivery.send_log import SendLog
+from julius.reporting.delivery.transports.base import EmailTransport
 
 
 class NotificationService:

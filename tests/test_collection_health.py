@@ -18,7 +18,7 @@ from julius.collection.orchestrator import collect_account
 from julius.collection.window import AnalysisWindow, BillingMonth
 from julius.config import DEFAULT_CONFIG
 from julius.pipeline import analyze
-from julius.report import renderer
+from julius.reporting import renderer
 
 
 class AwsLikeError(Exception):

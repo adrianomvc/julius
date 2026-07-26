@@ -1,16 +1,16 @@
 """Notificação desacoplada: Relatório → Mensagem → Transporte."""
 
-from julius.notification.config import EmailSettings, load_settings
-from julius.notification.models import EmailMessage, SendResult
-from julius.notification.policy import NotificationPolicy, PolicyDecision
-from julius.notification.recipients import (
+from julius.reporting.delivery.config import EmailSettings, load_settings
+from julius.reporting.delivery.models import EmailMessage, SendResult
+from julius.reporting.delivery.policy import NotificationPolicy, PolicyDecision
+from julius.reporting.delivery.recipients import (
     AccountRecipients,
     RecipientRegistry,
     RecipientRegistryError,
     load_recipient_registry,
 )
-from julius.notification.send_log import SendLog, SendRecord
-from julius.notification.service import NotificationService
+from julius.reporting.delivery.send_log import SendLog, SendRecord
+from julius.reporting.delivery.service import NotificationService
 
 __all__ = [
     "EmailMessage",

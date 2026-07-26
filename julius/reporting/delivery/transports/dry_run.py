@@ -6,7 +6,7 @@ import json
 from datetime import datetime
 from pathlib import Path
 
-from julius.notification.models import EmailMessage, SendResult
+from julius.reporting.delivery.models import EmailMessage, SendResult
 
 
 class DryRunTransport:

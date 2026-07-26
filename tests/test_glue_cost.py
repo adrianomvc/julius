@@ -27,7 +27,7 @@ from julius.config import (
 )
 from julius.knowledge.rules.glue import estimation as glue_est
 from julius.pipeline import analyze_account
-from julius.report import renderer
+from julius.reporting import renderer
 from julius.scoring.process_cost import build_process_costs
 
 TODAY = date(2026, 7, 25)

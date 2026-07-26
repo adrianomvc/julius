@@ -7,7 +7,7 @@ from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
-from julius.notification.models import SendResult
+from julius.reporting.delivery.models import SendResult
 
 
 @dataclass(frozen=True)

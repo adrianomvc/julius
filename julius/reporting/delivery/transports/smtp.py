@@ -5,8 +5,8 @@ from __future__ import annotations
 import smtplib
 from collections.abc import Callable
 
-from julius.notification.mime import build_mime
-from julius.notification.models import EmailMessage, SendResult
+from julius.reporting.delivery.mime import build_mime
+from julius.reporting.delivery.models import EmailMessage, SendResult
 
 
 class SmtpTransport:

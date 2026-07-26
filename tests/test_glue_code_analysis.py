@@ -14,7 +14,7 @@ from julius.collection.models import Account, GlueJob
 from julius.config import DATASET_SCHEMA_VERSION, DEFAULT_CONFIG
 from julius.knowledge.rules.glue.code import rules as glue_code
 from julius.pipeline import analyze
-from julius.report import renderer
+from julius.reporting import renderer
 
 SPARK_SCRIPT = """
 import boto3

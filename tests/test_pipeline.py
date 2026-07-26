@@ -11,7 +11,7 @@ from julius.collection.normalizers import load_account
 from julius.config import DEFAULT_CONFIG
 from julius.knowledge.rules import run_all
 from julius.pipeline import analyze
-from julius.report import renderer
+from julius.reporting import renderer
 
 SAMPLE = Path(__file__).resolve().parents[1] / "data" / "sample" / "consumer-avi.json"
 

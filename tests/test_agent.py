@@ -19,8 +19,8 @@ from julius.analysis import (
 from julius.cli import app
 from julius.collection.redaction import redact_secrets
 from julius.pipeline import analyze
-from julius.report import renderer
-from julius.report.contextual import attach_contextual_analysis
+from julius.reporting import renderer
+from julius.reporting.contextual import attach_contextual_analysis
 
 SAMPLE = Path(__file__).resolve().parents[1] / "data" / "sample" / "consumer-avi.json"
 

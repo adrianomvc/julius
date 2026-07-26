@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from email.message import EmailMessage as MimeMessage
 
-from julius.notification.models import EmailMessage
+from julius.reporting.delivery.models import EmailMessage
 
 
 def build_mime(message: EmailMessage) -> MimeMessage:

@@ -10,9 +10,9 @@ from dataclasses import dataclass, field
 from julius.collection.models import Account, PreviousResult, ProducerCandidate
 from julius.findings.opportunity import Opportunity
 from julius.governance import recommend
-from julius.report import formatters as fmt
-from julius.report.pareto import Pareto
-from julius.report.pareto import compute as compute_pareto
+from julius.reporting import formatters as fmt
+from julius.reporting.pareto import Pareto
+from julius.reporting.pareto import compute as compute_pareto
 from julius.scoring import evidence_quality
 
 _HIGH_CONF = 0.80

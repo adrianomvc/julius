@@ -45,8 +45,11 @@ from julius.knowledge.pricing import (
     UnknownPricingRegionError,
 )
 from julius.knowledge.pricing.refresh import refresh_region
-from julius.metrics import compute_kpis
-from julius.notification import (
+from julius.pipeline import analyze
+from julius.portfolio import analyze_portfolio, discover_inputs
+from julius.reporting import compute_kpis, renderer
+from julius.reporting.contextual import attach_contextual_analysis
+from julius.reporting.delivery import (
     NotificationPolicy,
     NotificationService,
     RecipientRegistryError,
@@ -54,11 +57,7 @@ from julius.notification import (
     load_recipient_registry,
     load_settings,
 )
-from julius.notification.transports import DryRunTransport, SmtpTransport
-from julius.pipeline import analyze
-from julius.portfolio import analyze_portfolio, discover_inputs
-from julius.report import renderer
-from julius.report.contextual import attach_contextual_analysis
+from julius.reporting.delivery.transports import DryRunTransport, SmtpTransport
 from julius.state import BacklogStore, HistoryStore, validate_benefit
 
 app = typer.Typer(add_completion=False, help="Julius — oportunidades de otimização AWS (MVP 2).")

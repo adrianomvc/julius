@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Protocol
 
-from julius.notification.models import EmailMessage, SendResult
+from julius.reporting.delivery.models import EmailMessage, SendResult
 
 
 class EmailTransport(Protocol):

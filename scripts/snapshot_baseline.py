@@ -30,7 +30,7 @@ VOLATILE = {"manifest", "generated_at"}
 
 def _payload(sample: Path) -> dict:
     from julius.pipeline import analyze
-    from julius.report import renderer
+    from julius.reporting import renderer
 
     analysis = analyze(sample, today=TODAY, scan_id=SCAN_ID)
     payload = json.loads(renderer.render_json(analysis.vm, analysis.opportunities))

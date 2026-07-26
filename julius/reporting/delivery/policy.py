@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from julius.notification.config import EmailSettings
-from julius.notification.models import EmailMessage
+from julius.reporting.delivery.config import EmailSettings
+from julius.reporting.delivery.models import EmailMessage
 
 
 @dataclass(frozen=True)
