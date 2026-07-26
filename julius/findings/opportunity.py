@@ -95,6 +95,10 @@ class Opportunity:
 
     # Evidência / cobertura.
     evidence_coverage: float = 0.0
+    # Escala comparável derivada do elo mais fraco entre a qualidade do baseline
+    # e a da economia. Vive na entidade, não só no relatório, para que backlog e
+    # histórico consigam ordenar achados por confiança.
+    evidence_quality: str = "modeled_rule"
     missing_evidence: list[str] = field(default_factory=list)
     data_sources: list[str] = field(default_factory=list)
     evidence_refs: list[dict] = field(default_factory=list)

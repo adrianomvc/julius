@@ -13,6 +13,7 @@ from julius.governance import recommend
 from julius.report import formatters as fmt
 from julius.report.pareto import Pareto
 from julius.report.pareto import compute as compute_pareto
+from julius.scoring import evidence_quality
 
 _HIGH_CONF = 0.80
 
@@ -30,6 +31,10 @@ class OpportunityVM:
     baseline_quality_label: str
     saving_quality: str
     saving_quality_label: str
+    # A escala comparável, derivada do elo mais fraco entre baseline e economia.
+    evidence_quality: str
+    evidence_quality_label: str
+    anchored_in_billing: bool
     band_fmt: str
     year_fmt: str
     difficulty: int
@@ -163,16 +168,10 @@ def _opp_vm(o: Opportunity, currency: str) -> OpportunityVM:
     g = o.estimated_gain
     estimation = o.estimation
     saving_quality = estimation.saving_quality if estimation else "unavailable"
-    quality_labels = {
-        "realized": "Realizado",
-        "measured": "Medido",
-        "allocated": "Alocado",
-        "allocated_partial": "Alocado parcial",
-        "modeled": "Modelado",
-        "modeled_rule": "Modelado por regra",
-        "modeled_evidence": "Modelado por evidência",
-        "unavailable": "Indisponível",
-    }
+    baseline_quality = estimation.baseline_quality if estimation else "unavailable"
+    # A escala única resolve o que os três vocabulários paralelos não
+    # respondiam: entre dois achados, qual é o mais confiável.
+    overall = evidence_quality.EvidenceQuality[o.evidence_quality.upper()]
     saving_unavailable = saving_quality == "unavailable"
     trace_parts = []
     for ref in o.evidence_refs:
@@ -204,12 +203,12 @@ def _opp_vm(o: Opportunity, currency: str) -> OpportunityVM:
             if estimation and estimation.baseline_cost > 0
             else "—"
         ),
-        baseline_quality_label=quality_labels.get(
-            estimation.baseline_quality if estimation else "unavailable",
-            estimation.baseline_quality if estimation else "unavailable",
-        ),
+        baseline_quality_label=evidence_quality.from_baseline(baseline_quality).label,
         saving_quality=saving_quality,
-        saving_quality_label=quality_labels.get(saving_quality, saving_quality),
+        saving_quality_label=evidence_quality.from_saving(saving_quality).label,
+        evidence_quality=overall.name.lower(),
+        evidence_quality_label=overall.label,
+        anchored_in_billing=overall.is_anchored_in_billing,
         band_fmt=(
             "—"
             if saving_unavailable

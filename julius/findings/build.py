@@ -19,7 +19,7 @@ from julius.findings.evidence import Evidence
 from julius.findings.finding import Finding
 from julius.findings.opportunity import Estimation, Opportunity
 from julius.findings.recommendation import Recommendation
-from julius.scoring import build_gain, impact
+from julius.scoring import build_gain, evidence_quality, impact
 from julius.scoring import confidence as conf_mod
 from julius.scoring import priority as prioritizer
 
@@ -94,6 +94,9 @@ def build(
         confidence=confidence,
         confidence_label=conf_label,
         evidence_coverage=coverage,
+        evidence_quality=evidence_quality.combined(
+            estimation.baseline_quality, estimation.saving_quality
+        ).name.lower(),
         missing_evidence=_missing(evidence, estimation),
         data_sources=list(evidence.sources),
         owner=owner,
