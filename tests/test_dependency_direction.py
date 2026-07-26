@@ -36,19 +36,15 @@ ALLOWED: dict[str, set[str]] = {
     "knowledge": {"collection", "findings", "scoring"},
     "graph": {"collection", "findings", "scoring", "governance"},
     "governance": {"collection"},
-    "audit": {"collection"},
-    "metrics": {"collection", "findings"},
-    "state": {"collection", "findings", "scoring", "metrics"},
-    "report": {
+    "state": {"collection", "findings", "scoring", "reporting"},
+    "reporting": {
         "collection", "findings", "scoring", "knowledge", "graph",
-        "governance", "state", "metrics", "code_analysis",
+        "governance", "state",
     },
-    "notification": {"collection", "findings", "report"},
-    "agent": {
+    "analysis": {
         "collection", "findings", "scoring", "knowledge", "graph", "state",
-        "report", "code_analysis",
+        "reporting",
     },
-    "code_analysis": {"collection", "knowledge"},
 }
 
 # Dívida nomeada. Cada entrada é uma seta que aponta para cima e o motivo de
@@ -62,8 +58,8 @@ KNOWN_COUPLING = {
     ("scoring", "state"),
     # O custo por processo precisa do grafo para saber quais raízes existem.
     ("scoring", "graph"),
-    # O relatório embute a análise contextual produzida pelo agente.
-    ("report", "agent"),
+    # O relatório embute a análise contextual produzida por um provedor.
+    ("reporting", "analysis"),
 }
 
 
@@ -87,8 +83,10 @@ def _edges() -> set[tuple[str, str]]:
     edges: set[tuple[str, str]] = set()
     for path in sorted(ROOT.rglob("*.py")):
         package = path.relative_to(ROOT).parts[0]
-        if package.endswith(".py"):
-            continue  # módulo de topo, não é camada
+        if package.endswith(".py") or package in NEUTRAL:
+            # Módulo de topo e ponto de composição não são camada: existem
+            # justamente para juntar as de baixo.
+            continue
         for imported in _imported_packages(path):
             if imported != package and imported not in NEUTRAL:
                 edges.add((package, imported))
@@ -138,7 +136,7 @@ def test_collection_does_not_even_import_the_composition_root():
 
 def test_findings_do_not_depend_on_the_rules_that_produce_them():
     """A entidade de achado não conhece regra nem coletor de serviço."""
-    forbidden = {"knowledge", "report", "notification", "agent", "state"}
+    forbidden = {"knowledge", "reporting", "analysis", "state"}
     offenders = [
         f"{path.relative_to(ROOT.parent).as_posix()} -> julius.{imported}"
         for path in sorted((ROOT / "findings").rglob("*.py"))
@@ -158,7 +156,7 @@ def test_the_rule_actually_fails_when_a_layer_reaches_upward():
     """Um teste de arquitetura que nunca falhou não prova nada."""
     offender = ROOT / "collection" / "_direction_probe.py"
     offender.write_text(
-        "from julius.report import formatters  # noqa: F401\n", encoding="utf-8"
+        "from julius.reporting import formatters  # noqa: F401\n", encoding="utf-8"
     )
     try:
         assert _violations(), "a regra deixou de detectar uma seta invertida"

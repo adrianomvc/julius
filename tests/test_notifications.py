@@ -8,7 +8,7 @@ import pytest
 from typer.testing import CliRunner
 
 from julius.cli import app
-from julius.notification import (
+from julius.reporting.delivery import (
     EmailMessage,
     EmailSettings,
     NotificationPolicy,
@@ -19,7 +19,7 @@ from julius.notification import (
     load_recipient_registry,
     load_settings,
 )
-from julius.notification.transports import DryRunTransport, SmtpTransport
+from julius.reporting.delivery.transports import DryRunTransport, SmtpTransport
 
 
 def _settings(**overrides) -> EmailSettings:

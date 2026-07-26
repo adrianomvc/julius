@@ -7,7 +7,7 @@ import json
 
 import pytest
 
-from julius.agent import prepare_agent_workspace
+from julius.analysis import prepare_agent_workspace
 from julius.collection.collectors.glue.scripts import (
     ArtifactBundle,
     IdentityMismatchError,

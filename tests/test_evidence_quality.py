@@ -96,7 +96,7 @@ def test_the_report_carries_the_comparable_scale():
     from datetime import date
 
     from julius.pipeline import analyze
-    from julius.report import renderer
+    from julius.reporting import renderer
 
     analysis = analyze(
         "data/sample/consumer-avi.json", today=date(2026, 7, 25), scan_id="q"

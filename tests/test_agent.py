@@ -8,19 +8,19 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-from julius.agent import (
+from julius.analysis import (
     AgentOutputError,
     build_agent_context,
     load_agent_context,
     prepare_agent_workspace,
-    redact_secrets,
     validate_agent_output,
     validate_result_file,
 )
 from julius.cli import app
+from julius.collection.redaction import redact_secrets
 from julius.pipeline import analyze
-from julius.report import renderer
-from julius.report.contextual import attach_contextual_analysis
+from julius.reporting import renderer
+from julius.reporting.contextual import attach_contextual_analysis
 
 SAMPLE = Path(__file__).resolve().parents[1] / "data" / "sample" / "consumer-avi.json"
 

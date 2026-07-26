@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 
-from julius.code_analysis import GlueCodeArtifact, load_glue_artifacts, scan_glue_script
+from julius.collection.artifacts import GlueCodeArtifact, load_glue_artifacts
 from julius.collection.collectors.glue.scripts import (
     ArtifactBundle,
     TechnicalArtifact,
@@ -13,8 +13,9 @@ from julius.collection.collectors.glue.scripts import (
 from julius.collection.models import Account, GlueJob
 from julius.config import DATASET_SCHEMA_VERSION, DEFAULT_CONFIG
 from julius.knowledge.rules.glue.code import rules as glue_code
+from julius.knowledge.rules.glue.code.scanner import scan_glue_script
 from julius.pipeline import analyze
-from julius.report import renderer
+from julius.reporting import renderer
 
 SPARK_SCRIPT = """
 import boto3

@@ -25,7 +25,10 @@ build-backend = "setuptools.build_meta"
 include = ["julius*"]
 
 [tool.setuptools.package-data]
-"julius.report" = ["templates/*.j2", "assets/*.png"]
+# Se este caminho não existir, o pacote instalado sai sem template e o `report`
+# quebra só em produção — os testes rodam do repositório e não pegam.
+"julius.reporting" = ["templates/*.j2", "assets/*.png"]
+"julius.knowledge.pricing" = ["tables/*.toml", "mapping.toml"]
 
 # A reestruturação move ~14 mil linhas entre pacotes. A suíte pega o que executa;
 # lint e tipos pegam o que existe — import morto, assinatura trocada e atributo

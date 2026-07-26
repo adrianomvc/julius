@@ -7,8 +7,7 @@ from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
 
-from julius.audit import build_manifest, new_scan_id
-from julius.code_analysis import (
+from julius.collection.artifacts import (
     GlueCodeArtifact,
     load_glue_artifacts,
     summarize_glue_artifact_health,
@@ -23,10 +22,10 @@ from julius.governance import compute_candidates
 from julius.graph import ProcessGraph, build_process_graph, enrich_opportunities
 from julius.knowledge.rules import run_all
 from julius.knowledge.rules.glue.code import rules as glue_code
-from julius.metrics import ProductKPIs, compute_kpis
-from julius.report.formatters import money
-from julius.report.view_models import ReportViewModel
-from julius.report.view_models import build as build_vm
+from julius.reporting import ProductKPIs, compute_kpis
+from julius.reporting.formatters import money
+from julius.reporting.view_models import ReportViewModel
+from julius.reporting.view_models import build as build_vm
 from julius.scoring.calibration import apply_calibrations
 from julius.scoring.priority import tiebreak_key
 from julius.scoring.process_cost import (
@@ -40,6 +39,7 @@ from julius.state import (
     HistoryStore,
     LifecycleLeadTimes,
 )
+from julius.state.audit import build_manifest, new_scan_id
 from julius.state.diff import compare
 from julius.state.store import Reconciliation
 
