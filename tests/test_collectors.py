@@ -317,3 +317,115 @@ def test_datawarm_marks_published_tables():
     assert datawarm_collector.mark_publications(account, "datawarm") == 1
     assert account.tables[0].datawarm_published is True
     assert account.tables[0].datawarm_owner == "Squad Plataforma"
+
+
+_POLLING_ASL = (
+    '{"StartAt":"Start","States":{'
+    '"Start":{"Type":"Task","Resource":"arn:aws:states:::glue:startJobRun",'
+    '"Parameters":{"JobName":"transforma"},"Next":"Wait",'
+    '"Retry":[{"ErrorEquals":["States.ALL"],"MaxAttempts":5}]},'
+    '"Wait":{"Type":"Wait","Seconds":30,"Next":"Check"},'
+    '"Check":{"Type":"Task","Resource":"arn:aws:states:::aws-sdk:glue:getJobRun",'
+    '"Next":"Choice"},'
+    '"Choice":{"Type":"Choice","Next":"Wait"}}}'
+)
+
+
+class _PollingStepFunctions:
+    """Uma máquina com loop de espera e histórico amostrável."""
+
+    def __init__(self, executions=2, events_per_execution=None):
+        self.executions = executions
+        self.events_per_execution = events_per_execution
+        self.history_calls = 0
+
+    def get_paginator(self, name):
+        if name == "list_state_machines":
+            return _Pages(
+                [
+                    {
+                        "stateMachines": [
+                            {
+                                "name": "orquestra",
+                                "stateMachineArn": "arn:aws:states:x:1:stateMachine:orquestra",
+                            }
+                        ]
+                    }
+                ]
+            )
+        if name == "list_executions":
+            now = datetime.now(timezone.utc)
+            return _Pages(
+                [
+                    {
+                        "executions": [
+                            {
+                                "executionArn": f"arn:exec:{index}",
+                                "startDate": now,
+                                "stopDate": now,
+                            }
+                            for index in range(self.executions)
+                        ]
+                    }
+                ]
+            )
+        raise AssertionError(name)
+
+    def describe_state_machine(self, **_):
+        return {"type": "STANDARD", "definition": _POLLING_ASL}
+
+    def get_execution_history(self, **_):
+        self.history_calls += 1
+        if self.events_per_execution is None:
+            return {"events": []}
+        return {
+            "events": [
+                {"type": "TaskStateEntered", "stateEnteredEventDetails": {"name": name}}
+                for name in self.events_per_execution
+            ]
+        }
+
+
+def test_stepfunctions_counts_transitions_from_the_execution_history():
+    """Standard é cobrado por transição; sem contá-las não há baseline."""
+    client = _PollingStepFunctions(
+        events_per_execution=[
+            "Start",
+            "Wait", "Check", "Choice",
+            "Wait", "Check", "Choice",
+        ]
+    )
+    machines = stepfunctions_collector.collect_state_machines(
+        client, window=AnalysisWindow.trailing()
+    )
+
+    machine = machines[0]
+    assert machine.avg_state_transitions == 7
+    assert machine.has_polling_loop is True
+    # Seis entradas nos estados do loop, menos a passagem única de cada um.
+    assert machine.poll_extra_transitions == 3
+    assert machine.sampled_executions == 2
+    assert machine.max_retry_attempts == 5
+
+
+def test_stepfunctions_without_history_leaves_transitions_absent_not_zero():
+    """Zero transições afirmaria que a máquina não custa nada."""
+    machines = stepfunctions_collector.collect_state_machines(
+        _PollingStepFunctions(events_per_execution=None),
+        window=AnalysisWindow.trailing(),
+    )
+
+    machine = machines[0]
+    assert machine.avg_state_transitions is None
+    assert machine.poll_extra_transitions is None
+    assert machine.has_polling_loop is True
+
+
+def test_stepfunctions_history_sampling_has_an_explicit_ceiling():
+    """Uma máquina de alto volume não vira varredura do histórico."""
+    client = _PollingStepFunctions(executions=500, events_per_execution=["Start"])
+    stepfunctions_collector.collect_state_machines(
+        client, window=AnalysisWindow.trailing()
+    )
+
+    assert client.history_calls == stepfunctions_collector._MAX_SAMPLED_EXECUTIONS

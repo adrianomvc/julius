@@ -45,14 +45,20 @@ class StateMachine:
     name: str
     type: str = "STANDARD"                 # STANDARD | EXPRESS
     executions_per_month: int = 0
-    avg_state_transitions: int = 0
+    # `None` = histórico não amostrado. Zero seria uma afirmação — a de que a
+    # máquina não transiciona — e ela zera o baseline de um serviço cobrado
+    # justamente por transição.
+    avg_state_transitions: int | None = None
     avg_duration_sec: float = 0.0
+    # Tolerar semântica at-least-once é propriedade da lógica de negócio, não da
+    # config: fica `None` até a análise contextual julgar a ASL.
     idempotent: bool | None = None
     has_polling_loop: bool = False
-    poll_extra_transitions: int = 0        # transições extras por execução por polling
+    poll_extra_transitions: int | None = None  # transições extras por execução
     max_retry_attempts: int = 0
     observed_runs: int = 0
     coverage_days: int = 0
+    sampled_executions: int = 0            # execuções lidas do histórico
     owner_tag: str | None = None
     glue_jobs: list[str] = field(default_factory=list)
     schedule_names: list[str] = field(default_factory=list)
@@ -67,7 +73,9 @@ class SageMakerApp:
     instance_type: str = "ml.t3.medium"
     status: str = "InService"
     idle_hours_per_day: float = 0.0
-    idle_shutdown_min: int = 0             # 0 = desabilitado
+    # `None` = não coletado; `0` = desligado de fato. Confundir os dois fazia a
+    # regra tratar app bem configurado como se não tivesse idle shutdown.
+    idle_shutdown_min: int | None = None
     active_days_per_month: int = 22
     coverage_days: int = 0
     owner_tag: str | None = None

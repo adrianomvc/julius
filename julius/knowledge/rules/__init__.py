@@ -88,12 +88,14 @@ REGISTRY: tuple[RuleFamily, ...] = (
         name="state_machines",
         detect=stepfunctions_rules.detect,
         requires=("state_machines",),
+        signals=stepfunctions_rules.signals,
     ),
     RuleFamily(
         service="sagemaker",
         name="apps_and_endpoints",
         detect=sagemaker_rules.detect,
         requires=("sagemaker_apps", "sagemaker_endpoints"),
+        signals=sagemaker_rules.signals,
     ),
     RuleFamily(
         service="redshift",

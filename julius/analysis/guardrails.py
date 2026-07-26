@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from julius.analysis.context_builder import AgentContext
 
-PROMPT_VERSION = "1.2.0"
+PROMPT_VERSION = "1.3.0"
 
 #: As regras em si, separadas do texto que as apresenta — o validador de
 #: resposta verifica o resultado das mesmas restrições.
@@ -58,6 +58,10 @@ DETERMINISTIC = (
     "Identidade e ciclo de vida: opportunity_id, fingerprint, status, histórico "
     "e diff entre execuções.",
     "Ownership e o grafo do processo — quem escreve, quem lê, o que depende.",
+    "O que foi medido no lugar de suposto: transições por execução contadas no "
+    "histórico do Step Functions, horas ociosas e invocações do CloudWatch, "
+    "idle shutdown e autoscaling lidos da configuração declarada. Não reestime "
+    "nenhum desses números — quando um deles falta, o pacote diz que falta.",
 )
 
 #: O que o provedor precisa procurar. Perguntas, não instruções de formato: o
@@ -89,6 +93,35 @@ SCOPE = (
         (
             "O particionamento e o layout servem ao padrão de leitura observado?",
             "Quem consome ainda depende deste formato?",
+        ),
+    ),
+    (
+        "state_machine",
+        (
+            "A ASL tolera semântica at-least-once, ou há Task com efeito "
+            "colateral não idempotente — escrita sem chave de deduplicação, "
+            "notificação, cobrança — que a reexecução do Express duplicaria?",
+            "O loop de espera existe por limitação real da integração, ou por "
+            "hábito onde .sync ou callback serviria?",
+            "Retry e Catch cobrem falha transitória, ou escondem erro recorrente "
+            "que repaga trabalho já cobrado a cada tentativa?",
+        ),
+    ),
+    (
+        "sagemaker_app",
+        (
+            "O trabalho executado justifica esse tipo de instância, ou é GPU "
+            "parada?",
+            "Isso exige Studio ativo, ou cabe num training/processing job sob "
+            "demanda?",
+        ),
+    ),
+    (
+        "sagemaker_endpoint",
+        (
+            "O consumo justifica inferência em tempo real, ou Serverless/Async "
+            "atende?",
+            "Quem chama este endpoint hoje, e esse consumidor ainda existe?",
         ),
     ),
     (

@@ -9,6 +9,7 @@ from julius.findings.evidence import Evidence
 from julius.findings.finding import Finding
 from julius.findings.opportunity import Opportunity
 from julius.findings.recommendation import Recommendation
+from julius.findings.signal import Signal
 from julius.knowledge.rules.sagemaker import estimation as sm_est
 
 _DOC_IDLE = "https://docs.aws.amazon.com/sagemaker/latest/dg/studio-jl-admin-idle.html"
@@ -20,6 +21,10 @@ def detect(account: Account, config: Config, scan_id: str) -> list[Opportunity]:
     out: list[Opportunity] = []
     th = config.thresholds
     for app in account.sagemaker_apps:
+        # Não coletado (`None`) não é desligado (`0`). Antes os dois eram zero,
+        # e um app com idle shutdown corretamente configurado virava achado.
+        if app.idle_shutdown_min is None:
+            continue
         idle_off = (
             app.idle_shutdown_min == 0 or app.idle_shutdown_min > th.sm_idle_shutdown_high_min
         )
@@ -121,3 +126,42 @@ def _unused_endpoint(
             scan_id=scan_id,
         ),
     )
+
+
+def signals(account: Account, config: Config) -> list[Signal]:
+    """Se a instância serve ao trabalho, quem sabe é quem vê o trabalho.
+
+    Ociosidade o Julius mede. Adequação, não: uma GPU parada catorze horas por
+    dia pode ser desperdício óbvio ou o único jeito de treinar o que aquele
+    time treina. A pergunta que resta depende do que roda no notebook.
+    """
+    out: list[Signal] = []
+    th = config.thresholds
+    for app in account.sagemaker_apps:
+        if app.status != "InService" or app.idle_hours_per_day < th.sm_idle_hours_min:
+            continue
+        gpu = is_gpu_instance(app.instance_type)
+        out.append(
+            Signal(
+                kind="config",
+                rule_id="SM-APP-INSTANCE-FIT",
+                asset_type="sagemaker_app",
+                asset_name=app.name,
+                observation=(
+                    f"{app.app_type} em {app.instance_type}"
+                    + (" (GPU)" if gpu else "")
+                    + f" com ~{app.idle_hours_per_day:.1f}h ociosas/dia medidas."
+                ),
+                question=(
+                    "O trabalho executado neste app justifica esse tipo de "
+                    "instância, ou ele cabe numa menor? E isso exige Studio "
+                    "ativo, ou cabe num training/processing job sob demanda?"
+                ),
+                missing_evidence=[
+                    "notebooks e bibliotecas em uso no app",
+                    "pico de memória e uso de GPU durante a atividade",
+                ],
+                doc_links=[_DOC_IDLE],
+            )
+        )
+    return out

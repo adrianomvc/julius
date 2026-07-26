@@ -405,18 +405,30 @@ SOURCES: tuple[Source, ...] = (
         ),
         into="sagemaker_apps",
         count=len,
-        impact="apps ociosos do Studio não são avaliados",
-        next_action="validar sagemaker:ListApps e métricas do namespace Studio",
+        impact=(
+            "apps ociosos do Studio não são avaliados; sem DescribeApp/Space/Domain "
+            "o idle shutdown fica desconhecido e a regra não dispara"
+        ),
+        next_action=(
+            "validar sagemaker:ListApps, DescribeApp/DescribeSpace/DescribeDomain "
+            "e métricas do namespace Studio"
+        ),
     ),
     Source(
         name="SageMaker Endpoints",
         collect=lambda ctx: sagemaker.collect_endpoints(
-            ctx.client("sagemaker"), ctx.client("cloudwatch"), window=ctx.window
+            ctx.client("sagemaker"),
+            ctx.client("cloudwatch"),
+            ctx.client("application-autoscaling"),
+            window=ctx.window,
         ),
         into="sagemaker_endpoints",
         count=len,
         impact="endpoints sem uso não são avaliados",
-        next_action="validar sagemaker:ListEndpoints e DescribeEndpoint",
+        next_action=(
+            "validar sagemaker:ListEndpoints, DescribeEndpoint e "
+            "application-autoscaling:DescribeScalableTargets"
+        ),
     ),
     Source(
         name="Amazon Redshift",
@@ -438,8 +450,15 @@ SOURCES: tuple[Source, ...] = (
         ),
         into="state_machines",
         count=len,
-        impact="grafo de processos e frequência podem ficar incompletos",
-        next_action="validar states:ListStateMachines e histórico read-only",
+        impact=(
+            "grafo de processos e frequência podem ficar incompletos; sem "
+            "GetExecutionHistory as transições não são contadas e as regras "
+            "Standard→Express e polling não quantificam economia"
+        ),
+        next_action=(
+            "validar states:ListStateMachines, DescribeStateMachine e "
+            "GetExecutionHistory read-only"
+        ),
     ),
     Source(
         name="EventBridge Schedules",

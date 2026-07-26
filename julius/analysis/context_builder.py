@@ -107,15 +107,34 @@ def build_agent_context(
         opportunities=opportunities,
         graph_edges=edges,
         technical_artifacts=technical_artifacts or [],
-        signals=[
-            {
-                **signal.to_dict(),
-                "observation": redact_secrets(signal.observation),
-                "question": redact_secrets(signal.question),
-            }
-            for signal in analysis.signals
-        ],
+        signals=_signals_context(analysis, technical_artifacts or []),
     )
+
+
+def _signals_context(analysis: Analysis, technical_artifacts: list[dict]) -> list[dict]:
+    """Ancora cada sinal no artefato que o responde, quando existe um.
+
+    O sinal de código já nasce com o hash do script, porque a regra estática o
+    tinha em mãos. O sinal de configuração não: quem o emitiu olhou o
+    inventário, não o arquivo. Mas a pergunta que ele faz — a ASL tolera
+    reexecução? — só se responde lendo a definição, então o hash é ligado aqui,
+    onde o bundle de artefatos é conhecido. É esse hash que o validador vai
+    exigir de volta no veredito.
+    """
+    by_asset = {
+        str(item.get("asset_name") or ""): str(item.get("sha256") or "")
+        for item in technical_artifacts
+        if item.get("sha256")
+    }
+    out: list[dict] = []
+    for signal in analysis.signals:
+        payload = signal.to_dict()
+        payload["observation"] = redact_secrets(signal.observation)
+        payload["question"] = redact_secrets(signal.question)
+        if not payload.get("artifact_sha256"):
+            payload["artifact_sha256"] = by_asset.get(signal.asset_name, "")
+        out.append(payload)
+    return out
 
 
 def _opportunity_context(analysis: Analysis, opportunity) -> dict:

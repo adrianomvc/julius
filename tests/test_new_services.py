@@ -10,6 +10,8 @@ from julius.collection.models import (
     AthenaQuery,
     GlueJob,
     RedshiftCluster,
+    SageMakerApp,
+    StateMachine,
     Table,
 )
 from julius.collection.window import AnalysisWindow
@@ -17,6 +19,8 @@ from julius.config import DEFAULT_CONFIG
 from julius.knowledge.rules import REGISTRY
 from julius.knowledge.rules.cross_service import pipelines
 from julius.knowledge.rules.redshift import rules as redshift_rules
+from julius.knowledge.rules.sagemaker import rules as sagemaker_rules
+from julius.knowledge.rules.stepfunctions import rules as stepfunctions_rules
 
 WINDOW = AnalysisWindow.trailing(now=datetime(2026, 7, 26, tzinfo=timezone.utc))
 
@@ -248,3 +252,193 @@ def test_the_new_families_are_registered_and_declare_what_they_need():
         item for item in REGISTRY if item.name == "wasted_production"
     )
     assert set(cross.requires) == {"glue_jobs", "athena_queries"}
+
+
+class _SageMakerWithConfig(_SageMaker):
+    """A mesma conta, agora respondendo o que a configuração declara."""
+
+    def __init__(self, idle_timeout: int | None = 60):
+        self.idle_timeout = idle_timeout
+
+    def describe_app(self, **_):
+        if self.idle_timeout is None:
+            return {}
+        return {
+            "ResourceSpec": {
+                "AppLifecycleManagement": {
+                    "IdleSettings": {"IdleTimeoutInMinutes": self.idle_timeout}
+                }
+            }
+        }
+
+
+class _AutoScaling:
+    def describe_scalable_targets(self, **kwargs):
+        return {
+            "ScalableTargets": [
+                {"ResourceId": kwargs["ResourceIds"][0], "MinCapacity": 2}
+            ]
+        }
+
+
+def test_every_field_a_rule_gates_on_can_be_filled_by_the_collector():
+    """O teste que faltava, e que teria pego quatro regras mortas.
+
+    O dataset de exemplo traz esses campos preenchidos à mão, então a suíte
+    passava enquanto nenhuma conta real produzia achado. Aqui a exigência é a
+    outra: partindo de respostas AWS simuladas, o coletor precisa conseguir
+    preencher todo campo que uma regra usa como porta.
+    """
+    apps = sagemaker.collect_apps(
+        _SageMakerWithConfig(), _SageMakerMetrics(), window=WINDOW
+    )
+    endpoints = sagemaker.collect_endpoints(
+        _SageMakerWithConfig(), _SageMakerMetrics(), _AutoScaling(), window=WINDOW
+    )
+
+    # Gate de SM-APP-IDLE.
+    assert apps[0].idle_shutdown_min == 60
+    # Multiplicador da economia, antes fixo em 22.
+    assert apps[0].active_days_per_month > 0
+    # Evidência de SM-ENDPOINT-UNUSED.
+    assert endpoints[0].auto_scaling is True
+    assert endpoints[0].min_capacity == 2
+
+
+def test_a_configured_idle_shutdown_is_not_an_idle_finding():
+    """Antes, `0` significava tanto "desligado" quanto "não coletado"."""
+    account = Account(
+        account_id="123456789012",
+        sagemaker_apps=[
+            SageMakerApp(
+                name="estudo",
+                status="InService",
+                idle_hours_per_day=14.0,
+                idle_shutdown_min=60,
+                coverage_days=30,
+            )
+        ],
+    )
+
+    rules = {o.rule_id for o in sagemaker_rules.detect(account, DEFAULT_CONFIG, "scan")}
+    assert "SM-APP-IDLE" not in rules
+
+    account.sagemaker_apps[0].idle_shutdown_min = 0
+    rules = {o.rule_id for o in sagemaker_rules.detect(account, DEFAULT_CONFIG, "scan")}
+    assert "SM-APP-IDLE" in rules
+
+
+def test_uncollected_idle_shutdown_is_not_a_finding_either():
+    account = Account(
+        account_id="123456789012",
+        sagemaker_apps=[
+            SageMakerApp(
+                name="estudo",
+                status="InService",
+                idle_hours_per_day=14.0,
+                idle_shutdown_min=None,
+                coverage_days=30,
+            )
+        ],
+    )
+
+    assert sagemaker_rules.detect(account, DEFAULT_CONFIG, "scan") == []
+
+
+def _state_machine(**overrides) -> StateMachine:
+    defaults = dict(
+        name="orquestra",
+        type="STANDARD",
+        executions_per_month=45000,
+        avg_duration_sec=90.0,
+        avg_state_transitions=12,
+        observed_runs=45000,
+        coverage_days=30,
+        sampled_executions=20,
+    )
+    defaults.update(overrides)
+    return StateMachine(**defaults)
+
+
+def test_express_candidate_no_longer_dies_on_an_uncollected_field():
+    """`idempotent` nunca foi preenchido pelo coletor: a regra não disparava."""
+    account = Account(
+        account_id="123456789012", state_machines=[_state_machine(idempotent=None)]
+    )
+
+    found = stepfunctions_rules.detect(account, DEFAULT_CONFIG, "scan")
+    express = next(o for o in found if o.rule_id == "SFN-STANDARD-TO-EXPRESS")
+
+    assert express.estimated_gain.monthly_expected >= 0
+    assert express.estimation is not None
+    assert express.estimation.baseline_cost > 0, "transições medidas dão baseline"
+    # Migrar sem alguém afirmar idempotência continua proibido.
+    assert express.blocked is True
+    assert any("at-least-once" in item for item in express.missing_evidence)
+
+    # E uma afirmação explícita de idempotência libera a mesma oportunidade.
+    account.state_machines[0].idempotent = True
+    found = stepfunctions_rules.detect(account, DEFAULT_CONFIG, "scan")
+    express = next(o for o in found if o.rule_id == "SFN-STANDARD-TO-EXPRESS")
+    assert express.blocked is False
+    assert not any("at-least-once" in item for item in express.missing_evidence)
+    assert not stepfunctions_rules.signals(account, DEFAULT_CONFIG) or not any(
+        s.rule_id == "SFN-EXPRESS-IDEMPOTENCY"
+        for s in stepfunctions_rules.signals(account, DEFAULT_CONFIG)
+    )
+
+
+def test_idempotency_becomes_a_question_for_the_contextual_analysis():
+    account = Account(
+        account_id="123456789012", state_machines=[_state_machine(idempotent=None)]
+    )
+
+    signals = stepfunctions_rules.signals(account, DEFAULT_CONFIG)
+    idempotency = next(s for s in signals if s.rule_id == "SFN-EXPRESS-IDEMPOTENCY")
+
+    assert idempotency.kind == "config"
+    assert idempotency.asset_type == "state_machine"
+    assert "at-least-once" in idempotency.question or "idempot" in idempotency.question
+    assert idempotency.missing_evidence
+
+
+def test_a_polling_loop_without_counted_waits_claims_no_saving():
+    """A ASL prova a estrutura; só o histórico prova o custo."""
+    account = Account(
+        account_id="123456789012",
+        state_machines=[
+            _state_machine(
+                has_polling_loop=True,
+                poll_extra_transitions=None,
+                avg_state_transitions=None,
+            )
+        ],
+    )
+
+    found = stepfunctions_rules.detect(account, DEFAULT_CONFIG, "scan")
+    polling = next(o for o in found if o.rule_id == "SFN-POLLING-LOOP")
+
+    assert polling.blocked is True
+    assert polling.estimated_gain.monthly_expected == 0
+    assert polling.missing_evidence
+
+    account.state_machines[0].poll_extra_transitions = 40
+    account.state_machines[0].avg_state_transitions = 52
+    found = stepfunctions_rules.detect(account, DEFAULT_CONFIG, "scan")
+    polling = next(o for o in found if o.rule_id == "SFN-POLLING-LOOP")
+
+    assert polling.blocked is False
+    assert polling.estimated_gain.monthly_expected > 0
+
+
+def test_high_retry_asks_instead_of_asserting():
+    account = Account(
+        account_id="123456789012",
+        state_machines=[_state_machine(max_retry_attempts=5)],
+    )
+
+    signals = stepfunctions_rules.signals(account, DEFAULT_CONFIG)
+    retry = next(s for s in signals if s.rule_id == "SFN-RETRY-MASKING")
+
+    assert "?" in retry.question
+    assert retry.missing_evidence
