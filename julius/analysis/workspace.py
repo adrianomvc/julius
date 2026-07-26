@@ -31,9 +31,11 @@ REQUIRED_CONTEXT_KEYS = {
     "account",
     "scan_id",
     "constraints",
+    "portfolio",
     "opportunities",
     "graph_edges",
     "technical_artifacts",
+    "signals",
 }
 
 
@@ -109,6 +111,20 @@ def validate_result_file(
         account=str(context.account["id"]),
         scan_id=context.scan_id,
         allowed_opportunity_ids=allowed_ids,
+        expected_signals={
+            (str(item["rule_id"]), str(item["asset_name"])): str(
+                item.get("artifact_sha256") or ""
+            )
+            for item in context.signals
+        },
+        known_artifact_hashes={
+            str(item["sha256"])
+            for item in context.technical_artifacts
+            if item.get("sha256")
+        },
+        # Regra que já existe não é lacuna de catálogo.
+        known_rule_ids={str(item["rule_id"]) for item in context.opportunities}
+        | {str(item["rule_id"]) for item in context.signals},
     )
 
 

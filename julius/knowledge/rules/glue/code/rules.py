@@ -12,6 +12,7 @@ from julius.findings.evidence import Evidence
 from julius.findings.finding import Finding
 from julius.findings.opportunity import Opportunity
 from julius.findings.recommendation import Recommendation
+from julius.findings.signal import Signal
 from julius.knowledge.rules.glue.code.scanner import scan_glue_script
 from julius.knowledge.rules.glue.estimation import (
     code_pattern_saving,
@@ -231,43 +232,90 @@ _RULES: dict[str, RuleSpec] = {
 }
 
 
+#: Padrões em que o próprio código fecha a conclusão, sem depender de volume.
+#: Bookmark ligado sem `job.commit()` não avança o estado incremental — não há
+#: leitura do contexto que torne isso correto.
+_SELF_EVIDENT = frozenset({"GLUE-CODE-BOOKMARK-COMMIT"})
+
+
 def detect(
     account: Account,
     artifacts: list[GlueCodeArtifact],
     config: Config,
     scan_id: str,
-) -> list[Opportunity]:
+) -> tuple[list[Opportunity], list[Signal]]:
+    """Separa o que o código prova do que ele apenas sugere.
+
+    Um padrão estático só vira `Opportunity` quando existe métrica de runtime
+    que o corrobore (ou quando ele se prova sozinho). Os demais saem como
+    `Signal`: o mesmo achado, sem número e sem vaga no ranking, para a análise
+    contextual julgar contra o script inteiro.
+    """
     found: list[Opportunity] = []
+    signals: list[Signal] = []
     for artifact in artifacts:
         job = account.job_by_name(artifact.asset_name)
         if job is None:
             continue
         for code_finding in scan_glue_script(artifact.content):
-            if code_finding.rule_id.startswith("GLUE-CODE-BOOKMARK-") and not job.job_bookmark:
+            rule_id = code_finding.rule_id
+            if rule_id.startswith("GLUE-CODE-BOOKMARK-") and not job.job_bookmark:
                 continue
-            if code_finding.rule_id == "GLUE-SPARK-TO-PYTHON-SHELL":
+            if rule_id == "GLUE-SPARK-TO-PYTHON-SHELL":
+                # Os gates de `_python_shell_candidate` já são duros: glueetl,
+                # script completo, sem bookmark e sem jars incompatíveis.
                 opportunity = _python_shell_candidate(
                     account, job, artifact, code_finding.lines, config, scan_id
                 )
-            else:
-                spec = _RULES.get(code_finding.rule_id)
-                opportunity = (
+                if opportunity is not None:
+                    found.append(opportunity)
+                continue
+            spec = _RULES.get(rule_id)
+            if spec is None:
+                continue
+            if rule_id in _SELF_EVIDENT or _has_runtime_correlation(rule_id, job, config):
+                found.append(
                     _code_opportunity(
                         account,
                         job,
                         artifact,
                         code_finding.lines,
                         spec,
-                        code_finding.rule_id,
+                        rule_id,
                         config,
                         scan_id,
                     )
-                    if spec
-                    else None
                 )
-            if opportunity is not None:
-                found.append(opportunity)
-    return found
+            else:
+                signals.append(
+                    _code_signal(job, artifact, code_finding.lines, spec, rule_id, config)
+                )
+    return found, signals
+
+
+def _code_signal(
+    job: GlueJob,
+    artifact: GlueCodeArtifact,
+    lines: tuple[int, ...],
+    spec: RuleSpec,
+    rule_id: str,
+    config: Config,
+) -> Signal:
+    return Signal(
+        kind="code",
+        rule_id=rule_id,
+        asset_type="glue_job",
+        asset_name=job.name,
+        observation=spec.finding,
+        question=(
+            f"{spec.why} Confirme contra o script completo se o padrão custa "
+            "capacidade neste job, ou descarte explicando por que ele é adequado aqui."
+        ),
+        missing_evidence=_missing_runtime_evidence(rule_id, job, artifact, config),
+        artifact_sha256=artifact.sha256,
+        lines=list(lines),
+        doc_links=[spec.doc],
+    )
 
 
 def _code_opportunity(

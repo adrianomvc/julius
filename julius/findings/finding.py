@@ -22,3 +22,7 @@ class Finding:
     why: str
     # Processo gerador (linhagem) que pode ser pausado — quando aplicável.
     source_process: str | None = None
+    # `inventory_integrity` marca o achado que mede a qualidade da coleta ou do
+    # processo, não uma economia: divergência entre cron e execuções, cobrança
+    # não atribuída. Ele precisa aparecer, mas não disputa vaga no portfólio.
+    category: str = "cost_optimization"

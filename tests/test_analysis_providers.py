@@ -34,7 +34,8 @@ def _result_for(workspace: Workspace) -> dict:
     """Resposta mínima e válida para o contexto que foi escrito.
 
     O validador exige cobertura total: um provedor não pode analisar só as
-    oportunidades fáceis e deixar o resto fora sem dizer.
+    oportunidades fáceis e deixar o resto fora sem dizer. O mesmo vale para os
+    sinais — todos precisam voltar julgados.
     """
     context = json.loads(workspace.context.read_text(encoding="utf-8"))
     ids = [item["opportunity_id"] for item in context["opportunities"]]
@@ -65,6 +66,20 @@ def _result_for(workspace: Workspace) -> dict:
             }
             for opportunity_id in ids
         ],
+        "signal_verdicts": [
+            {
+                "rule_id": signal["rule_id"],
+                "asset_name": signal["asset_name"],
+                "verdict": "rejected",
+                "rationale": "o padrão é adequado ao volume observado",
+                "evidence_ref": {
+                    "sha256": signal["artifact_sha256"],
+                    "lines": signal["lines"],
+                },
+            }
+            for signal in context["signals"]
+        ],
+        "uncovered_findings": [],
     }
 
 

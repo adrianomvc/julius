@@ -21,8 +21,12 @@ from julius.analysis.response_validator import (
     ContextualAnalysis,
     ContextualRecommendation,
     DocumentationReference,
+    EvidenceRef,
+    SignalVerdict,
+    UncoveredFinding,
     validate_agent_output,
 )
+from julius.analysis.rule_candidates import append_candidates
 from julius.analysis.workspace import (
     load_agent_context,
     prepare_agent_workspace,
@@ -42,8 +46,12 @@ __all__ = [
     "ContextualRecommendation",
     "DevinProvider",
     "DocumentationReference",
+    "EvidenceRef",
     "ManualFileProvider",
+    "SignalVerdict",
+    "UncoveredFinding",
     "Workspace",
+    "append_candidates",
     "build_agent_context",
     "build_devin_prompt",
     "load_agent_context",

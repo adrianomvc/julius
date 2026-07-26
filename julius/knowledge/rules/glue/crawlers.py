@@ -97,6 +97,7 @@ def detect(account: Account, config: Config, scan_id: str) -> list[Opportunity]:
                         "schedule_state=NOT_SCHEDULED",
                     ],
                     blocked=True,
+                    category="inventory_integrity",
                 )
             )
     return out
@@ -116,6 +117,7 @@ def _opportunity(
     *,
     blocked: bool = False,
     doc_link: str = _DOC,
+    category: str = "cost_optimization",
 ) -> Opportunity:
     estimation = Estimation(
         method=rule_id.lower().replace("-", "_") + "_v1",
@@ -134,6 +136,7 @@ def _opportunity(
             rule_version="1.0.0",
             title=finding,
             why=finding,
+            category=category,
         ),
         Recommendation(
             difficulty=2,

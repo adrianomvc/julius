@@ -10,5 +10,6 @@ mudar a fórmula desconecta decisões já tomadas de seus achados.
 """
 
 from julius.findings.opportunity import EstimatedGain, Estimation, Opportunity
+from julius.findings.signal import Signal
 
-__all__ = ["EstimatedGain", "Estimation", "Opportunity"]
+__all__ = ["EstimatedGain", "Estimation", "Opportunity", "Signal"]

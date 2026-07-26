@@ -52,14 +52,37 @@ ferramenta especializada. O Julius não chama a API do Devin.
 
 As responsabilidades são separadas:
 
-- **Julius determinístico:** coleta, inventário, grafo, scanner estático de
-  scripts Glue, evidências, economia, dificuldade, confiança, prioridades, IDs
-  e lifecycle;
-- **Devin/IA:** leitura contextual de scripts, SQL e dependências, explicação da
-  causa, sequência de implementação, conflitos, riscos e documentação oficial;
+O critério da divisão é o grau de certeza, não o serviço. **O determinístico é
+para o que fecha**: config declarada mais métrica medida levam a uma ação única,
+e a economia sai do próprio fato. **A IA é para o que tem N variáveis**: um
+`collect()` sobre cem linhas é correto e sobre cem milhões é desperdício, e nem
+o AST nem um limiar distinguem os dois.
+
+- **Julius determinístico:** coleta, inventário, grafo, evidências, economia,
+  dificuldade, confiança, prioridades, IDs e lifecycle. O scanner estático de
+  scripts Glue produz achado quando existe métrica de runtime que o corrobore;
+  sem ela, produz **sinal**;
+- **sinais:** hipóteses rastreáveis (hash do artefato, linhas, evidência que
+  falta) que não entram no backlog, não recebem economia e não disputam posição
+  no ranking;
+- **Devin/IA:** julga cada sinal contra o artefato completo, enriquece as
+  oportunidades determinísticas com causa, sequência, conflitos e documentação
+  oficial, decide o lado do trade-off quando a recomendação admite dois
+  caminhos, e registra em `uncovered_findings` o desperdício que nenhuma regra
+  do catálogo cobre;
 - **validador Julius:** impede que a saída da IA altere campos determinísticos,
   use IDs inexistentes ou referencie documentação fora de
-  `docs.aws.amazon.com`.
+  `docs.aws.amazon.com`; exige veredito para **todo** sinal enviado, conteúdo
+  não-vazio em cada recomendação, e `sha256` do artefato em qualquer conclusão
+  sobre código.
+
+Achado que mede a qualidade da coleta ou do processo — cobrança não atribuída,
+divergência entre cron e execuções — recebe `category="inventory_integrity"` e
+aparece em seção própria do relatório, fora do portfólio e do ranking.
+
+Um padrão fora do catálogo que reaparece entre scans e contas é acumulado em
+`data/state/rule-candidates.json` com `occurrences`. Uma vez só é anedota; o
+mesmo padrão em várias contas é regra determinística esperando ser escrita.
 
 Exemplo de interação no Devin:
 
@@ -102,6 +125,13 @@ julius notify --mode dry-run \
 Esse mesmo fluxo funciona no Devin CLI e na web do Devin, porque a inteligência
 e a conversa pertencem ao Devin; os comandos acima são ferramentas locais do
 workspace. Os artefatos de `data/agent/` não são versionados.
+
+O contexto está em `schema_version` **1.1**, que acrescentou `signals`,
+`portfolio` e `constraints.rule_families_without_evidence`. Um `context.json`
+gravado na versão 1.0 é recusado por `agent validate`: rode `agent prepare` de
+novo em vez de reaproveitar o pacote antigo. `agent validate` também grava a
+fila de candidatos a regra em `data/state/rule-candidates.json`; use
+`--rule-candidates` para mudar o destino.
 
 Para preparar o workspace, use `scripts/bootstrap-devin.sh` no ambiente
 Linux/Devin Cloud ou `scripts/bootstrap-devin.ps1` no PowerShell. Ambos criam a

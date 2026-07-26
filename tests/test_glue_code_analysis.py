@@ -112,7 +112,7 @@ def test_small_files_rule_uses_measured_output_telemetry():
     )
     account = Account(account_id="123456789012", glue_jobs=[job])
 
-    found = glue_code.detect(
+    found, _signals = glue_code.detect(
         account, [_artifact(SPARK_SCRIPT)], DEFAULT_CONFIG, "scan-small-files"
     )
     opportunity = next(
@@ -126,6 +126,78 @@ def test_small_files_rule_uses_measured_output_telemetry():
     )
     assert opportunity.estimation is not None
     assert opportunity.estimation.estimated_saving > 0
+
+
+def test_static_pattern_without_runtime_evidence_becomes_signal_not_opportunity():
+    """Padrão estático sem métrica que o corrobore não entra no backlog.
+
+    `collect()` sobre cem linhas é correto e sobre cem milhões é desperdício; o
+    scanner não distingue os dois. Sem memória, disco ou spill medidos, o achado
+    sai como hipótese para a análise contextual julgar.
+    """
+    job = GlueJob(
+        name="job-code",
+        glue_version="5.1",
+        command_type="glueetl",
+        worker_type="G.1X",
+        number_of_workers=10,
+        runs_in_window=10,
+        observed_runs=10,
+        coverage_days=30,
+        dpu_seconds_window=36000,
+    )
+    account = Account(account_id="123456789012", glue_jobs=[job])
+
+    found, signals = glue_code.detect(
+        account, [_artifact(SPARK_SCRIPT)], DEFAULT_CONFIG, "scan-signals"
+    )
+
+    signal_rules = {item.rule_id for item in signals}
+    opportunity_rules = {item.rule_id for item in found}
+    assert "GLUE-CODE-PUSHDOWN" in signal_rules
+    assert "GLUE-CODE-PYTHON-UDF" in signal_rules
+    assert not signal_rules & opportunity_rules
+    # Bookmark ligado sem commit se prova sozinho: continua achado.
+    job.job_bookmark = True
+    found_with_bookmark, signals_with_bookmark = glue_code.detect(
+        account, [_artifact(SPARK_SCRIPT)], DEFAULT_CONFIG, "scan-bookmark-commit"
+    )
+    assert "GLUE-CODE-BOOKMARK-COMMIT" in {i.rule_id for i in found_with_bookmark}
+    assert "GLUE-CODE-BOOKMARK-COMMIT" not in {
+        i.rule_id for i in signals_with_bookmark
+    }
+    # O sinal carrega o que faria dele um achado, e onde olhar.
+    pushdown = next(i for i in signals if i.rule_id == "GLUE-CODE-PUSHDOWN")
+    assert pushdown.kind == "code"
+    assert pushdown.artifact_sha256
+    assert pushdown.lines
+    assert pushdown.missing_evidence
+    assert pushdown.question
+
+
+def test_measured_runtime_evidence_keeps_the_pattern_as_an_opportunity():
+    """Com a métrica correlata, o mesmo padrão volta a ser achado com número."""
+    job = GlueJob(
+        name="job-code",
+        glue_version="5.1",
+        command_type="glueetl",
+        worker_type="G.1X",
+        number_of_workers=10,
+        runs_in_window=10,
+        observed_runs=10,
+        coverage_days=30,
+        dpu_seconds_window=36000,
+        files_written_window=200,
+        bytes_written_window=2 * 1024**3,
+    )
+    account = Account(account_id="123456789012", glue_jobs=[job])
+
+    found, signals = glue_code.detect(
+        account, [_artifact(SPARK_SCRIPT)], DEFAULT_CONFIG, "scan-correlated"
+    )
+
+    assert "GLUE-CODE-SMALL-FILES" in {item.rule_id for item in found}
+    assert "GLUE-CODE-SMALL-FILES" not in {item.rule_id for item in signals}
 
 
 def test_python_shell_candidate_requires_complete_non_spark_script():
@@ -145,7 +217,7 @@ def test_python_shell_candidate_requires_complete_non_spark_script():
     assert {
         item.rule_id for item in scan_glue_script(script)
     } == {"GLUE-SPARK-TO-PYTHON-SHELL"}
-    found = glue_code.detect(
+    found, _signals = glue_code.detect(
         account, [_artifact(script)], DEFAULT_CONFIG, "scan-code"
     )
     candidate = next(
@@ -158,21 +230,21 @@ def test_python_shell_candidate_requires_complete_non_spark_script():
     assert candidate.evidence_refs[0]["sha256"]
 
     job.job_bookmark = True
+    bookmark_found, _ = glue_code.detect(
+        account, [_artifact(script)], DEFAULT_CONFIG, "scan-bookmark"
+    )
     assert not any(
-        item.rule_id == "GLUE-SPARK-TO-PYTHON-SHELL"
-        for item in glue_code.detect(
-            account, [_artifact(script)], DEFAULT_CONFIG, "scan-bookmark"
-        )
+        item.rule_id == "GLUE-SPARK-TO-PYTHON-SHELL" for item in bookmark_found
     )
     job.job_bookmark = False
+    truncated_found, _ = glue_code.detect(
+        account,
+        [_artifact(script, truncated=True)],
+        DEFAULT_CONFIG,
+        "scan-truncated",
+    )
     assert not any(
-        item.rule_id == "GLUE-SPARK-TO-PYTHON-SHELL"
-        for item in glue_code.detect(
-            account,
-            [_artifact(script, truncated=True)],
-            DEFAULT_CONFIG,
-            "scan-truncated",
-        )
+        item.rule_id == "GLUE-SPARK-TO-PYTHON-SHELL" for item in truncated_found
     )
 
 

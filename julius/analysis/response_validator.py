@@ -5,6 +5,18 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from urllib.parse import urlparse
 
+#: Toda conclusão sobre um artefato precisa dizer qual artefato e onde. Sem
+#: isso não há como distinguir leitura do script de suposição sobre ele.
+_EVIDENCE_REF_SCHEMA: dict = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["sha256", "lines"],
+    "properties": {
+        "sha256": {"type": "string"},
+        "lines": {"type": "array", "items": {"type": "integer"}},
+    },
+}
+
 DEVIN_OUTPUT_SCHEMA: dict = {
     "type": "object",
     "additionalProperties": False,
@@ -14,11 +26,62 @@ DEVIN_OUTPUT_SCHEMA: dict = {
         "executive_summary",
         "implementation_order",
         "recommendations",
+        "signal_verdicts",
+        "uncovered_findings",
     ],
     "properties": {
         "account": {"type": "string"},
         "scan_id": {"type": "string"},
         "executive_summary": {"type": "string"},
+        "signal_verdicts": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": False,
+                "required": [
+                    "rule_id",
+                    "asset_name",
+                    "verdict",
+                    "rationale",
+                    "evidence_ref",
+                ],
+                "properties": {
+                    "rule_id": {"type": "string"},
+                    "asset_name": {"type": "string"},
+                    "verdict": {
+                        "type": "string",
+                        "enum": ["confirmed", "rejected", "needs_evidence"],
+                    },
+                    "rationale": {"type": "string"},
+                    "evidence_ref": _EVIDENCE_REF_SCHEMA,
+                },
+            },
+        },
+        "uncovered_findings": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": False,
+                "required": [
+                    "title",
+                    "asset_type",
+                    "asset_name",
+                    "evidence_ref",
+                    "why_not_covered",
+                    "proposed_rule_id",
+                    "confidence_basis",
+                ],
+                "properties": {
+                    "title": {"type": "string"},
+                    "asset_type": {"type": "string"},
+                    "asset_name": {"type": "string"},
+                    "evidence_ref": _EVIDENCE_REF_SCHEMA,
+                    "why_not_covered": {"type": "string"},
+                    "proposed_rule_id": {"type": "string"},
+                    "confidence_basis": {"type": "string"},
+                },
+            },
+        },
         "implementation_order": {
             "type": "array",
             "items": {"type": "string"},
@@ -131,12 +194,48 @@ class ContextualRecommendation:
 
 
 @dataclass(frozen=True)
+class EvidenceRef:
+    sha256: str
+    lines: list[int] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class SignalVerdict:
+    """O julgamento de uma hipótese estática contra o artefato inteiro."""
+
+    rule_id: str
+    asset_name: str
+    verdict: str
+    rationale: str
+    evidence_ref: EvidenceRef
+
+
+@dataclass(frozen=True)
+class UncoveredFinding:
+    """Desperdício observado que nenhuma regra do catálogo cobre.
+
+    Não recebe economia e não entra no ranking: é candidato a virar regra
+    determinística depois de revisão humana, não achado pronto para execução.
+    """
+
+    title: str
+    asset_type: str
+    asset_name: str
+    evidence_ref: EvidenceRef
+    why_not_covered: str
+    proposed_rule_id: str
+    confidence_basis: str
+
+
+@dataclass(frozen=True)
 class ContextualAnalysis:
     account: str
     scan_id: str
     executive_summary: str
     implementation_order: list[str]
     recommendations: list[ContextualRecommendation]
+    signal_verdicts: list[SignalVerdict] = field(default_factory=list)
+    uncovered_findings: list[UncoveredFinding] = field(default_factory=list)
 
 
 def validate_agent_output(
@@ -145,6 +244,9 @@ def validate_agent_output(
     account: str,
     scan_id: str,
     allowed_opportunity_ids: set[str],
+    expected_signals: dict[tuple[str, str], str] | None = None,
+    known_artifact_hashes: set[str] | None = None,
+    known_rule_ids: set[str] | None = None,
 ) -> ContextualAnalysis:
     """Valida estrutura, vínculo ao scan e links oficiais antes de aceitar a IA."""
     if not isinstance(payload, dict):
@@ -155,6 +257,8 @@ def validate_agent_output(
         "executive_summary",
         "implementation_order",
         "recommendations",
+        "signal_verdicts",
+        "uncovered_findings",
     }
     if set(payload) != expected_top:
         raise AgentOutputError("campos de topo ausentes ou não permitidos")
@@ -194,6 +298,12 @@ def validate_agent_output(
         recommendation = raw.get("recommendation")
         if not isinstance(diagnosis, str) or not isinstance(recommendation, str):
             raise AgentOutputError("diagnóstico e recomendação devem ser texto")
+        # Estrutura válida com texto vazio passaria como "análise completa"; o
+        # contrato é de conteúdo, não só de forma.
+        if not diagnosis.strip() or not recommendation.strip():
+            raise AgentOutputError(
+                f"diagnóstico e recomendação não podem ser vazios: {opportunity_id}"
+            )
         list_values: dict[str, list[str]] = {}
         for key in _LIST_FIELDS:
             value = raw.get(key)
@@ -202,6 +312,13 @@ def validate_agent_output(
             ):
                 raise AgentOutputError(f"{key} deve ser uma lista de textos")
             list_values[key] = value
+        # Ou você diz como fazer, ou diz o que falta para saber. As duas listas
+        # vazias significam que a oportunidade não foi analisada de fato.
+        if not list_values["implementation_steps"] and not list_values["missing_evidence"]:
+            raise AgentOutputError(
+                "recomendação precisa de implementation_steps ou missing_evidence: "
+                f"{opportunity_id}"
+            )
         docs_raw = raw.get("documentation")
         if not isinstance(docs_raw, list):
             raise AgentOutputError("documentation deve ser uma lista")
@@ -222,6 +339,10 @@ def validate_agent_output(
             if parsed_url.scheme != "https" or parsed_url.hostname != "docs.aws.amazon.com":
                 raise AgentOutputError(f"documentação fora do domínio oficial permitido: {url}")
             docs.append(DocumentationReference(str(title), str(url), str(relevance)))
+        if list_values["implementation_steps"] and not docs:
+            raise AgentOutputError(
+                f"passo de implementação exige documentação oficial: {opportunity_id}"
+            )
         parsed.append(
             ContextualRecommendation(
                 opportunity_id=opportunity_id,
@@ -235,10 +356,166 @@ def validate_agent_output(
         raise AgentOutputError(
             "a análise e a ordem devem cobrir todas as oportunidades do contexto"
         )
+    verdicts = _parse_signal_verdicts(
+        payload.get("signal_verdicts"),
+        expected_signals or {},
+        known_artifact_hashes or set(),
+    )
+    uncovered = _parse_uncovered_findings(
+        payload.get("uncovered_findings"),
+        known_artifact_hashes or set(),
+        known_rule_ids or set(),
+    )
     return ContextualAnalysis(
         account=account,
         scan_id=scan_id,
         executive_summary=summary,
         implementation_order=order,
         recommendations=parsed,
+        signal_verdicts=verdicts,
+        uncovered_findings=uncovered,
     )
+
+
+def _parse_evidence_ref(
+    raw: object,
+    known_hashes: set[str],
+    context: str,
+    *,
+    required_sha256: str | None = None,
+) -> EvidenceRef:
+    """Valida a âncora da conclusão no artefato.
+
+    `required_sha256` é o hash que aquele achado precisa citar — o do próprio
+    script de onde o sinal saiu. Quando o sinal não vem de artefato (config
+    declarada do recurso), não há hash a exigir e `""` é a resposta correta:
+    a evidência já está no contexto, não num arquivo.
+    """
+    if not isinstance(raw, dict) or set(raw) != {"sha256", "lines"}:
+        raise AgentOutputError(f"evidence_ref ausente ou malformado em {context}")
+    digest = raw.get("sha256")
+    lines = raw.get("lines")
+    if not isinstance(digest, str):
+        raise AgentOutputError(f"evidence_ref.sha256 deve ser texto em {context}")
+    if not isinstance(lines, list) or not all(isinstance(item, int) for item in lines):
+        raise AgentOutputError(f"evidence_ref.lines deve ser lista de inteiros em {context}")
+    if required_sha256 is not None and digest != required_sha256:
+        expected = required_sha256[:16] or "vazio (sinal sem artefato)"
+        raise AgentOutputError(
+            f"evidence_ref não aponta o artefato do achado em {context}: "
+            f"esperado {expected}"
+        )
+    # Conclusão sobre artefato que não veio no pacote não é leitura, é suposição.
+    if digest and known_hashes and digest not in known_hashes:
+        raise AgentOutputError(
+            f"evidence_ref aponta artefato fora do pacote em {context}: {digest[:16]}"
+        )
+    return EvidenceRef(sha256=digest, lines=list(lines))
+
+
+def _parse_signal_verdicts(
+    raw_verdicts: object,
+    expected_signals: dict[tuple[str, str], str],
+    known_hashes: set[str],
+) -> list[SignalVerdict]:
+    """Todo sinal enviado precisa voltar julgado — silêncio não é veredito."""
+    if not isinstance(raw_verdicts, list):
+        raise AgentOutputError("signal_verdicts inválida")
+    parsed: list[SignalVerdict] = []
+    seen: set[tuple[str, str]] = set()
+    expected_keys = {"rule_id", "asset_name", "verdict", "rationale", "evidence_ref"}
+    for raw in raw_verdicts:
+        if not isinstance(raw, dict) or set(raw) != expected_keys:
+            raise AgentOutputError("campos do veredito ausentes ou não permitidos")
+        rule_id = raw.get("rule_id")
+        asset_name = raw.get("asset_name")
+        verdict = raw.get("verdict")
+        rationale = raw.get("rationale")
+        if not isinstance(rule_id, str) or not isinstance(asset_name, str):
+            raise AgentOutputError("veredito precisa de rule_id e asset_name")
+        key = (rule_id, asset_name)
+        if key in seen:
+            raise AgentOutputError(f"veredito duplicado: {rule_id} em {asset_name}")
+        if expected_signals and key not in expected_signals:
+            raise AgentOutputError(
+                f"veredito sobre sinal fora do pacote: {rule_id} em {asset_name}"
+            )
+        if verdict not in {"confirmed", "rejected", "needs_evidence"}:
+            raise AgentOutputError(f"veredito inválido para {rule_id}: {verdict}")
+        if not isinstance(rationale, str) or not rationale.strip():
+            raise AgentOutputError(f"veredito sem justificativa: {rule_id} em {asset_name}")
+        seen.add(key)
+        parsed.append(
+            SignalVerdict(
+                rule_id=rule_id,
+                asset_name=asset_name,
+                verdict=str(verdict),
+                rationale=rationale,
+                evidence_ref=_parse_evidence_ref(
+                    raw.get("evidence_ref"),
+                    known_hashes,
+                    f"veredito {rule_id}",
+                    required_sha256=expected_signals.get(key),
+                ),
+            )
+        )
+    if seen != set(expected_signals):
+        missing = sorted(
+            f"{rule}@{asset}" for rule, asset in set(expected_signals) - seen
+        )
+        raise AgentOutputError(
+            "todo sinal do contexto precisa de veredito; faltam: "
+            + ", ".join(missing[:5])
+        )
+    return parsed
+
+
+def _parse_uncovered_findings(
+    raw_findings: object,
+    known_hashes: set[str],
+    known_rule_ids: set[str],
+) -> list[UncoveredFinding]:
+    if not isinstance(raw_findings, list):
+        raise AgentOutputError("uncovered_findings inválida")
+    expected_keys = {
+        "title",
+        "asset_type",
+        "asset_name",
+        "evidence_ref",
+        "why_not_covered",
+        "proposed_rule_id",
+        "confidence_basis",
+    }
+    parsed: list[UncoveredFinding] = []
+    seen: set[str] = set()
+    for raw in raw_findings:
+        if not isinstance(raw, dict) or set(raw) != expected_keys:
+            raise AgentOutputError("campos do achado não coberto ausentes ou não permitidos")
+        values = {key: raw.get(key) for key in expected_keys - {"evidence_ref"}}
+        for key, value in values.items():
+            if not isinstance(value, str) or not value.strip():
+                raise AgentOutputError(f"achado não coberto com {key} vazio")
+        proposed = str(values["proposed_rule_id"])
+        # Se já existe regra para o padrão, isso não é lacuna de catálogo — é
+        # uma recomendação que deveria estar ligada à oportunidade existente.
+        if proposed in known_rule_ids:
+            raise AgentOutputError(
+                f"proposed_rule_id colide com regra existente: {proposed}"
+            )
+        if proposed in seen:
+            raise AgentOutputError(f"proposed_rule_id duplicado: {proposed}")
+        seen.add(proposed)
+        parsed.append(
+            UncoveredFinding(
+                title=str(values["title"]),
+                asset_type=str(values["asset_type"]),
+                asset_name=str(values["asset_name"]),
+                evidence_ref=_parse_evidence_ref(
+                    raw.get("evidence_ref"), known_hashes, f"achado {proposed}"
+                ),
+                why_not_covered=str(values["why_not_covered"]),
+                proposed_rule_id=proposed,
+                confidence_basis=str(values["confidence_basis"]),
+            )
+        )
+    return parsed

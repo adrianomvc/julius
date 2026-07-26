@@ -86,6 +86,7 @@ def detect(account: Account, config: Config, scan_id: str) -> list[Opportunity]:
                                 f"Schedule prevê ~{expected_in_window:.1f} na janela; "
                                 f"{job.runs_in_window} foram observadas."
                             ),
+                            category="inventory_integrity",
                         ),
                         Recommendation(
                             difficulty=2,

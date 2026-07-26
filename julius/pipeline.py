@@ -3,7 +3,7 @@ ciclo de vida/diff → persistência → KPIs → view model."""
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
 
@@ -18,9 +18,10 @@ from julius.config import DEFAULT_CONFIG, Config
 from julius.findings.grouping import group_by_asset
 from julius.findings.lifecycle import transition
 from julius.findings.opportunity import Opportunity
+from julius.findings.signal import Signal
 from julius.governance import compute_candidates
 from julius.graph import ProcessGraph, build_process_graph, enrich_opportunities
-from julius.knowledge.rules import run_all
+from julius.knowledge.rules import collect_signals, run_all
 from julius.knowledge.rules.glue.code import rules as glue_code
 from julius.reporting import ProductKPIs, compute_kpis
 from julius.reporting.formatters import money
@@ -54,6 +55,9 @@ class Analysis:
     graph: ProcessGraph
     events: list[DiffEvent]
     reconciliation: Reconciliation
+    # Hipóteses que nenhuma regra fecha sozinha; não entram no backlog nem no
+    # ranking, seguem para a análise contextual.
+    signals: list[Signal] = field(default_factory=list)
 
 
 def analyze(
@@ -127,10 +131,13 @@ def analyze_account(
     account.process_costs = build_process_costs(account, config, today=today)
     graph = build_process_graph(account)
     opportunities = run_all(account, config, scan_id)
+    signals = collect_signals(account, config)
     if code_artifacts:
-        opportunities += glue_code.detect(
+        code_opportunities, code_signals = glue_code.detect(
             account, code_artifacts, config, scan_id
         )
+        opportunities += code_opportunities
+        signals += code_signals
     enrich_opportunities(account, graph, opportunities)
     # Consolida achados do mesmo ativo numa ação principal (causa raiz).
     opportunities = group_by_asset(opportunities)
@@ -246,6 +253,7 @@ def analyze_account(
         graph=graph,
         events=events,
         reconciliation=reconciliation,
+        signals=signals,
     )
 
 

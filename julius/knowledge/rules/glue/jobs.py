@@ -9,6 +9,7 @@ from julius.findings.evidence import Evidence
 from julius.findings.finding import Finding
 from julius.findings.opportunity import Estimation, Opportunity
 from julius.findings.recommendation import Recommendation
+from julius.findings.signal import Signal
 from julius.knowledge.rules.glue import estimation as glue_est
 
 _DOC_AUTOSCALING = "https://docs.aws.amazon.com/glue/latest/dg/auto-scaling.html"
@@ -60,12 +61,11 @@ def detect(account: Account, config: Config, scan_id: str) -> list[Opportunity]:
         elif low_cpu and (job.number_of_workers or 0) > config.thresholds.session_min_dpu:
             out.append(_overprovisioned(account, job, config, scan_id, capacity_evidence))
 
-        # Versão antiga: fatura em blocos de 10 min.
-        if job.command_type == "glueetl":
-            if job.glue_version_num < 2.0:
-                out.append(_version(account, job, config, scan_id))
-            elif job.glue_version_num < _version_number(config.preferred_glue_version):
-                out.append(_version_review(account, job, config, scan_id))
+        # Versão antiga: fatura em blocos de 10 min. Abaixo de 2.0 o desperdício
+        # é aritmético; entre 2.0 e a preferencial só o script diz se migrar
+        # compensa, então aquele caso vira sinal em `signals()`.
+        if job.command_type == "glueetl" and job.glue_version_num < 2.0:
+            out.append(_version(account, job, config, scan_id))
 
         # FLEX: job em batch, não sensível a tempo, ainda em STANDARD.
         if (
@@ -263,23 +263,6 @@ def detect(account: Account, config: Config, scan_id: str) -> list[Opportunity]:
                 )
             )
 
-        if (
-            job.runs_per_month >= th.high_job_frequency_monthly
-            and not job.incremental_source_evidence
-        ):
-            out.append(
-                _investigation(
-                    account,
-                    job,
-                    config,
-                    scan_id,
-                    "GLUE-FREQUENCY-REVIEW",
-                    "Frequência alta sem evidência de volume incremental",
-                    "Relacionar cron, volume de entrada e alterações de saída",
-                    [f"{job.runs_per_month:.1f} execuções/mês"],
-                )
-            )
-
         expected_frequency = sum(
             trigger.expected_runs_monthly or 0.0
             for trigger in account.glue_triggers
@@ -301,6 +284,7 @@ def detect(account: Account, config: Config, scan_id: str) -> list[Opportunity]:
                             f"esperadas pelo schedule ~{expected_frequency:.1f}/mês",
                             f"observadas ~{job.runs_per_month:.1f}/mês",
                         ],
+                        category="inventory_integrity",
                     )
                 )
     # A cobrança comparável é a da janela de análise, não a do painel de
@@ -368,6 +352,7 @@ def _unattributed_cost(
                     else " A cobrança por usage type ainda não foi coletada."
                 )
             ),
+            category="inventory_integrity",
         ),
         Recommendation(
             difficulty=2,
@@ -604,52 +589,70 @@ def _version(account: Account, job: GlueJob, config: Config, scan_id: str) -> Op
     )
 
 
-def _version_review(account: Account, job: GlueJob, config: Config, scan_id: str) -> Opportunity:
+def signals(account: Account, config: Config) -> list[Signal]:
+    """O que a config de um job levanta mas não conclui.
+
+    Nos dois casos o gatilho é fato — a versão está declarada, a frequência é
+    contada — e a conclusão não é. Migrar de runtime depende de bibliotecas e
+    formatos que só o script revela; rodar 720 vezes por mês pode ser exatamente
+    o certo para a fonte que o job lê.
+    """
+    out: list[Signal] = []
     target = config.preferred_glue_version
-    return build(
-        Finding(
-            asset_type="glue_job",
-            asset_name=job.name,
-            rule_id="GLUE-VERSION-REVIEW",
-            rule_version="1.0.0",
-            title=f"Glue {job.glue_version} abaixo da versão preferencial {target}",
-            why="Runtime antigo requer avaliação de compatibilidade e suporte.",
-        ),
-        Recommendation(
-            difficulty=3,
-            action=f"Avaliar migração controlada para Glue {target}",
-            how_to_apply="Validar bibliotecas, formatos e testes de regressão em ambiente controlado.",
-            how_to_validate="Comparar saída, duração p95, falhas e DPU-h.",
-            risks=["mudanças de Spark/Python/Java podem exigir ajustes"],
-            docs=[_DOC_VERSION],
-            blocked=True,
-        ),
-        Evidence(
-            items=[
-                f"GlueVersion={job.glue_version}",
-                f"versão preferencial configurada={target}",
-            ],
-            sources=["Glue GetJob"],
-            observed_runs=job.observed_runs,
-            coverage_days=job.coverage_days,
-            has_optional_metrics=True,
-            owner_tag=job.owner_tag,
-        ),
-        Estimation(
-            method="glue_version_review_v1",
-            baseline_cost=0.0,
-            projected_cost=0.0,
-            estimated_saving=0.0,
-            assumptions=["migração não recebe economia sem benchmark"],
-            pricing_region=config.pricing.region,
-            estimation_version=config.pricing.version,
-        ),
-        RuleContext(
-            account=account.account_id,
-            config=config,
-            scan_id=scan_id,
-        ),
-    )
+    th = config.thresholds
+    for job in account.glue_jobs:
+        if (
+            job.command_type == "glueetl"
+            and 2.0 <= job.glue_version_num < _version_number(target)
+        ):
+            out.append(
+                Signal(
+                    kind="config",
+                    rule_id="GLUE-VERSION-REVIEW",
+                    asset_type="glue_job",
+                    asset_name=job.name,
+                    observation=(
+                        f"Job em Glue {job.glue_version}, abaixo da versão "
+                        f"preferencial {target}."
+                    ),
+                    question=(
+                        "O script usa bibliotecas, formatos ou APIs que impedem a "
+                        f"migração para Glue {target}? Se não impedem, o que a migração "
+                        "muda em duração e DPU-h neste job?"
+                    ),
+                    missing_evidence=[
+                        "compatibilidade de bibliotecas e formatos usados pelo script",
+                        "benchmark de duração e DPU-h na versão alvo",
+                    ],
+                    doc_links=[_DOC_VERSION],
+                )
+            )
+        if (
+            job.runs_per_month >= th.high_job_frequency_monthly
+            and not job.incremental_source_evidence
+        ):
+            out.append(
+                Signal(
+                    kind="config",
+                    rule_id="GLUE-FREQUENCY-REVIEW",
+                    asset_type="glue_job",
+                    asset_name=job.name,
+                    observation=(
+                        f"Job roda {job.runs_per_month:.1f}×/mês sem evidência "
+                        "coletada de volume incremental."
+                    ),
+                    question=(
+                        "A frequência é compatível com a natureza da fonte e com o "
+                        "consumo a jusante, ou há execuções que não encontram dado novo?"
+                    ),
+                    missing_evidence=[
+                        "volume de entrada por execução",
+                        "alteração de saída entre execuções consecutivas",
+                    ],
+                    doc_links=[_DOC_MONITORING],
+                )
+            )
+    return out
 
 
 def _version_number(value: str) -> float:
@@ -909,6 +912,7 @@ def _investigation(
     *,
     baseline_cost: float = 0.0,
     doc_link: str = _DOC_WORKERS,
+    category: str = "cost_optimization",
 ) -> Opportunity:
     estimation = Estimation(
         method=rule_id.lower().replace("-", "_") + "_v1",
@@ -927,6 +931,7 @@ def _investigation(
             rule_version="1.0.0",
             title=finding,
             why=finding,
+            category=category,
         ),
         Recommendation(
             difficulty=3,

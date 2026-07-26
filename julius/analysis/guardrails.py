@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from julius.analysis.context_builder import AgentContext
 
-PROMPT_VERSION = "1.0.0"
+PROMPT_VERSION = "1.1.0"
 
 #: As regras em si, separadas do texto que as apresenta — o validador de
 #: resposta verifica o resultado das mesmas restrições.
@@ -26,6 +26,16 @@ RULES = (
     "Use somente opportunity_id presentes no pacote e preserve account e scan_id.",
     "Considere `constraints.collection_health`: fontes parciais ou indisponíveis "
     "devem aparecer como evidência ausente, nunca como valor zero.",
+    "`signals` são hipóteses, não achados. Julgue cada uma contra o artefato "
+    "completo — confirmed, rejected ou needs_evidence — e nunca lhes atribua "
+    "economia. Todo sinal do pacote precisa de veredito.",
+    "Registre em `uncovered_findings` o desperdício que você observou e que "
+    "nenhuma rule_id do pacote cobre. Sem valor financeiro, sempre com "
+    "evidence_ref apontando sha256 e linha de um artefato do pacote.",
+    "Onde a recomendação determinística admite dois caminhos — ajustar quem "
+    "escreve ou quem lê — escolha um e diga quem quebra com a escolha.",
+    "Considere `constraints.rule_families_without_evidence`: nessas famílias "
+    "não houve o que analisar; ausência de achado ali não é ausência de problema.",
 )
 
 
@@ -52,6 +62,9 @@ Conta: {context.account["id"]}
 Scan: {context.scan_id}
 Contexto: {context_file}
 Schema de saída: {schema_file}
+Oportunidades a enriquecer: {len(context.opportunities)} de \
+{context.portfolio.get("total_opportunities", len(context.opportunities))} no portfólio
+Sinais a julgar: {len(context.signals)}
 Artefatos técnicos read-only referenciados no contexto: {len(context.technical_artifacts)}
 
 Depois de produzir `{result_file}`, execute:
@@ -75,6 +88,7 @@ def build_manual_instructions(
 Conta: {context.account["id"]}
 Scan: {context.scan_id}
 Oportunidades no pacote: {len(context.opportunities)}
+Sinais a julgar: {len(context.signals)}
 
 Escreva `{result_file}` seguindo `{schema_file}`. As mesmas regras valem:
 

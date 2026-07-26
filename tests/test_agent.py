@@ -66,6 +66,27 @@ def _valid_result(context) -> dict:
         "executive_summary": "Plano contextual baseado nas evidências do Julius.",
         "implementation_order": ids,
         "recommendations": recommendations,
+        "signal_verdicts": [
+            {
+                "rule_id": signal["rule_id"],
+                "asset_name": signal["asset_name"],
+                "verdict": "needs_evidence",
+                "rationale": "O artefato não permite confirmar o padrão sozinho.",
+                "evidence_ref": {
+                    "sha256": signal["artifact_sha256"],
+                    "lines": signal["lines"],
+                },
+            }
+            for signal in context.signals
+        ],
+        "uncovered_findings": [],
+    }
+
+
+def _expected_signals(context) -> dict[tuple[str, str], str]:
+    return {
+        (item["rule_id"], item["asset_name"]): item["artifact_sha256"]
+        for item in context.signals
     }
 
 
@@ -102,8 +123,10 @@ def test_structured_result_accepts_only_context_ids_and_official_aws_docs(contex
         allowed_opportunity_ids={
             item["opportunity_id"] for item in context.opportunities
         },
+        expected_signals=_expected_signals(context),
     )
     assert len(valid.recommendations) == len(context.opportunities)
+    assert len(valid.signal_verdicts) == len(context.signals)
 
     invalid = _valid_result(context)
     invalid["recommendations"][0]["documentation"][0]["url"] = (
@@ -210,6 +233,7 @@ def test_validated_ai_context_enriches_delivery_without_changing_priority(contex
         allowed_opportunity_ids={
             item["opportunity_id"] for item in context.opportunities
         },
+        expected_signals=_expected_signals(context),
     )
     attach_contextual_analysis(analysis.vm, contextual)
     html = renderer.render_html(analysis.vm)
@@ -261,3 +285,126 @@ def test_report_cli_accepts_only_context_bound_validated_result(tmp_path):
     assert "Análise contextual pelo Devin" in (
         report_dir / "report.html"
     ).read_text(encoding="utf-8")
+
+
+def test_context_declares_its_own_coverage_and_the_silence_it_carries(context):
+    """O recorte precisa ser visível: o que ficou fora não é o que não existe."""
+    full = analyze(SAMPLE)
+
+    assert context.schema_version == "1.1"
+    assert context.portfolio["analyzed"] == len(context.opportunities)
+    assert context.portfolio["total_opportunities"] == len(full.opportunities)
+    assert context.portfolio["analyzed"] <= context.portfolio["total_opportunities"]
+    assert "rule_families_without_evidence" in context.constraints
+    for family in context.constraints["rule_families_without_evidence"]:
+        assert family["service"] and family["name"] and family["requires"]
+
+
+def test_empty_recommendation_text_is_not_a_valid_analysis(context):
+    """Estrutura correta com texto vazio passava como análise completa."""
+    invalid = _valid_result(context)
+    invalid["recommendations"][0]["recommendation"] = "   "
+
+    with pytest.raises(AgentOutputError, match="não podem ser vazios"):
+        validate_agent_output(
+            invalid,
+            account=context.account["id"],
+            scan_id=context.scan_id,
+            allowed_opportunity_ids={
+                item["opportunity_id"] for item in context.opportunities
+            },
+            expected_signals=_expected_signals(context),
+        )
+
+
+def test_recommendation_must_say_how_to_act_or_what_is_missing(context):
+    invalid = _valid_result(context)
+    invalid["recommendations"][0]["implementation_steps"] = []
+    invalid["recommendations"][0]["missing_evidence"] = []
+
+    with pytest.raises(AgentOutputError, match="implementation_steps ou missing_evidence"):
+        validate_agent_output(
+            invalid,
+            account=context.account["id"],
+            scan_id=context.scan_id,
+            allowed_opportunity_ids={
+                item["opportunity_id"] for item in context.opportunities
+            },
+            expected_signals=_expected_signals(context),
+        )
+
+
+def test_every_signal_needs_a_verdict(context):
+    """Silêncio sobre um sinal não é veredito."""
+    if not context.signals:
+        pytest.skip("dataset de exemplo não produziu sinais")
+    invalid = _valid_result(context)
+    invalid["signal_verdicts"] = invalid["signal_verdicts"][:-1]
+
+    with pytest.raises(AgentOutputError, match="precisa de veredito"):
+        validate_agent_output(
+            invalid,
+            account=context.account["id"],
+            scan_id=context.scan_id,
+            allowed_opportunity_ids={
+                item["opportunity_id"] for item in context.opportunities
+            },
+            expected_signals=_expected_signals(context),
+        )
+
+
+def test_uncovered_finding_cannot_reuse_an_existing_rule_id(context):
+    """Se já existe regra para o padrão, não é lacuna de catálogo."""
+    existing = context.opportunities[0]["rule_id"]
+    invalid = _valid_result(context)
+    invalid["uncovered_findings"] = [
+        {
+            "title": "padrão observado",
+            "asset_type": "glue_job",
+            "asset_name": "job-a",
+            "evidence_ref": {"sha256": "", "lines": []},
+            "why_not_covered": "motivo",
+            "proposed_rule_id": existing,
+            "confidence_basis": "base",
+        }
+    ]
+
+    with pytest.raises(AgentOutputError, match="colide com regra existente"):
+        validate_agent_output(
+            invalid,
+            account=context.account["id"],
+            scan_id=context.scan_id,
+            allowed_opportunity_ids={
+                item["opportunity_id"] for item in context.opportunities
+            },
+            expected_signals=_expected_signals(context),
+            known_rule_ids={existing},
+        )
+
+
+def test_conclusion_about_a_script_must_name_the_script(context):
+    """Hash desconhecido é suposição, não leitura do artefato."""
+    invalid = _valid_result(context)
+    invalid["uncovered_findings"] = [
+        {
+            "title": "padrão observado",
+            "asset_type": "glue_job",
+            "asset_name": "job-a",
+            "evidence_ref": {"sha256": "f" * 64, "lines": [10]},
+            "why_not_covered": "motivo",
+            "proposed_rule_id": "GLUE-CODE-INVENTADA",
+            "confidence_basis": "base",
+        }
+    ]
+
+    with pytest.raises(AgentOutputError, match="fora do pacote"):
+        validate_agent_output(
+            invalid,
+            account=context.account["id"],
+            scan_id=context.scan_id,
+            allowed_opportunity_ids={
+                item["opportunity_id"] for item in context.opportunities
+            },
+            expected_signals=_expected_signals(context),
+            known_artifact_hashes={"a" * 64},
+        )

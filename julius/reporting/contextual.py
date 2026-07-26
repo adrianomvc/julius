@@ -44,6 +44,20 @@ def attach_contextual_analysis(
         )
     ]
     vm.ai_recommendations = [asdict(item) for item in analysis.recommendations]
+    # O pacote enviado ao provedor é um recorte do portfólio; dizer qual evita
+    # que o silêncio sobre o resto seja lido como ausência de problema.
+    vm.ai_coverage = {
+        "analyzed": len(analysis.recommendations),
+        "total": len(vm.table),
+    }
+    # O sinal descartado continua no result.json para auditoria, mas não ocupa
+    # espaço no relatório: quem lê precisa do que sobrou de pé.
+    vm.ai_signal_verdicts = [
+        asdict(item)
+        for item in analysis.signal_verdicts
+        if item.verdict in {"confirmed", "needs_evidence"}
+    ]
+    vm.ai_uncovered_findings = [asdict(item) for item in analysis.uncovered_findings]
     return vm
 
 

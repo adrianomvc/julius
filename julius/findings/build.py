@@ -73,7 +73,7 @@ def build(
         account=ctx.account,
         asset_type=finding.asset_type,
         asset_name=finding.asset_name,
-        category="cost_optimization",
+        category=finding.category,
         rule_id=finding.rule_id,
         finding=finding.title,
         why=finding.why,
