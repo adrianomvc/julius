@@ -21,6 +21,14 @@ Use this skill when asked to analyze AWS costs or governance with Julius.
 
 ## Deterministic versus AI responsibilities
 
+The split is by certainty, not by service. Julius keeps what it can prove: the
+trigger is a declared AWS property or a measured metric, the conclusion is
+single, and the saving follows from the fact. You get what has N variables —
+reading a script, a SQL statement or a dependency chain to decide whether
+something is waste *here*. `collect()` over a hundred rows is correct and over
+a hundred million it is waste; the same AST produces both, so no threshold can
+settle it and you can.
+
 Julius code owns:
 
 - collection and normalized inventory;
@@ -29,18 +37,40 @@ Julius code owns:
 - difficulty, confidence, priority and governance classification;
 - lifecycle and realized-benefit validation.
 
-You own only contextual enrichment:
+You own four tasks, in this order:
 
-- inspect available scripts, SQL and ASL definitions;
-- explain the likely technical cause using cited evidence;
-- improve the clarity of the recommended action;
-- identify dependencies and conflicts between recommendations;
-- propose a safe implementation order;
-- provide implementation and validation steps;
-- find relevant official AWS documentation.
+1. **Judge every signal.** `context.json` carries a `signals` array: static code
+   patterns and configuration observations that Julius detected but cannot
+   conclude on its own. Each one gives you the observation, the question to
+   answer, the artifact hash, the line numbers and the evidence still missing.
+   Read the complete artifact and return `confirmed`, `rejected` or
+   `needs_evidence` with a rationale. Every signal must come back judged —
+   silence is not a verdict, and the validator rejects an incomplete set.
+2. **Enrich the deterministic opportunities.** Explain the likely technical
+   cause from cited evidence, sharpen the recommended action, identify
+   dependencies and conflicts, propose a safe implementation order, and give
+   implementation and validation steps with official AWS documentation.
+3. **Decide the side of a trade-off.** Where a recommendation admits two paths —
+   adjusting the job that writes or the query that reads — pick one and say who
+   breaks with the choice. `XSVC-WASTED-PRODUCTION` is the standing case.
+4. **Report what the catalog misses.** Waste you observed that no `rule_id` in
+   the package covers goes to `uncovered_findings`, with a `proposed_rule_id`
+   that does not collide with an existing rule. These carry no financial value
+   and no ranking position: they are proposals for a new deterministic rule,
+   accumulated across scans and accounts for human review.
 
 Never overwrite a deterministic field. If new evidence contradicts one, record
 the contradiction in `missing_evidence` or `assumptions`; do not recalculate it.
+
+Never assign a saving to a signal or to an uncovered finding. If a rule fired
+without the metric that would quantify it, the missing metric is the answer —
+say what is absent under `missing_evidence` instead of estimating it.
+
+Read `constraints.rule_families_without_evidence` before concluding anything
+about coverage. Those rule families produced nothing because their inventory
+arrived empty; absence of findings there is not absence of problems. The same
+holds for any source marked partial or unavailable in
+`constraints.collection_health` — report it as missing evidence, never as zero.
 
 ## Procedure
 
@@ -119,10 +149,14 @@ the contradiction in `missing_evidence` or `assumptions`; do not recalculate it.
    ```
 
 9. Read that account's `instructions.md`, `context.json` and
-   `output-schema.json`. Analyze only opportunities present in that context.
-   Read only technical files referenced by `technical_artifacts`.
+   `output-schema.json`. Analyze only opportunities present in that context and
+   judge only signals present in that context. Read only technical files
+   referenced by `technical_artifacts`. Check `portfolio` to see how much of the
+   account the package covers — it is a ranked slice, not the whole portfolio.
 10. Prefer evidence in the context. When evidence is absent, explicitly list it
-   under `missing_evidence`.
+   under `missing_evidence`. Any conclusion about a script must cite the
+   `sha256` of that script under `evidence_ref`; a configuration signal has no
+   artifact, so its `evidence_ref.sha256` is the empty string.
 11. For every implementation recommendation, provide at least one relevant link
    under `https://docs.aws.amazon.com/`. Never invent a URL. Open and verify the
    page before returning it.
@@ -168,5 +202,16 @@ the contradiction in `missing_evidence` or `assumptions`; do not recalculate it.
 - Facts, assumptions and missing evidence are distinguishable.
 - Dependencies, conflicts, risks, implementation steps and validation steps
   are present, even when their arrays are empty.
+- `contextual_diagnosis` and `recommendation` are non-empty, and each
+  recommendation has at least one `implementation_step` or one
+  `missing_evidence` entry — either you say how to act, or you say what is
+  missing before anyone can.
+- A recommendation with implementation steps carries at least one
+  documentation reference.
+- Every signal in the context has exactly one verdict, and no verdict names a
+  signal outside the context.
+- Every `evidence_ref` for a code claim matches the `sha256` of that signal's
+  own artifact.
+- No `proposed_rule_id` collides with a rule already in the package.
 - Every documentation URL is HTTPS on `docs.aws.amazon.com`.
 - No AWS resource was changed and no e-mail was sent.

@@ -5,6 +5,36 @@ jobs regardless of authoring mode (`SCRIPT`, `VISUAL`, or `NOTEBOOK`) and keeps
 Interactive Sessions, Crawlers, Glue Triggers, and DataBrew as distinct asset
 types.
 
+## What the deterministic layer is for
+
+The split between Python and the contextual analysis is not by service. It is
+by how much the evidence closes.
+
+**Python owns what it can prove.** A rule belongs here when three things hold:
+the trigger is a fact — a declared AWS property or a measured metric, never a
+syntactic pattern or a distance from some default; the conclusion is single —
+two competent people looking at the same data reach the same action; and the
+saving follows from the fact, without assuming intent or business need. A
+timeout of 480 minutes on a job that runs for 12, a failure rate of 30% billing
+DPU-hours to the point of failure, an endpoint running 24/7 with zero
+invocations: those close. Python states them, prices them, and ranks them.
+
+**The contextual analysis owns what has N variables.** Reading a script, a SQL
+statement, or a dependency chain to decide whether the code is wasteful *here*
+is not something a threshold can do. `collect()` over a hundred rows is
+correct; over a hundred million it is waste, and the same AST produces both.
+Whether migrating a runtime is safe depends on libraries only the script
+reveals. Whether a job running 720 times a month is excessive depends on the
+source it reads. These reach the AI as **signals** — the observation, the
+artifact hash, the lines, and the evidence still missing — and come back
+confirmed, rejected, or needing evidence.
+
+Neither layer crosses. The AI never computes or alters a saving, a difficulty,
+a confidence or a priority; Python never asserts waste from a pattern it cannot
+corroborate. When a rule fires but the metric that would quantify it was not
+collected, the honest outcome is a blocked investigation with no saving — the
+fix is collection, not judgement.
+
 ## Cost contract
 
 - USD is the canonical currency for billing and modeled values. No implicit
