@@ -83,8 +83,10 @@ def _edges() -> set[tuple[str, str]]:
     edges: set[tuple[str, str]] = set()
     for path in sorted(ROOT.rglob("*.py")):
         package = path.relative_to(ROOT).parts[0]
-        if package.endswith(".py"):
-            continue  # módulo de topo, não é camada
+        if package.endswith(".py") or package in NEUTRAL:
+            # Módulo de topo e ponto de composição não são camada: existem
+            # justamente para juntar as de baixo.
+            continue
         for imported in _imported_packages(path):
             if imported != package and imported not in NEUTRAL:
                 edges.add((package, imported))
