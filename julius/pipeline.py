@@ -13,7 +13,7 @@ from julius.code_analysis import (
     load_glue_artifacts,
     summarize_glue_artifact_health,
 )
-from julius.config import Config, DEFAULT_CONFIG
+from julius.config import DEFAULT_CONFIG, Config
 from julius.estimation.calibration import apply_calibrations
 from julius.estimation.process_cost import (
     apply_conservative_caps,
@@ -25,13 +25,13 @@ from julius.ingest import load_account
 from julius.inventory.model import Account, CollectionHealth, PreviousResult
 from julius.metrics import ProductKPIs, compute_kpis
 from julius.opportunities.base import Opportunity
-from julius.opportunities.lifecycle import transition
-from julius.opportunities.detectors import run_all
-from julius.opportunities.detectors import glue_code
+from julius.opportunities.detectors import glue_code, run_all
 from julius.opportunities.grouping import group_by_asset
+from julius.opportunities.lifecycle import transition
 from julius.opportunities.prioritizer import tiebreak_key
-from julius.report.view_models import ReportViewModel, build as build_vm
 from julius.report.formatters import money
+from julius.report.view_models import ReportViewModel
+from julius.report.view_models import build as build_vm
 from julius.state import (
     BacklogStore,
     BenefitSummary,

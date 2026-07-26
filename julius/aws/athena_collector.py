@@ -12,9 +12,11 @@ import math
 import re
 import statistics
 from collections import defaultdict
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
-from typing import Any, Iterable
+from itertools import pairwise
+from typing import Any
 
 from julius.aws.window import AnalysisWindow
 from julius.config import ANALYSIS_WINDOW_DAYS
@@ -25,8 +27,8 @@ try:
     import sqlglot
     from sqlglot import exp
 except ImportError:  # pragma: no cover - instalação incompleta tem fallback seguro
-    sqlglot = None
-    exp = None
+    sqlglot = None  # type: ignore[assignment]
+    exp = None  # type: ignore[assignment]
 
 _MB = 1024**2
 _GB = 1024**3
@@ -177,7 +179,7 @@ def recurrence(timestamps: Iterable[datetime]) -> tuple[bool, bool, bool]:
     )
     regular = False
     if len(stamps) >= 4 and len(days) >= 3:
-        intervals = [(b - a).total_seconds() for a, b in zip(stamps, stamps[1:])]
+        intervals = [(b - a).total_seconds() for a, b in pairwise(stamps)]
         median = statistics.median(intervals)
         near = sum(abs(value - median) <= median * 0.2 for value in intervals)
         regular = bool(median and near / len(intervals) >= 0.6)

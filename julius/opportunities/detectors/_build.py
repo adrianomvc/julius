@@ -5,10 +5,10 @@ from __future__ import annotations
 import hashlib
 from datetime import date
 
-from julius.config import Config, JULIUS_VERSION, KNOWLEDGE_VERSION
+from julius.config import JULIUS_VERSION, KNOWLEDGE_VERSION, Config
 from julius.estimation import build_gain
 from julius.opportunities import confidence as conf_mod
-from julius.opportunities import effort, impact, prioritizer
+from julius.opportunities import impact, prioritizer
 from julius.opportunities.base import Estimation, Opportunity
 
 

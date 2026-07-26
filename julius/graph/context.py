@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from julius.graph.actor import resolve_actor
 from julius.graph.assets import AssetKey
 from julius.graph.edges import EdgeType
@@ -108,7 +110,7 @@ def _reach(graph: ProcessGraph, start: AssetKey) -> tuple[int, bool]:
         if node and current.kind == "table":
             aggregate_consumers = max(
                 aggregate_consumers,
-                int(node.attributes.get("consuming_accounts", 0) or 0),
+                int(str(node.attributes.get("consuming_accounts", 0) or 0)),
             )
         for edge in graph.edges_from(current):
             if edge.type not in _FLOW_EDGES:
@@ -143,7 +145,7 @@ def _evidence_refs(account: Account, opportunity: Opportunity) -> list[dict]:
                     "estimated_dpu_hours": job.estimated_dpu_hours_window,
                 }
             ]
-    collections = {
+    collections: dict[str, tuple[list[Any], str, str]] = {
         "glue_session": (account.interactive_sessions, "session_id", "statement_ids"),
         "glue_crawler": (account.glue_crawlers, "name", "crawl_ids_in_window"),
         "databrew_job": (account.databrew_jobs, "name", "run_ids_in_window"),

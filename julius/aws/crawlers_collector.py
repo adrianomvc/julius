@@ -5,9 +5,9 @@ from __future__ import annotations
 import json
 from datetime import datetime, timezone
 
+from julius.aws.schedule_frequency import expected_runs_per_month
 from julius.aws.window import AnalysisWindow
 from julius.inventory.model import GlueCrawler
-from julius.aws.schedule_frequency import expected_runs_per_month
 
 
 def collect_crawlers(glue_client, *, window: AnalysisWindow) -> list[GlueCrawler]:

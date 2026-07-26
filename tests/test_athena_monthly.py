@@ -13,12 +13,11 @@ from julius.aws.athena_collector import (
     recurrence,
     resolve_actor,
 )
-from julius.ingest.dump import account_to_dataset
 from julius.config import DEFAULT_CONFIG
-from julius.inventory.model import Account
-from julius.opportunities.detectors import athena as athena_detector
 from julius.estimation import athena as athena_estimation
-from julius.inventory.model import AthenaQuery
+from julius.ingest.dump import account_to_dataset
+from julius.inventory.model import Account, AthenaQuery
+from julius.opportunities.detectors import athena as athena_detector
 from julius.pipeline import analyze_account
 from julius.report import renderer
 from julius.report.formatters import money

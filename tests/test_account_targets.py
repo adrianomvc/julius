@@ -7,13 +7,13 @@ import json
 import pytest
 from typer.testing import CliRunner
 
-from julius.cli import app
 from julius.aws.account_targets import (
     AccountTargetError,
     load_account_targets,
     verify_account_targets,
     write_verified_accounts,
 )
+from julius.cli import app
 
 
 class FakeSts:

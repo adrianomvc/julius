@@ -10,7 +10,6 @@ from pathlib import Path
 
 import typer
 
-from julius.config import ANALYSIS_WINDOW_DAYS
 from julius.agent import (
     AgentOutputError,
     load_agent_context,
@@ -18,19 +17,21 @@ from julius.agent import (
     validate_result_file,
     write_validated_result,
 )
-from julius.aws.session import make_session
 from julius.aws.account_targets import (
     AccountTargetError,
     load_account_targets,
     verify_account_targets,
     write_verified_accounts,
 )
+from julius.aws.session import make_session
 from julius.aws.technical_artifacts import (
     IdentityMismatchError,
     collect_technical_artifacts,
     write_artifact_bundle,
 )
+from julius.config import ANALYSIS_WINDOW_DAYS
 from julius.ingest import load_account
+from julius.metrics import compute_kpis
 from julius.notification import (
     NotificationPolicy,
     NotificationService,
@@ -40,7 +41,6 @@ from julius.notification import (
     load_settings,
 )
 from julius.notification.transports import DryRunTransport, SmtpTransport
-from julius.metrics import compute_kpis
 from julius.opportunities.lifecycle import can_transition
 from julius.pipeline import analyze
 from julius.portfolio import analyze_portfolio, discover_inputs
@@ -684,14 +684,15 @@ def review(
             )
         if not reviewer.strip():
             raise typer.BadParameter("--reviewer é obrigatório ao registrar uma revisão.")
-        opportunity = next(
+        selected = next(
             (item for item in analysis.opportunities if item.opportunity_id == opportunity_id),
             None,
         )
-        if opportunity is None:
+        if selected is None:
             raise typer.BadParameter(
                 f"Oportunidade {opportunity_id!r} não existe na análise atual."
             )
+        opportunity = selected
 
         history.record_review(
             opportunity,
@@ -718,10 +719,11 @@ def review(
         f"Top 10 revisado {kpis.reviewed_at_10}/10"
     )
     if kpis.precision_at_10 is not None:
+        false_positive_rate = kpis.false_positive_rate_at_10 or 0.0
         typer.echo(
             f"Precision@10 {kpis.precision_at_10*100:.0f}% · "
             f"falsos positivos {kpis.false_positives_at_10} "
-            f"({kpis.false_positive_rate_at_10*100:.0f}%)"
+            f"({false_positive_rate*100:.0f}%)"
         )
 
 

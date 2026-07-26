@@ -6,10 +6,11 @@ por percentis (governança) entra no MVP 2.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from julius.config import Config, DEFAULT_CONFIG
+from julius.config import DEFAULT_CONFIG, Config
 from julius.pipeline import Analysis, analyze
 from julius.state import BacklogStore, HistoryStore
 
@@ -60,7 +61,7 @@ def _high_conf(a: Analysis) -> float:
 
 
 def analyze_portfolio(
-    inputs: list[str | Path],
+    inputs: Sequence[str | Path],
     config: Config = DEFAULT_CONFIG,
     *,
     store: BacklogStore | None = None,

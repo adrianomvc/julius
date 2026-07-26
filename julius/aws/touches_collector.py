@@ -13,8 +13,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from julius.aws.window import AnalysisWindow
 from julius.aws.athena_query import run_query
+from julius.aws.window import AnalysisWindow
 
 
 @dataclass

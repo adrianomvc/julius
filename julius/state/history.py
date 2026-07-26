@@ -493,7 +493,9 @@ class HistoryStore:
             [account, row[0]],
         )
         columns = [item[0] for item in cursor.description]
-        return [dict(zip(columns, values)) for values in cursor.fetchall()]
+        return [
+            dict(zip(columns, values, strict=True)) for values in cursor.fetchall()
+        ]
 
     def record_diff_events(self, scan_id: str, events: list[DiffEvent]) -> None:
         if not events:
@@ -609,6 +611,8 @@ class HistoryStore:
             """,
             [account],
         ).fetchone()
+        if row is None:
+            return BenefitSummary()
         count = int(row[0] or 0)
         predicted = float(row[1] or 0.0)
         realized = float(row[2] or 0.0)
@@ -635,7 +639,9 @@ class HistoryStore:
             [account, limit],
         )
         columns = [item[0] for item in cursor.description]
-        return [dict(zip(columns, values)) for values in cursor.fetchall()]
+        return [
+            dict(zip(columns, values, strict=True)) for values in cursor.fetchall()
+        ]
 
     def lifecycle_lead_times(self, account: str) -> LifecycleLeadTimes:
         row = self._db.execute(
@@ -663,6 +669,8 @@ class HistoryStore:
             """,
             [account, account],
         ).fetchone()
+        if row is None:
+            return LifecycleLeadTimes()
         return LifecycleLeadTimes(
             detected_to_accepted_days=_round_optional(row[0]),
             accepted_to_implemented_days=_round_optional(row[1]),
@@ -671,7 +679,8 @@ class HistoryStore:
 
     def run_count(self) -> int:
         """Quantidade de snapshots de execução persistidos."""
-        return int(self._db.execute("SELECT count(*) FROM runs").fetchone()[0])
+        row = self._db.execute("SELECT count(*) FROM runs").fetchone()
+        return int(row[0]) if row else 0
 
     def export_parquet(self, directory: str | Path) -> list[Path]:
         """Exporta tabelas analíticas para Parquet comprimido e reproduzível."""

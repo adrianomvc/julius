@@ -11,7 +11,8 @@ from julius.governance import recommend
 from julius.inventory.model import Account, PreviousResult, ProducerCandidate
 from julius.opportunities.base import Opportunity
 from julius.report import formatters as fmt
-from julius.report.pareto import Pareto, compute as compute_pareto
+from julius.report.pareto import Pareto
+from julius.report.pareto import compute as compute_pareto
 
 _HIGH_CONF = 0.80
 

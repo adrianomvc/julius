@@ -354,7 +354,7 @@ def _extreme_shuffle_partition_lines(tree: ast.AST | None) -> list[int]:
             and isinstance(value, ast.Constant)
         ):
             try:
-                configured = int(value.value)
+                configured = int(str(value.value))
             except (TypeError, ValueError):
                 continue
             if configured <= 1 or configured >= 1000:

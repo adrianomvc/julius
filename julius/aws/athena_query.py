@@ -8,7 +8,7 @@ Não emite CREATE/INSERT/CTAS/DROP — apenas SELECT.
 from __future__ import annotations
 
 import time
-from typing import Callable
+from collections.abc import Callable
 
 _TERMINAL = {"SUCCEEDED", "FAILED", "CANCELLED"}
 
@@ -62,12 +62,14 @@ def _rows(athena_client, qid: str) -> list[dict]:
             kwargs["NextToken"] = token
         resp = athena_client.get_query_results(**kwargs)
         result_rows = resp.get("ResultSet", {}).get("Rows", [])
-        for i, r in enumerate(result_rows):
+        for r in result_rows:
             cells = [c.get("VarCharValue") for c in r.get("Data", [])]
             if header is None:
                 header = cells
                 continue
-            rows.append(dict(zip(header, cells)))
+            # Linha mais curta que o cabeçalho é tolerada: o Athena omite a
+            # célula quando o valor é nulo em alguns formatos de resultado.
+            rows.append(dict(zip(header, cells, strict=False)))
         token = resp.get("NextToken")
         if not token:
             break

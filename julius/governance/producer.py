@@ -81,7 +81,7 @@ def compute_candidates(account: Account) -> list[ProducerCandidate]:
             continue
         if t.touches_90d <= 0 and not t.datawarm_published:
             continue
-        w = writers.get(t.written_by)
+        w = writers.get(t.written_by or "")
         recurring = bool(w and w.runs_per_month >= 4)
         out.append(
             ProducerCandidate(

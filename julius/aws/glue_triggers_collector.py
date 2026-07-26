@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from julius.inventory.model import GlueTrigger
 from julius.aws.schedule_frequency import expected_runs_per_month
+from julius.inventory.model import GlueTrigger
 
 
 def collect_triggers(glue_client) -> list[GlueTrigger]:

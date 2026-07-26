@@ -83,14 +83,14 @@ def build_process_costs(
         row.estimated_cost_window += session.estimated_dpu_hours_window * session_rate
         row.component_names.append(session.session_id)
 
-    for job in account.databrew_jobs:
-        row = row_for("databrew_job", job.name)
-        _inherit_owner(row, account, "databrew_job", job.name)
+    for brew in account.databrew_jobs:
+        row = row_for("databrew_job", brew.name)
+        _inherit_owner(row, account, "databrew_job", brew.name)
         databrew_rate = _rate_from_allocation(
-            job.allocated_cost, job.estimated_node_hours_window
+            brew.allocated_cost, brew.estimated_node_hours_window
         ) or config.pricing.databrew_node_hour
-        row.estimated_cost_window += job.estimated_node_hours_window * databrew_rate
-        row.component_names.append(job.name)
+        row.estimated_cost_window += brew.estimated_node_hours_window * databrew_rate
+        row.component_names.append(brew.name)
 
     for row in rows.values():
         row.currency = config.pricing.currency

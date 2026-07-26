@@ -5,8 +5,7 @@ from __future__ import annotations
 from julius.config import UNATTRIBUTED_GLUE_BUCKETS, Config
 from julius.estimation import glue as glue_est
 from julius.inventory.model import Account, GlueJob
-from julius.opportunities.base import Opportunity
-from julius.opportunities.base import Estimation
+from julius.opportunities.base import Estimation, Opportunity
 from julius.opportunities.detectors._build import build
 
 _DOC_AUTOSCALING = "https://docs.aws.amazon.com/glue/latest/dg/auto-scaling.html"
@@ -568,7 +567,6 @@ def _autoscaling(
     est = glue_est.autoscaling_saving(job, config)
     if not capacity_evidence:
         _zero_unproven(est)
-    has_cpu = job.avg_cpu_load is not None
     return build(
         account=account.account_id,
         asset_type="glue_job",
@@ -585,7 +583,7 @@ def _autoscaling(
         recommended_action="Habilitar Auto Scaling e revisar o teto de workers",
         how_to_apply=(
             "No job: ativar --enable-auto-scaling e definir max workers ~"
-            f"{max(2, job.number_of_workers // 2)}; testar 1 execução controlada."
+            f"{max(2, (job.number_of_workers or 0) // 2)}; testar 1 execução controlada."
         ),
         how_to_validate="Comparar DPU-h e duração média por execução após a mudança.",
         evidence=[
@@ -616,7 +614,6 @@ def _overprovisioned(
     est = glue_est.worker_reduction_saving(job, config)
     if not capacity_evidence:
         _zero_unproven(est)
-    has_cpu = job.avg_cpu_load is not None
     return build(
         account=account.account_id,
         asset_type="glue_job",

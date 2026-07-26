@@ -8,7 +8,7 @@ from julius.graph.assets import Asset, AssetKey
 from julius.graph.edges import Edge, EdgeType
 from julius.graph.lineage import build_lineage
 from julius.graph.ownership import resolve_owner
-from julius.inventory.model import Account
+from julius.inventory.model import Account, Table
 
 
 @dataclass
@@ -83,7 +83,7 @@ def build_process_graph(account: Account) -> ProcessGraph:
     for kind, items, name_field in collections:
         for item in items:
             attributes = {"owner_tag": getattr(item, "owner_tag", None)}
-            if kind == "table":
+            if isinstance(item, Table):
                 attributes.update(
                     consuming_accounts=item.consuming_accounts,
                     consuming_communities=item.consuming_communities,

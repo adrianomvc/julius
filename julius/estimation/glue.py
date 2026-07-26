@@ -220,8 +220,11 @@ def timeout_guardrail_saving(
 def worker_type_downgrade_saving(job: GlueJob, config: Config) -> tuple[Estimation, str]:
     """Worker type grande (G.4X/G.8X) com CPU baixa → um type menor bastaria."""
     pricing = config.pricing
-    new_type = _DOWNGRADE.get(job.worker_type, job.worker_type)
-    cur_dpu = _TYPE_DPU.get(job.worker_type, job.dpu_per_worker)
+    # `worker_type` é opcional no modelo (jobs em MaxCapacity não têm), mas a
+    # regra só chega aqui com um type conhecido; o fallback mantém isso explícito.
+    current_type = job.worker_type or ""
+    new_type = _DOWNGRADE.get(current_type, current_type)
+    cur_dpu = _TYPE_DPU.get(current_type, job.dpu_per_worker)
     new_dpu = _TYPE_DPU.get(new_type, cur_dpu)
     baseline, source, quality = _baseline(job, pricing)
     ratio = (cur_dpu - new_dpu) / cur_dpu if cur_dpu else 0

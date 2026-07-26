@@ -6,6 +6,7 @@ import json
 from datetime import datetime, timezone
 
 from julius.aws.cloudtrail_collector import collect_actor_events
+from julius.aws.window import AnalysisWindow
 from julius.graph import (
     AssetKey,
     EdgeType,
@@ -22,7 +23,6 @@ from julius.inventory.model import (
     Table,
 )
 from julius.pipeline import analyze_account
-from julius.aws.window import AnalysisWindow
 
 
 def _process_account() -> Account:

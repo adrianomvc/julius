@@ -8,10 +8,12 @@ from datetime import date, datetime, timezone
 import pytest
 
 from julius.aws import glue_cost
+from julius.aws.window import AnalysisWindow
 from julius.config import DATASET_SCHEMA_VERSION, DEFAULT_CONFIG
 from julius.estimation import glue as glue_est
 from julius.estimation.currency import usd_amount
 from julius.estimation.process_cost import build_process_costs
+from julius.ingest.loader import load_account
 from julius.inventory.model import (
     Account,
     DataBrewJob,
@@ -20,10 +22,8 @@ from julius.inventory.model import (
     InteractiveSession,
     ServiceCost,
 )
-from julius.ingest.loader import load_account
 from julius.pipeline import analyze_account
 from julius.report import renderer
-from julius.aws.window import AnalysisWindow
 
 TODAY = date(2026, 7, 25)
 WINDOW = AnalysisWindow.trailing(

@@ -55,7 +55,11 @@ def validate_benefit(
         raise ValueError("A validação exige um ator.")
     if (baseline_volume is None) != (after_volume is None):
         raise ValueError("Informe os dois volumes ou nenhum.")
-    if baseline_volume is not None and (baseline_volume <= 0 or after_volume <= 0):
+    if (
+        baseline_volume is not None
+        and after_volume is not None
+        and (baseline_volume <= 0 or after_volume <= 0)
+    ):
         raise ValueError("Volumes devem ser maiores que zero.")
 
     absolute_saving = baseline_cost - after_cost
