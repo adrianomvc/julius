@@ -69,6 +69,45 @@ da coleta read-only atual:
 - **CUR / Data Exports** (`line_item_resource_id`): custo por execução, exige
   export configurado e leitura via Athena/S3.
 
+## Fronteira entre o determinístico e a IA
+
+A divisão entre o código Python e a análise contextual não é por serviço. É
+pelo quanto a evidência fecha.
+
+**O Python fica com o que ele consegue provar.** Uma regra pertence aqui quando
+as três condições valem ao mesmo tempo:
+
+1. **o gatilho é fato** — propriedade declarada na AWS ou métrica medida; não
+   padrão sintático, não distância de um default;
+2. **a conclusão é única** — duas pessoas competentes olhando o mesmo dado
+   chegam à mesma ação;
+3. **a economia sai do fato** — sem supor intenção, volume ou necessidade de
+   negócio.
+
+Repetições exatas contadas no histórico do workgroup com bytes faturáveis
+medidos fecham (`ATHENA-RESULT-REUSE`). Timeout declarado contra p95 medido
+fecha. Endpoint 24/7 com zero invocações fecha. O Julius afirma, precifica e
+ordena esses casos.
+
+**A análise contextual fica com o que tem N variáveis.** Ler o SQL, o script ou
+a cadeia de dependências para decidir se aquilo é desperdício *ali* não é coisa
+de limiar. `collect()` sobre cem linhas é correto e sobre cem milhões é
+desperdício, e o mesmo AST produz os dois. Se o filtro de partição ausente é
+esquecimento ou requisito do caso de uso, só o consumo a jusante diz. Se migrar
+o runtime é seguro depende de bibliotecas que só o script revela. Esses casos
+chegam à IA como **sinais** — a observação, o hash do artefato, as linhas e a
+evidência que falta — e voltam confirmados, descartados ou pedindo evidência.
+
+Nenhuma das camadas atravessa a outra. A IA nunca calcula nem altera economia,
+dificuldade, confiança ou prioridade; o Python nunca afirma desperdício a partir
+de padrão que não consegue corroborar.
+
+**Quando a regra está certa e falta dado, o caminho é coleta — não IA.** Vários
+itens de *Pendente* abaixo são exatamente isso: o gatilho é medido, a ação é
+única, e a economia sai zerada ou com confiança capada porque a métrica que a
+quantificaria não foi coletada. Pedir à IA que estime esse número seria pedir
+que ela adivinhe o que a AWS publica.
+
 ## Athena
 
 ### Feito
@@ -85,7 +124,11 @@ da coleta read-only atual:
 - custo líquido alocado do Cost Explorer (`NetUnblendedCost`, com fallback
   explícito para `UnblendedCost`) e gates de `cost_quality`;
 - 11 regras `ATHENA-*` com faixas de recuperação versionadas
-  (`ATHENA_RECOVERY_RATES`), separando economia medida de estimativa modelada;
+  (`ATHENA_RECOVERY_RATES`), separando economia medida de estimativa modelada.
+  Compressão e partition projection são exceção deliberada: a config é fato
+  declarado pela tabela, mas quanto ela rende depende do padrão de acesso, então
+  o achado permanece e a faixa modelada sai da soma do portfólio
+  (`is_strategic`);
 - integração completa em `report.html`, `report.json`, `email.html` e
   `email.txt`; cobertura em `tests/test_athena_monthly.py`.
 
@@ -100,7 +143,12 @@ da coleta read-only atual:
   vez de sumirem em silêncio, mas contas com capacity reservation seguem sem
   regra própria;
 - **controles de workgroup**: limite de dados por query, result reuse habilitado
-  no próprio workgroup e migração para engine v3 ainda não viram regra;
+  no próprio workgroup e migração para engine v3 ainda não viram regra. São
+  candidatos determinísticos claros — config declarada, decisão fechada — e o
+  `BytesScannedCutoffPerQuery` é o guardrail mais barato que o Athena oferece.
+  O campo `bytes_scanned_cutoff` existe em `collection/models/athena.py`, mas
+  **nenhum coletor o preenche**: falta chamar `GetWorkGroup` antes de escrever a
+  regra;
 - **ciclo de vida do bucket de resultados**: o custo S3 dos resultados de query
   não é avaliado;
 - **queries federadas**: o custo Lambda associado não entra na análise.
@@ -115,8 +163,9 @@ da coleta read-only atual:
 - Spark event logs com limites explícitos, sem transformar evidência
   incompleta em zero sintético;
 - crawlers, triggers, interactive sessions e DataBrew como tipos distintos;
-- scanner estático determinístico de scripts, com achados bloqueados até
-  benchmark A/B;
+- scanner estático de scripts dividido por evidência de runtime: com métrica
+  correlata o padrão vira oportunidade bloqueada até benchmark A/B; sem ela vira
+  **sinal** para a análise contextual, sem economia e fora do ranking;
 - 9 modelos financeiros (`estimation/glue.py`) e custo por processo com rateio
   entre raízes compartilhadas;
 - saúde da coleta por fonte, com impacto, próxima ação e categoria de erro

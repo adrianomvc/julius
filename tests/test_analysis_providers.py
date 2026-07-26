@@ -170,3 +170,30 @@ def test_a_provider_cannot_change_what_the_scan_decided(analysis, tmp_path):
     workspace.result.write_text(json.dumps(payload), encoding="utf-8")
     with pytest.raises(AgentOutputError):
         provider.collect(workspace)
+
+
+def test_instructions_tell_the_provider_what_is_decided_and_what_to_look_for(
+    analysis, tmp_path
+):
+    """Só proibição produz resposta defensiva e vazia.
+
+    O pacote precisa dizer o que o Julius já resolveu — para o provedor não
+    refazer conta — e o que procurar em cada ativo, para a resposta não virar
+    texto genérico sobre um achado que já vinha explicado.
+    """
+    from julius.analysis.guardrails import DETERMINISTIC, SCOPE
+
+    for name in sorted(PROVIDERS):
+        workspace = Workspace.at(tmp_path / name)
+        PROVIDERS[name]().prepare(analysis, workspace)
+        instructions = workspace.instructions.read_text(encoding="utf-8")
+
+        assert "já está decidido" in instructions.lower()
+        for asset, questions in SCOPE:
+            assert asset in instructions
+            for question in questions:
+                assert question in instructions
+        for item in DETERMINISTIC:
+            assert item in instructions
+        # E o recorte do portfólio continua visível.
+        assert "no portfólio" in instructions

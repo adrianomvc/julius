@@ -1,16 +1,22 @@
-"""As regras que qualquer provedor de análise contextual precisa respeitar.
+"""As regras e o escopo que qualquer provedor de análise contextual recebe.
 
-São guardrails, não estilo: acesso read-only, não recalcular número que o Julius
-já decidiu, não inventar documentação, não vazar segredo. O texto abaixo é o que
-um provedor com instrução em linguagem natural recebe; um provedor programático
-honra as mesmas regras pela validação da resposta.
+Duas coisas moram aqui, e são diferentes. `RULES` são guardrails — acesso
+read-only, não recalcular número que o Julius já decidiu, não inventar
+documentação, não vazar segredo — e cada uma tem contrapartida no validador de
+resposta. `SCOPE` é o oposto: não restringe, orienta. Diz o que o Julius já
+resolveu sozinho, para o provedor não repetir, e o que ele precisa procurar em
+cada tipo de ativo, para não devolver texto genérico sobre um achado que já
+vinha explicado.
+
+A separação importa porque um provedor que só recebe proibição produz resposta
+defensiva e vazia. Ele passa na validação e não acrescenta nada.
 """
 
 from __future__ import annotations
 
 from julius.analysis.context_builder import AgentContext
 
-PROMPT_VERSION = "1.1.0"
+PROMPT_VERSION = "1.2.0"
 
 #: As regras em si, separadas do texto que as apresenta — o validador de
 #: resposta verifica o resultado das mesmas restrições.
@@ -38,6 +44,101 @@ RULES = (
     "não houve o que analisar; ausência de achado ali não é ausência de problema.",
 )
 
+#: O que o Julius já decidiu sozinho. Está aqui para o provedor não gastar
+#: análise refazendo conta — e não tratar como incerto o que já é fato medido.
+DETERMINISTIC = (
+    "Coleta e inventário normalizado de cada ativo, com a janela e a moeda já "
+    "fixadas.",
+    "Quais achados existem: as regras determinísticas rodaram e o que sobrou no "
+    "pacote é o que se sustenta em config declarada mais métrica medida.",
+    "Quanto cada achado vale: baseline, economia esperada com faixa, fator de "
+    "realização conservador e teto por processo, para o portfólio não reservar "
+    "o mesmo custo duas vezes.",
+    "Dificuldade, confiança, prioridade de execução e prioridade estratégica.",
+    "Identidade e ciclo de vida: opportunity_id, fingerprint, status, histórico "
+    "e diff entre execuções.",
+    "Ownership e o grafo do processo — quem escreve, quem lê, o que depende.",
+)
+
+#: O que o provedor precisa procurar. Perguntas, não instruções de formato: o
+#: formato o schema já cobra.
+SCOPE = (
+    (
+        "glue_job",
+        (
+            "O script justifica a capacidade configurada — worker type, número "
+            "de workers, autoscaling?",
+            "O schedule é compatível com a natureza da fonte, ou há execução "
+            "que não encontra dado novo?",
+            "O modo de escrita casa com o filtro de quem lê a tabela a jusante?",
+            "Há reprocessamento evitável — bookmark, overwrite total, retry "
+            "silencioso?",
+        ),
+    ),
+    (
+        "athena_query",
+        (
+            "O consumo que esta query serve ainda existe?",
+            "O filtro de partição ausente é esquecimento ou requisito do caso "
+            "de uso?",
+            "A projeção de colunas reflete o que o consumidor usa de fato?",
+        ),
+    ),
+    (
+        "table",
+        (
+            "O particionamento e o layout servem ao padrão de leitura observado?",
+            "Quem consome ainda depende deste formato?",
+        ),
+    ),
+    (
+        "cross_service",
+        (
+            "Quando produzir custa caro e ler desperdiça o esforço: ajustar a "
+            "escrita ou a leitura? Quem quebra com a escolha?",
+        ),
+    ),
+)
+
+
+def _numbered_rules() -> str:
+    return "\n".join(f"{index}. {rule}" for index, rule in enumerate(RULES, start=1))
+
+
+def _division_of_labour() -> str:
+    """O texto que separa o que já está resolvido do que falta responder."""
+    already = "\n".join(f"- {item}" for item in DETERMINISTIC)
+    questions = "\n".join(
+        f"\n{asset}:\n" + "\n".join(f"- {question}" for question in items)
+        for asset, items in SCOPE
+    )
+    return f"""A divisão é por grau de certeza, não por serviço.
+
+O Julius fica com o que consegue provar: gatilho que é fato — propriedade
+declarada na AWS ou métrica medida —, conclusão única e economia que sai do
+próprio fato. Já está decidido e você não refaz:
+
+{already}
+
+Você fica com o que tem N variáveis: ler script, SQL e cadeia de dependências
+para decidir se aquilo é desperdício *ali*. `collect()` sobre cem linhas é
+correto e sobre cem milhões é desperdício; o mesmo AST produz os dois, nenhum
+limiar resolve, e você resolve.
+
+Suas quatro tarefas, nesta ordem:
+
+1. Julgar cada item de `signals` contra o artefato completo — `confirmed`,
+   `rejected` ou `needs_evidence`, com justificativa. Todos precisam de veredito.
+2. Enriquecer as oportunidades determinísticas: causa provável a partir da
+   evidência citada, passos, dependências, conflitos e ordem de implementação.
+3. Escolher o lado quando a recomendação admite dois caminhos, dizendo quem
+   quebra com a escolha.
+4. Registrar em `uncovered_findings` o desperdício que nenhuma regra do pacote
+   cobre.
+
+O que procurar, por tipo de ativo:
+{questions}"""
+
 
 def build_devin_prompt(
     context: AgentContext,
@@ -46,15 +147,15 @@ def build_devin_prompt(
     schema_file: str = "output-schema.json",
     result_file: str = "result.json",
 ) -> str:
-    numbered = "\n".join(
-        f"{index}. {rule}" for index, rule in enumerate(RULES, start=1)
-    )
     return f"""Você está executando a Skill Julius AWS Analysis, prompt v{PROMPT_VERSION}.
 
-Objetivo: enriquecer contextualmente as oportunidades determinísticas do Julius.
+Objetivo: enriquecer contextualmente as oportunidades determinísticas do Julius
+e julgar os sinais que ele não consegue fechar sozinho.
+
+{_division_of_labour()}
 
 Regras obrigatórias:
-{numbered}
+{_numbered_rules()}
 {len(RULES) + 1}. Grave exclusivamente a saída estruturada em `{result_file}`,
    respeitando `{schema_file}`.
 
@@ -79,18 +180,18 @@ def build_manual_instructions(
     schema_file: str = "output-schema.json",
     result_file: str = "result.json",
 ) -> str:
-    """Mesmas regras, sem a mecânica de sessão específica de um agente."""
-    numbered = "\n".join(
-        f"{index}. {rule}" for index, rule in enumerate(RULES, start=1)
-    )
+    """Mesmo escopo e mesmas regras, sem a mecânica de sessão de um agente."""
     return f"""Análise contextual do Julius — preenchimento manual.
 
 Conta: {context.account["id"]}
 Scan: {context.scan_id}
-Oportunidades no pacote: {len(context.opportunities)}
+Oportunidades no pacote: {len(context.opportunities)} de \
+{context.portfolio.get("total_opportunities", len(context.opportunities))} no portfólio
 Sinais a julgar: {len(context.signals)}
+
+{_division_of_labour()}
 
 Escreva `{result_file}` seguindo `{schema_file}`. As mesmas regras valem:
 
-{numbered}
+{_numbered_rules()}
 """
