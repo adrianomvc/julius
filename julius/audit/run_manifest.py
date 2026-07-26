@@ -37,9 +37,8 @@ def build_manifest(account: Account, config: Config, scan_id: str, source: str) 
         {
             "k": "preços",
             "v": (
-                f"{config.pricing.region} · {config.pricing.currency} "
-                f"v{config.pricing.version} · Glue STANDARD "
-                f"{config.pricing.glue_dpu_hour:.4f}/DPU-h · FLEX "
+                f"{config.pricing.provenance} · {config.pricing.currency} · "
+                f"Glue STANDARD {config.pricing.glue_dpu_hour:.4f}/DPU-h · FLEX "
                 f"{config.pricing.glue_flex_dpu_hour:.4f}/DPU-h"
             ),
         },

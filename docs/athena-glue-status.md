@@ -144,8 +144,14 @@ da coleta read-only atual:
 - **jobs de streaming**: a DPU-hora é estimada por sobreposição de janela, sem
   regra de custo própria;
 - **Ray / M-DPU**: tarifa e comportamento ainda não validados em conta real;
-- **Price List API**: as tarifas de `julius/config.py` são premissas
-  versionadas; falta consulta a preço datado por região.
+- **Price List API — conferência pendente em conta real.** As tarifas saíram do
+  código para `knowledge/pricing/tables/sa-east-1.toml`, com procedência e a
+  flag `verified`, hoje **falsa**: são os valores usados desde o MVP e ninguém
+  os conferiu contra fonte citável. `julius pricing inspect` e
+  `julius pricing refresh` regeram a tabela a partir da API, mas o mapeamento
+  entre atributo de produto e tarifa (`knowledge/pricing/mapping.toml`) é um
+  ponto de partida plausível, **não validado** — rodar `inspect` antes do
+  primeiro `refresh` não é opcional.
 
 ## Fontes de dados
 

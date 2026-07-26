@@ -5,8 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
+from julius.findings.opportunity import Opportunity
 from julius.metrics.unit_economics import calculate
-from julius.opportunities.base import Opportunity
 
 
 @dataclass(frozen=True)

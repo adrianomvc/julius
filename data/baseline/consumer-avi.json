@@ -214,6 +214,7 @@
         "estimated_saving_high": 154.26,
         "estimated_saving_low": 74.28,
         "estimation_version": "2.0-usd",
+        "is_strategic": false,
         "method": "sm_idle_app_v1",
         "pricing_region": "sa-east-1",
         "projected_bytes": null,
@@ -226,6 +227,7 @@
         "instância ml.g4dn.xlarge (GPU)"
       ],
       "evidence_coverage": 1.0,
+      "evidence_quality": "modeled_rule",
       "evidence_refs": [],
       "execution_priority": 65,
       "finding": "JupyterLab ocioso sem idle shutdown",
@@ -310,6 +312,7 @@
         "estimated_saving_high": 105.2,
         "estimated_saving_low": 50.65,
         "estimation_version": "2.0-usd",
+        "is_strategic": false,
         "method": "glue_session_idle_v1",
         "pricing_region": "sa-east-1",
         "projected_bytes": null,
@@ -322,6 +325,7 @@
         "DPU=5 (mín. útil 2)"
       ],
       "evidence_coverage": 1.0,
+      "evidence_quality": "modeled_rule",
       "evidence_refs": [
         {
           "collected_at": "2026-07-23",
@@ -415,6 +419,7 @@
         "estimated_saving_high": 158.67,
         "estimated_saving_low": 76.4,
         "estimation_version": "2.0-usd",
+        "is_strategic": false,
         "method": "sm_unused_endpoint_v1",
         "pricing_region": "sa-east-1",
         "projected_bytes": null,
@@ -427,6 +432,7 @@
         "auto_scaling=não"
       ],
       "evidence_coverage": 1.0,
+      "evidence_quality": "modeled_rule",
       "evidence_refs": [],
       "execution_priority": 34,
       "finding": "Endpoint em tempo real praticamente sem uso",
@@ -512,6 +518,7 @@
         "estimated_saving_high": 86.62,
         "estimated_saving_low": 41.71,
         "estimation_version": "2.0-usd",
+        "is_strategic": false,
         "method": "data_low_use_v1",
         "pricing_region": "sa-east-1",
         "projected_bytes": null,
@@ -525,6 +532,7 @@
         "Grafo: cadeia atende 1 conta(s) Consumer"
       ],
       "evidence_coverage": 1.0,
+      "evidence_quality": "modeled_rule",
       "evidence_refs": [],
       "execution_priority": 12,
       "finding": "Base recorrente pouco usada por um único consumidor",
@@ -613,6 +621,7 @@
         "estimated_saving_high": 88.2,
         "estimated_saving_low": 37.8,
         "estimation_version": "athena-recovery-1.0",
+        "is_strategic": false,
         "method": "athena_missing_partition_filter_modeled_rule_v1",
         "pricing_region": "sa-east-1",
         "projected_bytes": 19791209298940,
@@ -626,6 +635,7 @@
         "Achados relacionados no mesmo ativo: Query com leitura excessiva (SELECT * / sem result reuse) (ATHENA-EXCESSIVE-SCAN); Repetições exatas elegíveis sem query result reuse (ATHENA-RESULT-REUSE)"
       ],
       "evidence_coverage": 1.0,
+      "evidence_quality": "modeled_rule",
       "evidence_refs": [],
       "execution_priority": 10,
       "finding": "Query sem filtro de partição varre a tabela inteira (+2 achados relacionados)",
@@ -715,6 +725,7 @@
         "estimated_saving_high": 49.9,
         "estimated_saving_low": 24.02,
         "estimation_version": "2.0-usd",
+        "is_strategic": false,
         "method": "data_unused_output_v1",
         "pricing_region": "sa-east-1",
         "projected_bytes": null,
@@ -728,6 +739,7 @@
         "~200 GB armazenados"
       ],
       "evidence_coverage": 1.0,
+      "evidence_quality": "modeled_rule",
       "evidence_refs": [],
       "execution_priority": 7,
       "finding": "Base recorrente sem uso (ninguém toca)",
@@ -805,7 +817,7 @@
           "Glue cobra DPU-hora do compute até a falha (retries incluídos)",
           "compute médio até a falha ~20 min",
           "corrigir a causa recupera o desperdício",
-          "tarifa versionada de 0.4400 USD/DPU-h",
+          "tarifa de 0.4400 USD/DPU-h · tabela sa-east-1 v2.0-usd (não conferida)",
           "economia esperada aplica fator conservador de realização de 70%",
           "economia limitada ao saldo não comprometido dos processos relacionados (267.85 USD)"
         ],
@@ -818,6 +830,7 @@
         "estimated_saving_high": 42.2,
         "estimated_saving_low": 20.32,
         "estimation_version": "2.0-usd",
+        "is_strategic": false,
         "method": "glue_failure_waste_v1",
         "pricing_region": "sa-east-1",
         "projected_bytes": null,
@@ -831,6 +844,7 @@
         "Achados relacionados no mesmo ativo: Timeout muito acima da duração média (GLUE-TIMEOUT-EXCESSIVE); Glue 3.0 abaixo da versão preferencial 5.1 (GLUE-VERSION-REVIEW)"
       ],
       "evidence_coverage": 1.0,
+      "evidence_quality": "modeled_rule",
       "evidence_refs": [
         {
           "actual_dpu_hours": 0.0,
@@ -919,7 +933,7 @@
           "timeout 2880 min vs. duração média 20 min",
           "~0.3 execução travada/mês, janela limitada a 240 min",
           "alinhar o timeout corta a cobrança de um job pendurado mais cedo",
-          "tarifa versionada de 0.4400 USD/DPU-h",
+          "tarifa de 0.4400 USD/DPU-h · tabela sa-east-1 v2.0-usd (não conferida)",
           "economia esperada aplica fator conservador de realização de 70%",
           "economia limitada ao saldo não comprometido dos processos relacionados (71.43 USD)"
         ],
@@ -932,6 +946,7 @@
         "estimated_saving_high": 11.97,
         "estimated_saving_low": 5.77,
         "estimation_version": "2.0-usd",
+        "is_strategic": false,
         "method": "glue_timeout_guardrail_v1",
         "pricing_region": "sa-east-1",
         "projected_bytes": null,
@@ -944,6 +959,7 @@
         "Achados relacionados no mesmo ativo: Job com baixa utilização e capacidade fixa (sem Auto Scaling) (GLUE-AUTOSCALING); Glue 3.0 abaixo da versão preferencial 5.1 (GLUE-VERSION-REVIEW); Worker type G.4X maior que a necessidade (GLUE-WORKER-TYPE-OVERSIZED)"
       ],
       "evidence_coverage": 1.0,
+      "evidence_quality": "modeled_rule",
       "evidence_refs": [
         {
           "actual_dpu_hours": 0.0,
@@ -1043,6 +1059,7 @@
         "estimated_saving_high": 13.5,
         "estimated_saving_low": 8.78,
         "estimation_version": "2.0-usd",
+        "is_strategic": false,
         "method": "sfn_polling_loop_v1",
         "pricing_region": "sa-east-1",
         "projected_bytes": null,
@@ -1057,6 +1074,7 @@
         "Achados relacionados no mesmo ativo: Standard Workflow candidato a Express (SFN-STANDARD-TO-EXPRESS)"
       ],
       "evidence_coverage": 1.0,
+      "evidence_quality": "modeled_rule",
       "evidence_refs": [],
       "execution_priority": 4,
       "finding": "Loop de polling gera transições extras (+1 achados relacionados)",
@@ -1133,7 +1151,7 @@
           "timeout 2880 min vs. duração média 50 min",
           "~0.3 execução travada/mês, janela limitada a 240 min",
           "alinhar o timeout corta a cobrança de um job pendurado mais cedo",
-          "tarifa versionada de 0.4400 USD/DPU-h",
+          "tarifa de 0.4400 USD/DPU-h · tabela sa-east-1 v2.0-usd (não conferida)",
           "economia esperada aplica fator conservador de realização de 70%",
           "economia limitada ao saldo não comprometido dos processos relacionados (471.58 USD)"
         ],
@@ -1146,6 +1164,7 @@
         "estimated_saving_high": 9.98,
         "estimated_saving_low": 4.8,
         "estimation_version": "2.0-usd",
+        "is_strategic": false,
         "method": "glue_timeout_guardrail_v1",
         "pricing_region": "sa-east-1",
         "projected_bytes": null,
@@ -1159,6 +1178,7 @@
         "Achados relacionados no mesmo ativo: Capacidade superdimensionada (GLUE-OVERPROVISIONED); Glue 3.0 abaixo da versão preferencial 5.1 (GLUE-VERSION-REVIEW)"
       ],
       "evidence_coverage": 1.0,
+      "evidence_quality": "modeled_rule",
       "evidence_refs": [
         {
           "actual_dpu_hours": 0.0,
@@ -1247,7 +1267,7 @@
           "timeout 2880 min vs. duração média 60 min",
           "~0.3 execução travada/mês, janela limitada a 240 min",
           "alinhar o timeout corta a cobrança de um job pendurado mais cedo",
-          "tarifa versionada de 0.4400 USD/DPU-h",
+          "tarifa de 0.4400 USD/DPU-h · tabela sa-east-1 v2.0-usd (não conferida)",
           "economia esperada aplica fator conservador de realização de 70%",
           "economia limitada ao saldo não comprometido dos processos relacionados (478.97 USD)"
         ],
@@ -1260,6 +1280,7 @@
         "estimated_saving_high": 9.98,
         "estimated_saving_low": 4.8,
         "estimation_version": "2.0-usd",
+        "is_strategic": false,
         "method": "glue_timeout_guardrail_v1",
         "pricing_region": "sa-east-1",
         "projected_bytes": null,
@@ -1272,6 +1293,7 @@
         "Achados relacionados no mesmo ativo: Glue 1.0 desatualizado (avaliar 5.1) (GLUE-VERSION-OLD); Capacidade superdimensionada (GLUE-OVERPROVISIONED); Job recorrente sem job bookmarks (reprocessa dados) (GLUE-BOOKMARK-OFF)"
       ],
       "evidence_coverage": 1.0,
+      "evidence_quality": "modeled_rule",
       "evidence_refs": [
         {
           "actual_dpu_hours": 0.0,
@@ -1359,7 +1381,7 @@
           "timeout 2880 min vs. duração média 30 min",
           "~0.3 execução travada/mês, janela limitada a 240 min",
           "alinhar o timeout corta a cobrança de um job pendurado mais cedo",
-          "tarifa versionada de 0.4400 USD/DPU-h",
+          "tarifa de 0.4400 USD/DPU-h · tabela sa-east-1 v2.0-usd (não conferida)",
           "economia esperada aplica fator conservador de realização de 70%",
           "economia limitada ao saldo não comprometido dos processos relacionados (16.61 USD)"
         ],
@@ -1372,6 +1394,7 @@
         "estimated_saving_high": 3.99,
         "estimated_saving_low": 1.92,
         "estimation_version": "2.0-usd",
+        "is_strategic": false,
         "method": "glue_timeout_guardrail_v1",
         "pricing_region": "sa-east-1",
         "projected_bytes": null,
@@ -1384,6 +1407,7 @@
         "Achados relacionados no mesmo ativo: Glue 3.0 abaixo da versão preferencial 5.1 (GLUE-VERSION-REVIEW)"
       ],
       "evidence_coverage": 1.0,
+      "evidence_quality": "modeled_rule",
       "evidence_refs": [
         {
           "actual_dpu_hours": 0.0,
@@ -1480,6 +1504,7 @@
         "estimated_saving_high": 2.77,
         "estimated_saving_low": 0.92,
         "estimation_version": "athena-recovery-1.0",
+        "is_strategic": false,
         "method": "athena_legacy_result_reuse_modeled_rule_v1",
         "pricing_region": "sa-east-1",
         "projected_bytes": 2319282339840,
@@ -1490,6 +1515,7 @@
         "custo evitável indisponível sem reconciliação completa"
       ],
       "evidence_coverage": 1.0,
+      "evidence_quality": "modeled_rule",
       "evidence_refs": [],
       "execution_priority": 0,
       "finding": "Repetições exatas elegíveis sem query result reuse",
@@ -1575,6 +1601,7 @@
         "estimated_saving_high": 2.46,
         "estimated_saving_low": 0.82,
         "estimation_version": "athena-recovery-1.0",
+        "is_strategic": false,
         "method": "athena_full_scan_modeled_rule_v1",
         "pricing_region": "sa-east-1",
         "projected_bytes": 773094113280,
@@ -1587,6 +1614,7 @@
         "workgroup sem result reuse"
       ],
       "evidence_coverage": 0.9,
+      "evidence_quality": "modeled_rule",
       "evidence_refs": [],
       "execution_priority": 0,
       "finding": "Query com leitura excessiva (SELECT * / sem result reuse)",
@@ -1671,6 +1699,7 @@
         "estimated_saving_high": null,
         "estimated_saving_low": null,
         "estimation_version": "2.0-usd",
+        "is_strategic": false,
         "method": "glue_unattributed_cost_v1",
         "pricing_region": "sa-east-1",
         "projected_bytes": null,
@@ -1685,6 +1714,7 @@
         "data_quality=64.00 USD"
       ],
       "evidence_coverage": 0.6,
+      "evidence_quality": "modeled_rule",
       "evidence_refs": [],
       "execution_priority": 0,
       "finding": "Cobrança Glue relevante ainda não atribuída aos processos",

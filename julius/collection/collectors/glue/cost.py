@@ -12,29 +12,38 @@ dependência administrativa fora da coleta read-only.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+from typing import Any
+
 from julius.collection.currency import non_usd_gap, usd_amount
 from julius.collection.models import Account, GlueCostCoverage
 from julius.collection.window import AnalysisWindow
-from julius.config import (
-    ALLOCATED_GLUE_BUCKETS,
-    GLUE_COST_VERSION,
-    GLUE_USAGE_TYPE_MARKERS,
-    Config,
-)
 
 _METRICS = ("NetUnblendedCost", "UnblendedCost")
 
 
-def classify_usage_type(usage_type: str) -> str:
-    """Classifica um `USAGE_TYPE` do Cost Explorer em um bucket versionado."""
+def classify_usage_type(
+    usage_type: str, markers: Sequence[tuple[str, str]]
+) -> str:
+    """Traduz um `USAGE_TYPE` do Cost Explorer em bucket de cobrança.
+
+    A tabela de marcadores é conhecimento de domínio e chega como parâmetro: a
+    coleta aplica a classificação sem depender de quem a define.
+    """
     normalized = str(usage_type or "").lower()
-    for marker, bucket in GLUE_USAGE_TYPE_MARKERS:
+    for marker, bucket in markers:
         if marker in normalized:
             return bucket
     return "other"
 
 
-def collect_glue_costs(ce_client, *, window: AnalysisWindow) -> GlueCostCoverage:
+def collect_glue_costs(
+    ce_client,
+    *,
+    window: AnalysisWindow,
+    markers: Sequence[tuple[str, str]],
+    version: str = "",
+) -> GlueCostCoverage:
     """Cobrança Glue da janela de análise por bucket, em USD.
 
     A janela é a mesma do consumo coletado e a mesma do Athena. O Cost Explorer
@@ -44,7 +53,7 @@ def collect_glue_costs(ce_client, *, window: AnalysisWindow) -> GlueCostCoverage
     coverage = GlueCostCoverage(
         period_start=window.start_date.isoformat(),
         data_through=window.data_through.isoformat(),
-        allocation_version=GLUE_COST_VERSION,
+        allocation_version=version,
     )
 
     for metric in _METRICS:
@@ -73,7 +82,7 @@ def collect_glue_costs(ce_client, *, window: AnalysisWindow) -> GlueCostCoverage
                 if amount is None:
                     coverage.gaps.append(non_usd_gap(value.get("Unit")))
                     return coverage
-                bucket = classify_usage_type(usage_type)
+                bucket = classify_usage_type(usage_type, markers)
                 if bucket == "other" and usage_type:
                     # Usage type desconhecido nunca é descartado em silêncio.
                     unknown.append(str(usage_type))
@@ -92,8 +101,9 @@ def collect_glue_costs(ce_client, *, window: AnalysisWindow) -> GlueCostCoverage
 def allocate_costs(
     account: Account,
     coverage: GlueCostCoverage,
-    config: Config,
+    config: Any,
     *,
+    allocatable_buckets: frozenset[str] | set[str] = frozenset(),
     jobs_collection_complete: bool = True,
 ) -> GlueCostCoverage:
     """Rateia cada bucket entre os ativos coletados e define a qualidade."""
@@ -121,7 +131,7 @@ def allocate_costs(
 
     # Um bucket marcado como rateável sem pool correspondente sumiria em
     # silêncio; a divergência é registrada em vez de descartada.
-    for bucket in sorted(ALLOCATED_GLUE_BUCKETS - {pool[0] for pool in pools}):
+    for bucket in sorted(set(allocatable_buckets) - {pool[0] for pool in pools}):
         if coverage.buckets.get(bucket):
             coverage.gaps.append(f"bucket {bucket} sem regra de rateio definida")
 
@@ -157,7 +167,7 @@ def _is_flex(job) -> bool:
 def _quality(
     account: Account,
     coverage: GlueCostCoverage,
-    config: Config,
+    config: Any,
     jobs_collection_complete: bool,
 ) -> str:
     """`reconciled` só com coleta íntegra, DPU medido e consumo aderente."""
@@ -208,7 +218,7 @@ def _estimated_share(account: Account) -> float:
     return estimated / total
 
 
-def _rate(job, config: Config) -> float:
+def _rate(job, config: Any) -> float:
     if job.capacity_unit == "M-DPU":
         return config.pricing.glue_ray_mdpu_hour
     return config.pricing.glue_rate(job.execution_class)

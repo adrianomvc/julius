@@ -9,7 +9,7 @@ import pytest
 
 from julius.collection.normalizers import load_account
 from julius.config import DEFAULT_CONFIG
-from julius.opportunities.detectors import run_all
+from julius.knowledge.rules import run_all
 from julius.pipeline import analyze
 from julius.report import renderer
 

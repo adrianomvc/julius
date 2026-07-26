@@ -1,0 +1,54 @@
+# Tabela de preço — premissas, não fatos.
+#
+# Os valores abaixo são os que o Julius vinha usando desde o MVP. `verified`
+# fica falso porque nenhum deles foi conferido contra a página de preço ou a
+# Price List API nesta data: a estrutura existe justamente para que conferir
+# seja trocar um arquivo, não editar código.
+#
+# Para adicionar uma região, copie este arquivo, ajuste os valores com uma
+# fonte citável e ponha o `region` correspondente. Nenhum número é inventado
+# aqui — uma região sem tabela falha na carga em vez de herdar preço alheio.
+
+region = "sa-east-1"
+currency = "USD"
+version = "2.0-usd"
+verified = false
+effective_date = ""
+sources = [
+    "https://aws.amazon.com/glue/pricing/",
+    "https://aws.amazon.com/athena/pricing/",
+    "https://aws.amazon.com/step-functions/pricing/",
+    "https://aws.amazon.com/sagemaker/pricing/",
+]
+
+[glue]
+# USD/DPU-hora. Fallback versionado; a cobrança real permanece no Cost Explorer.
+dpu_hour = 0.44
+flex_dpu_hour = 0.29
+# Ray cobra M-DPU.
+ray_mdpu_hour = 0.44
+# DataBrew cobra node-hour, não DPU-hora do Glue.
+databrew_node_hour = 0.48
+
+[athena]
+# USD/TB escaneado. Só governa o caminho modelado: quando o rateio do Cost
+# Explorer fecha, a tarifa usada é a implícita na cobrança.
+per_tb = 5.0
+
+[stepfunctions]
+standard_per_transition = 0.000025
+express_per_request = 0.000001
+
+[sagemaker]
+default_hourly = 0.18
+
+[sagemaker.instances]
+"ml.t3.medium" = 0.05
+"ml.t3.large" = 0.10
+"ml.m5.large" = 0.12
+"ml.m5.xlarge" = 0.23
+"ml.m5.2xlarge" = 0.46
+"ml.c5.xlarge" = 0.21
+"ml.g4dn.xlarge" = 0.53
+"ml.g5.xlarge" = 1.00
+"ml.p3.2xlarge" = 4.00

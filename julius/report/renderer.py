@@ -11,7 +11,7 @@ from pathlib import Path
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from julius import __version__
-from julius.opportunities.base import Opportunity
+from julius.findings.opportunity import Opportunity
 from julius.report.view_models import ReportViewModel, manifest_val
 
 _TEMPLATES = Path(__file__).parent / "templates"

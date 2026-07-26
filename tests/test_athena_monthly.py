@@ -18,8 +18,8 @@ from julius.collection.collectors.athena.monthly import collect_analysis
 from julius.collection.models import Account, AthenaQuery
 from julius.collection.normalizers.dump import account_to_dataset
 from julius.config import DEFAULT_CONFIG
-from julius.estimation import athena as athena_estimation
-from julius.opportunities.detectors import athena as athena_detector
+from julius.knowledge.rules.athena import estimation as athena_estimation
+from julius.knowledge.rules.athena import queries as athena_detector
 from julius.pipeline import analyze_account
 from julius.report import renderer
 from julius.report.formatters import money

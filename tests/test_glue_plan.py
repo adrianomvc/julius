@@ -26,14 +26,14 @@ from julius.collection.models import (
 from julius.collection.schedule_frequency import expected_runs_per_month
 from julius.collection.window import AnalysisWindow
 from julius.config import DEFAULT_CONFIG
-from julius.estimation.process_cost import (
+from julius.findings.opportunity import Estimation, Opportunity
+from julius.graph.ownership import resolve_owner
+from julius.knowledge.rules.glue import jobs as glue_detector
+from julius.scoring import priority as prioritizer
+from julius.scoring.process_cost import (
     apply_conservative_caps,
     build_process_costs,
 )
-from julius.graph.ownership import resolve_owner
-from julius.opportunities import prioritizer
-from julius.opportunities.base import Estimation, Opportunity
-from julius.opportunities.detectors import glue as glue_detector
 
 
 def _glue_client():

@@ -13,8 +13,8 @@ from datetime import date, datetime, timezone
 from pathlib import Path
 
 from julius.collection.models import Account
-from julius.opportunities.base import Opportunity
-from julius.opportunities.lifecycle import LifecycleEvent
+from julius.findings.lifecycle import LifecycleEvent
+from julius.findings.opportunity import Opportunity
 from julius.state.diff import DiffEvent
 from julius.state.validation import ValidationResult
 

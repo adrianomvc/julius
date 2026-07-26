@@ -128,7 +128,7 @@ def test_collect_account_records_sources_and_optional_disabled_do_not_degrade(
     monkeypatch,
 ):
     _patch_empty_collectors(monkeypatch)
-    account = collect_account(FakeSession())
+    account = collect_account(FakeSession(), config=DEFAULT_CONFIG)
 
     by_source = {item.source: item for item in account.collection_health}
     assert by_source["AWS identity"].status == "ok"
@@ -148,7 +148,7 @@ def test_missing_glue_billing_degrades_the_scan_when_there_are_jobs(monkeypatch)
         "collect_jobs",
         lambda *_a, **_k: [GlueJob(name="etl", worker_type="G.1X", number_of_workers=2)],
     )
-    account = collect_account(FakeSession())
+    account = collect_account(FakeSession(), config=DEFAULT_CONFIG)
 
     billing = next(
         item
@@ -168,7 +168,7 @@ def test_optional_failure_marks_scan_partial_and_glue_failure_blocks(monkeypatch
         "collect_services",
         lambda *_a, **_k: (_ for _ in ()).throw(AwsLikeError()),
     )
-    account = collect_account(FakeSession())
+    account = collect_account(FakeSession(), config=DEFAULT_CONFIG)
     assert account.collection_status == "partial"
     cost = next(
         item for item in account.collection_health if item.source == "Cost Explorer"
@@ -181,7 +181,7 @@ def test_optional_failure_marks_scan_partial_and_glue_failure_blocks(monkeypatch
         lambda *_a, **_k: (_ for _ in ()).throw(AwsLikeError()),
     )
     with pytest.raises(RequiredCollectionError, match="Glue Jobs"):
-        collect_account(FakeSession())
+        collect_account(FakeSession(), config=DEFAULT_CONFIG)
 
 
 def test_health_roundtrip_and_report_json(tmp_path):
