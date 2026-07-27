@@ -69,6 +69,9 @@ def collect_account(
         glue_usage_markers=config.glue_cost.usage_type_markers,
         allocatable_glue_buckets=config.glue_cost.allocatable_buckets,
         glue_cost_version=config.glue_cost.version,
+        redshift_usage_markers=config.redshift_cost.usage_type_markers,
+        redshift_compute_buckets=config.redshift_cost.compute_buckets,
+        redshift_cost_version=config.redshift_cost.version,
     )
 
     for source in SOURCES:

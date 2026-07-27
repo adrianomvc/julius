@@ -15,6 +15,7 @@ from julius.findings.evidence import Evidence
 from julius.findings.finding import Finding
 from julius.findings.opportunity import Estimation, Opportunity
 from julius.findings.recommendation import Recommendation
+from julius.findings.signal import Signal
 
 _DOC_PAUSE = "https://docs.aws.amazon.com/redshift/latest/mgmt/managing-cluster-operations.html"
 _DOC_RESIZE = "https://docs.aws.amazon.com/redshift/latest/mgmt/managing-cluster-operations.html#elastic-resize"
@@ -72,6 +73,32 @@ def _blocked_estimation(method: str) -> Estimation:
     )
 
 
+def _idle_estimation(cluster: RedshiftCluster) -> Estimation:
+    """Cluster parado não cobra compute — a economia é o compute inteiro.
+
+    Isso só vale porque o número não é modelado: ele é o rateio da cobrança
+    real do serviço, e o contrafactual de pausar não é uma fração estimada, é
+    zero. Sem cobrança rateada não há o que afirmar, e o achado segue sendo
+    investigação como antes.
+    """
+    allocated = cluster.allocated_compute_cost
+    if allocated is None or allocated <= 0:
+        return _blocked_estimation("redshift_idle_cluster_v1")
+    return Estimation(
+        method="redshift_idle_cluster_v2",
+        baseline_cost=round(allocated, 2),
+        projected_cost=0.0,
+        estimated_saving=round(allocated, 2),
+        assumptions=[
+            "compute rateado da cobrança real do Cost Explorer na janela",
+            "cluster pausado não cobra compute; armazenamento e snapshot seguem",
+            _UNMEASURED,
+        ],
+        baseline_quality="allocated",
+        saving_quality="measured",
+    )
+
+
 def _idle(
     account: Account, cluster: RedshiftCluster, config: Config, scan_id: str
 ) -> Opportunity:
@@ -103,24 +130,40 @@ def _idle(
                 "conexões podem existir sem aparecer na métrica agregada por dia",
             ],
             docs=[_DOC_PAUSE, _DOC_SERVERLESS],
-            blocked=True,
+            # Com a cobrança rateada o achado deixa de ser hipótese: sabe-se o
+            # que se paga e sabe-se que pausar zera esse pagamento.
+            blocked=not _has_allocated_cost(cluster),
         ),
         Evidence(
             items=[
                 f"conexões médias {cluster.avg_connections:.2f}",
                 f"CPU média {cluster.avg_cpu_load:.0%}",
                 f"{cluster.observed_days} dias com métrica",
+                (
+                    f"compute rateado {cluster.allocated_compute_cost:.2f} USD "
+                    "na janela"
+                    if _has_allocated_cost(cluster)
+                    else "cobrança do serviço não rateada ao cluster"
+                ),
                 _UNMEASURED,
             ],
-            sources=["Redshift DescribeClusters", "CloudWatch"],
+            sources=[
+                "Redshift DescribeClusters",
+                "CloudWatch",
+                "Cost Explorer GetCostAndUsage",
+            ],
             observed_runs=cluster.observed_days,
             coverage_days=cluster.coverage_days,
-            has_optional_metrics=False,
+            has_optional_metrics=_has_allocated_cost(cluster),
             owner_tag=cluster.owner_tag,
         ),
-        _blocked_estimation("redshift_idle_cluster_v1"),
+        _idle_estimation(cluster),
         RuleContext(account=account.account_id, config=config, scan_id=scan_id),
     )
+
+
+def _has_allocated_cost(cluster: RedshiftCluster) -> bool:
+    return bool(cluster.allocated_compute_cost and cluster.allocated_compute_cost > 0)
 
 
 def _oversized(
@@ -170,3 +213,66 @@ def _oversized(
         _blocked_estimation("redshift_oversized_v1"),
         RuleContext(account=account.account_id, config=config, scan_id=scan_id),
     )
+
+
+def signals(account: Account, config: Config) -> list[Signal]:
+    """O que o plano de controle levanta e não fecha.
+
+    Nos dois casos a métrica é fato e a conclusão não é. Um cluster parado pode
+    estar esperando uma carga sazonal, servindo de DR, ou não servindo a nada —
+    e o CloudWatch não distingue. Quantos nós cabem depende de memória por
+    query, distribuição e fila, que vivem nas tabelas de sistema que esta
+    coleta não alcança.
+    """
+    out: list[Signal] = []
+    for cluster in getattr(account, "redshift_clusters", []):
+        if cluster.paused:
+            continue
+        if _is_idle(cluster, config):
+            out.append(
+                Signal(
+                    kind="config",
+                    rule_id="REDSHIFT-IDLE-JUSTIFICATION",
+                    asset_type="redshift_cluster",
+                    asset_name=cluster.name,
+                    observation=(
+                        f"'{cluster.name}' passou {cluster.observed_days} dias sem "
+                        "conexão observada e com CPU no chão."
+                    ),
+                    question=(
+                        "Este cluster existe para uma carga sazonal, para "
+                        "recuperação de desastre, ou deixou de ser usado? Quem "
+                        "depende dele hoje?"
+                    ),
+                    missing_evidence=[
+                        "propósito declarado do cluster pelo dono",
+                        "janela de carga esperada, se houver",
+                    ],
+                    doc_links=[_DOC_PAUSE],
+                )
+            )
+        if _is_oversized(cluster, config):
+            out.append(
+                Signal(
+                    kind="config",
+                    rule_id="REDSHIFT-RESIZE-TARGET",
+                    asset_type="redshift_cluster",
+                    asset_name=cluster.name,
+                    observation=(
+                        f"{cluster.node_count} nós {cluster.node_type} com CPU "
+                        f"máxima {cluster.max_cpu_load:.0%} na janela."
+                    ),
+                    question=(
+                        "Para quantos nós dá para reduzir sem estourar memória "
+                        "por query ou fila? CPU baixa esconde gargalo de I/O ou "
+                        "de concorrência neste caso?"
+                    ),
+                    missing_evidence=[
+                        "memória por query e derrame para disco",
+                        "profundidade de fila e tempo de espera",
+                        "distribuição das tabelas mais lidas",
+                    ],
+                    doc_links=[_DOC_RESIZE],
+                )
+            )
+    return out

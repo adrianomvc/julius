@@ -183,3 +183,8 @@ class RedshiftCluster:
     observed_days: int = 0
     coverage_days: int = 0
     owner_tag: str | None = None
+    #: Compute rateado da cobrança real. `None` = sem cobrança classificada, e
+    #: aí nenhuma regra quantifica economia. Só compute entra aqui: pausar o
+    #: cluster não para de cobrar armazenamento.
+    allocated_compute_cost: float | None = None
+    cost_quality: str = "unavailable"

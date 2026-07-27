@@ -442,3 +442,91 @@ def test_high_retry_asks_instead_of_asserting():
 
     assert "?" in retry.question
     assert retry.missing_evidence
+
+
+def _cluster(**overrides) -> RedshiftCluster:
+    defaults = dict(
+        name="dw-legado",
+        kind="provisioned",
+        node_type="ra3.xlplus",
+        node_count=4,
+        avg_cpu_load=0.02,
+        max_cpu_load=0.06,
+        avg_connections=0.0,
+        observed_days=30,
+        coverage_days=30,
+    )
+    defaults.update(overrides)
+    return RedshiftCluster(**defaults)
+
+
+def test_an_idle_cluster_with_allocated_billing_finally_gets_a_number():
+    """O achado mais óbvio de um data lake era reportado com economia zero."""
+    account = Account(
+        account_id="123456789012",
+        redshift_clusters=[_cluster(allocated_compute_cost=1412.60)],
+    )
+
+    found = redshift_rules.detect(account, DEFAULT_CONFIG, "scan")
+    idle = next(o for o in found if o.rule_id == "REDSHIFT-IDLE-CLUSTER")
+
+    assert idle.blocked is False
+    assert idle.estimated_gain.monthly_expected > 0
+    assert idle.estimation is not None
+    # Pausar não é uma fração: o compute inteiro deixa de ser cobrado.
+    assert idle.estimation.baseline_cost == 1412.60
+    assert idle.estimation.projected_cost == 0.0
+    assert idle.estimation.baseline_quality == "allocated"
+    assert idle.evidence_quality == "allocated"
+
+
+def test_without_allocated_billing_the_idle_cluster_stays_as_it_was():
+    """Sem cobrança rateada não há o que afirmar — comportamento preservado."""
+    account = Account(account_id="123456789012", redshift_clusters=[_cluster()])
+
+    found = redshift_rules.detect(account, DEFAULT_CONFIG, "scan")
+    idle = next(o for o in found if o.rule_id == "REDSHIFT-IDLE-CLUSTER")
+
+    assert idle.blocked is True
+    assert idle.estimated_gain.monthly_expected == 0
+    assert idle.estimation is not None
+    assert idle.estimation.saving_quality == "unavailable"
+
+
+def test_oversized_stays_blocked_even_with_allocated_billing():
+    """Saber o que se paga não diz quantos nós cabem."""
+    account = Account(
+        account_id="123456789012",
+        redshift_clusters=[_cluster(allocated_compute_cost=1412.60)],
+    )
+
+    found = redshift_rules.detect(account, DEFAULT_CONFIG, "scan")
+    oversized = next(o for o in found if o.rule_id == "REDSHIFT-OVERSIZED")
+
+    assert oversized.blocked is True
+    assert oversized.estimated_gain.monthly_expected == 0
+
+
+def test_redshift_asks_what_the_metric_cannot_answer():
+    account = Account(
+        account_id="123456789012",
+        redshift_clusters=[_cluster(allocated_compute_cost=1412.60)],
+    )
+
+    signals = {s.rule_id: s for s in redshift_rules.signals(account, DEFAULT_CONFIG)}
+
+    assert "REDSHIFT-IDLE-JUSTIFICATION" in signals
+    assert "REDSHIFT-RESIZE-TARGET" in signals
+    for signal in signals.values():
+        assert signal.asset_type == "redshift_cluster"
+        assert signal.question and signal.missing_evidence
+
+
+def test_a_paused_cluster_produces_neither_finding_nor_question():
+    account = Account(
+        account_id="123456789012",
+        redshift_clusters=[_cluster(paused=True, allocated_compute_cost=1412.60)],
+    )
+
+    assert redshift_rules.detect(account, DEFAULT_CONFIG, "scan") == []
+    assert redshift_rules.signals(account, DEFAULT_CONFIG) == []

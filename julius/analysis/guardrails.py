@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from julius.analysis.context_builder import AgentContext
 
-PROMPT_VERSION = "1.3.0"
+PROMPT_VERSION = "1.4.0"
 
 #: As regras em si, separadas do texto que as apresenta — o validador de
 #: resposta verifica o resultado das mesmas restrições.
@@ -114,6 +114,15 @@ SCOPE = (
             "parada?",
             "Isso exige Studio ativo, ou cabe num training/processing job sob "
             "demanda?",
+        ),
+    ),
+    (
+        "redshift_cluster",
+        (
+            "O cluster sem conexão existe para carga sazonal, para recuperação "
+            "de desastre, ou deixou de ser usado? Quem depende dele hoje?",
+            "CPU baixa até no pico esconde gargalo de I/O, de memória por query "
+            "ou de fila, ou é capacidade sobrando mesmo?",
         ),
     ),
     (

@@ -55,6 +55,11 @@ def build(
     coverage = conf_mod.coverage_ratio(
         evidence.observed_runs, evidence.coverage_days, config
     )
+    # A mesma escala que ordena achados por confiança governa a largura da
+    # faixa: quem não mede não pode apresentar incerteza estreita.
+    quality = evidence_quality.combined(
+        estimation.baseline_quality, estimation.saving_quality
+    )
     gain = build_gain(
         estimation.estimated_saving,
         recommendation.difficulty,
@@ -63,6 +68,7 @@ def build(
         monthly_high=estimation.estimated_saving_high,
         today=ctx.today,
         is_strategic=estimation.is_strategic,
+        quality=quality,
     )
     owner, owner_source, owner_conf = resolve_owner(evidence.owner_tag)
 
@@ -95,9 +101,7 @@ def build(
         confidence=confidence,
         confidence_label=conf_label,
         evidence_coverage=coverage,
-        evidence_quality=evidence_quality.combined(
-            estimation.baseline_quality, estimation.saving_quality
-        ).name.lower(),
+        evidence_quality=quality.name.lower(),
         missing_evidence=_missing(evidence, estimation),
         data_sources=list(evidence.sources),
         owner=owner,

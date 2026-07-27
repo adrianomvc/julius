@@ -102,6 +102,7 @@ REGISTRY: tuple[RuleFamily, ...] = (
         name="clusters",
         detect=redshift_rules.detect,
         requires=("redshift_clusters",),
+        signals=redshift_rules.signals,
     ),
     RuleFamily(
         service="cross_service",

@@ -429,3 +429,118 @@ def test_stepfunctions_history_sampling_has_an_explicit_ceiling():
     )
 
     assert client.history_calls == stepfunctions_collector._MAX_SAMPLED_EXECUTIONS
+
+
+class _RedshiftCostExplorer:
+    """Cobrança agregada por usage type, como o Cost Explorer entrega."""
+
+    def __init__(self, groups=None):
+        self.groups = groups if groups is not None else [
+            ("SAE1-Node:ra3.xlplus", "1670.20"),
+            ("SAE1-RMS-Storage-ByteHrs", "168.40"),
+            ("SAE1-Backup-ByteHrs", "35.80"),
+        ]
+
+    def get_cost_and_usage(self, **_):
+        return {
+            "ResultsByTime": [
+                {
+                    "Groups": [
+                        {
+                            "Keys": [usage_type],
+                            "Metrics": {
+                                "NetUnblendedCost": {"Amount": amount, "Unit": "USD"}
+                            },
+                        }
+                        for usage_type, amount in self.groups
+                    ]
+                }
+            ]
+        }
+
+
+def test_redshift_cost_separates_compute_from_what_survives_a_pause():
+    """Armazenamento continua sendo cobrado com o cluster parado."""
+    from julius.collection.collectors import redshift_cost
+    from julius.knowledge.redshift_cost import (
+        REDSHIFT_COMPUTE_BUCKETS,
+        REDSHIFT_USAGE_TYPE_MARKERS,
+    )
+
+    coverage = redshift_cost.collect_redshift_costs(
+        _RedshiftCostExplorer(),
+        window=AnalysisWindow.trailing(),
+        markers=REDSHIFT_USAGE_TYPE_MARKERS,
+    )
+
+    assert coverage.buckets["node_hours"] == 1670.20
+    assert coverage.buckets["managed_storage"] == 168.40
+    assert coverage.buckets["backup"] == 35.80
+    assert coverage.compute_cost(REDSHIFT_COMPUTE_BUCKETS) == 1670.20
+    assert coverage.net_cost == 1874.40
+
+
+def test_redshift_compute_is_split_by_declared_capacity():
+    from julius.collection.collectors import redshift_cost
+    from julius.collection.models import Account, RedshiftCluster
+    from julius.knowledge.redshift_cost import (
+        REDSHIFT_COMPUTE_BUCKETS,
+        REDSHIFT_USAGE_TYPE_MARKERS,
+    )
+
+    account = Account(
+        account_id="123456789012",
+        redshift_clusters=[
+            RedshiftCluster(name="a", node_count=4, observed_days=30),
+            RedshiftCluster(name="b", node_count=12, observed_days=30),
+        ],
+    )
+    coverage = redshift_cost.collect_redshift_costs(
+        _RedshiftCostExplorer(),
+        window=AnalysisWindow.trailing(),
+        markers=REDSHIFT_USAGE_TYPE_MARKERS,
+    )
+    redshift_cost.allocate_costs(account, coverage, REDSHIFT_COMPUTE_BUCKETS)
+
+    a, b = account.redshift_clusters
+    assert a.allocated_compute_cost == round(1670.20 * 4 / 16, 2)
+    assert b.allocated_compute_cost == round(1670.20 * 12 / 16, 2)
+    # Só o compute é rateado: armazenamento não some ao pausar.
+    assert a.allocated_compute_cost + b.allocated_compute_cost < coverage.net_cost
+
+
+def test_an_unknown_usage_type_is_never_dropped_in_silence():
+    from julius.collection.collectors import redshift_cost
+    from julius.knowledge.redshift_cost import REDSHIFT_USAGE_TYPE_MARKERS
+
+    coverage = redshift_cost.collect_redshift_costs(
+        _RedshiftCostExplorer([("SAE1-CoisaNova-Hrs", "12.00")]),
+        window=AnalysisWindow.trailing(),
+        markers=REDSHIFT_USAGE_TYPE_MARKERS,
+    )
+
+    assert coverage.unknown_usage_types == ["SAE1-CoisaNova-Hrs"]
+    assert coverage.buckets["other"] == 12.00
+
+
+def test_capacity_unknown_leaves_the_cost_unallocated_instead_of_guessing():
+    from julius.collection.collectors import redshift_cost
+    from julius.collection.models import Account, RedshiftCluster
+    from julius.knowledge.redshift_cost import (
+        REDSHIFT_COMPUTE_BUCKETS,
+        REDSHIFT_USAGE_TYPE_MARKERS,
+    )
+
+    account = Account(
+        account_id="123456789012",
+        redshift_clusters=[RedshiftCluster(name="sem-capacidade", node_count=0)],
+    )
+    coverage = redshift_cost.collect_redshift_costs(
+        _RedshiftCostExplorer(),
+        window=AnalysisWindow.trailing(),
+        markers=REDSHIFT_USAGE_TYPE_MARKERS,
+    )
+    redshift_cost.allocate_costs(account, coverage, REDSHIFT_COMPUTE_BUCKETS)
+
+    assert account.redshift_clusters[0].allocated_compute_cost is None
+    assert any("não rateado" in gap for gap in coverage.gaps)

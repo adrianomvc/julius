@@ -17,12 +17,14 @@ _SERVICE_LABEL = {
     "Amazon Simple Storage Service": "Amazon S3",
     "AWS Step Functions": "Step Functions",
     "Amazon SageMaker": "Amazon SageMaker",
+    "Amazon Redshift": "Amazon Redshift",
 }
 _SUBTITLE = {
     "AWS Glue": "Jobs, sessões, crawlers, catálogo e recursos associados",
     "Amazon Athena": "queries + workgroups",
     "Amazon S3": "armazenamento + requests",
     "Step Functions": "Standard / Express",
+    "Amazon Redshift": "provisionado + serverless",
 }
 
 
@@ -71,7 +73,14 @@ def collect_services(
         else {}
     )
     services: list[ServiceCost] = []
-    for label in ("AWS Glue", "Amazon Athena", "Amazon S3", "Step Functions", "Amazon SageMaker"):
+    for label in (
+        "AWS Glue",
+        "Amazon Athena",
+        "Amazon S3",
+        "Step Functions",
+        "Amazon SageMaker",
+        "Amazon Redshift",
+    ):
         if label in totals:
             services.append(
                 _service(

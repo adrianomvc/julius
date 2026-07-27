@@ -105,6 +105,11 @@ training or processing job?
 would Serverless/Async serve? Who calls this endpoint today, and does that
 consumer still exist?
 
+**Redshift cluster** — Does the cluster with no connections exist for a
+seasonal load, for disaster recovery, or has it simply stopped being used? Who
+depends on it today? Does low CPU even at peak hide an I/O, per-query memory or
+queue bottleneck, or is it genuinely spare capacity?
+
 **Cross-service** — When producing is expensive and reading throws that effort
 away, do you adjust the write or the read? Say who breaks with the choice.
 
