@@ -43,6 +43,11 @@ class RuleFamily:
     # É documentação executável: se a coleta da fonte falhou, dá para explicar
     # por que a família não produziu nada em vez de o silêncio parecer "tudo ok".
     requires: tuple[str, ...] = ()
+    # A medição sem a qual a família não pode concluir, como `"tables.touches_90d"`.
+    # Diferente de `requires`: ali o inventário chega vazio; aqui ele chega cheio
+    # e sem o número que importa. Os dois produzem o mesmo silêncio, e nenhum
+    # dos dois pode passar por "está tudo bem".
+    measures: tuple[str, ...] = ()
     docs: Sequence[str] = field(default_factory=tuple)
     # O que a família observa mas não consegue concluir. Fica fora de `detect`
     # de propósito: sinal não é achado, não recebe economia e não entra no
@@ -116,6 +121,7 @@ REGISTRY: tuple[RuleFamily, ...] = (
         name="data_products",
         detect=data_rules.detect,
         requires=("tables",),
+        measures=("tables.touches_90d",),
     ),
 )
 
@@ -138,12 +144,43 @@ def collect_signals(account: Account, config: Any) -> list[Signal]:
 
 
 def families_without_evidence(account: Account) -> list[RuleFamily]:
-    """Famílias cujo inventário chegou vazio — silêncio explicado, não implícito."""
+    """Famílias que não tiveram o que analisar — silêncio explicado.
+
+    Duas formas de não ter: o inventário chegou vazio, ou chegou cheio e sem a
+    medição de que a família depende. A segunda é a mais traiçoeira, porque a
+    seção do relatório fica vazia parecendo boa notícia.
+    """
     return [
         family
         for family in REGISTRY
-        if family.requires and not any(getattr(account, name, None) for name in family.requires)
+        if (
+            family.requires
+            and not any(getattr(account, name, None) for name in family.requires)
+        )
+        or any(_unmeasured(account, path) for path in family.measures)
     ]
+
+
+def missing_evidence(account: Account, family: RuleFamily) -> str:
+    """Por que esta família ficou sem analisar, em uma frase.
+
+    Sem isso o relatório diria "tables" para uma conta cheia de tabelas, e o
+    leitor concluiria que o Julius se enganou em vez de que faltou medida.
+    """
+    faltando = [path for path in family.measures if _unmeasured(account, path)]
+    if faltando:
+        return "medição ausente: " + ", ".join(faltando)
+    return "inventário vazio: " + ", ".join(family.requires)
+
+
+def _unmeasured(account: Account, path: str) -> bool:
+    """Nenhum item da coleção tem a medição preenchida."""
+    collection_name, _, field_name = path.partition(".")
+    items = getattr(account, collection_name, None) or []
+    if not items:
+        # Coleção vazia já é coberta por `requires`; aqui não há o que dizer.
+        return False
+    return all(getattr(item, field_name, None) is None for item in items)
 
 
 __all__ = [
@@ -151,5 +188,6 @@ __all__ = [
     "RuleFamily",
     "collect_signals",
     "families_without_evidence",
+    "missing_evidence",
     "run_all",
 ]

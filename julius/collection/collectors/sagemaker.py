@@ -213,9 +213,10 @@ def _idle_profile(cloudwatch_client, app_name: str, window) -> tuple[float, int]
     return round(24.0 * idle_fraction / observed_days, 2), active_days
 
 
-def _invocations(cloudwatch_client, endpoint_name: str, window) -> int:
+def _invocations(cloudwatch_client, endpoint_name: str, window) -> int | None:
+    """`None` sem CloudWatch: não consultar não é o mesmo que não haver."""
     if cloudwatch_client is None:
-        return 0
+        return None
     points = _metric_points(
         cloudwatch_client,
         namespace="AWS/SageMaker",

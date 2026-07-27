@@ -39,6 +39,22 @@ _AUTOSCALE_TYPES = {
 _DOWNGRADE_TYPES = {"G.4X", "G.8X", "G.12X", "G.16X", "R.2X", "R.4X", "R.8X"}
 
 
+def _flex_candidate(job: GlueJob) -> bool:
+    """O que é fato num candidato a FLEX.
+
+    `time_sensitive` ficava aqui e matava a regra: nada no código escreve esse
+    campo, e o gate exigia `is False`. Tolerar início adiado é propriedade do
+    SLA, não do recurso — a AWS não tem como informar. O que sobra é fato, e a
+    economia é diferença de tarifa, calculável.
+    """
+    return (
+        job.execution_class == "STANDARD"
+        and job.runs_per_month > 0
+        and job.glue_version_num >= 3.0
+        and job.command_type == "glueetl"
+    )
+
+
 def detect(account: Account, config: Config, scan_id: str) -> list[Opportunity]:
     out: list[Opportunity] = []
     for job in account.glue_jobs:
@@ -67,14 +83,9 @@ def detect(account: Account, config: Config, scan_id: str) -> list[Opportunity]:
         if job.command_type == "glueetl" and job.glue_version_num < 2.0:
             out.append(_version(account, job, config, scan_id))
 
-        # FLEX: job em batch, não sensível a tempo, ainda em STANDARD.
-        if (
-            job.execution_class == "STANDARD"
-            and job.time_sensitive is False
-            and job.runs_per_month > 0
-            and job.glue_version_num >= 3.0
-            and job.command_type == "glueetl"
-        ):
+        # FLEX: job em batch ainda em STANDARD. A tolerância a início adiado
+        # não sai do plano de controle — ver `_flex_candidate`.
+        if _flex_candidate(job):
             out.append(_flex(account, job, config, scan_id))
 
         # Bookmarks desligados num job recorrente: reprocessa dados antigos.
@@ -627,6 +638,29 @@ def signals(account: Account, config: Config) -> list[Signal]:
                     doc_links=[_DOC_VERSION],
                 )
             )
+        if _flex_candidate(job) and job.time_sensitive is None:
+            out.append(
+                Signal(
+                    kind="config",
+                    rule_id="GLUE-FLEX-TOLERANCE",
+                    asset_type="glue_job",
+                    asset_name=job.name,
+                    observation=(
+                        f"'{job.name}' é batch Spark em STANDARD com "
+                        f"{job.runs_per_month:.0f} execuções/mês; FLEX custa menos "
+                        "por DPU-hora."
+                    ),
+                    question=(
+                        "O SLA deste job tolera início adiado e capacidade não "
+                        "garantida? Quem espera a saída, e até quando?"
+                    ),
+                    missing_evidence=[
+                        "prazo de entrega acordado com quem consome a saída",
+                        "dependência a jusante que trava esperando este job",
+                    ],
+                    doc_links=[_DOC_FLEX],
+                )
+            )
         if (
             job.runs_per_month >= th.high_job_frequency_monthly
             and not job.incremental_source_evidence
@@ -665,7 +699,8 @@ def _version_number(value: str) -> float:
 def _flex(account: Account, job: GlueJob, config: Config, scan_id: str) -> Opportunity:
     est = glue_est.flex_saving(job, config)
     discount = 1 - config.pricing.glue_flex_dpu_hour / max(config.pricing.glue_dpu_hour, 0.000001)
-    return build(
+    tolerates = job.time_sensitive is False
+    opportunity = build(
         Finding(
             asset_type="glue_job",
             asset_name=job.name,
@@ -673,8 +708,8 @@ def _flex(account: Account, job: GlueJob, config: Config, scan_id: str) -> Oppor
             rule_version="1.0.0",
             title="Job batch elegível a ExecutionClass FLEX",
             why=(
-                "Job Spark batch não sensível a tempo ainda usa STANDARD; "
-                f"a tarifa FLEX versionada é {discount:.0%} menor."
+                "Job Spark batch ainda usa STANDARD; a tarifa FLEX versionada é "
+                f"{discount:.0%} menor, se o SLA tolerar início adiado."
             ),
         ),
         Recommendation(
@@ -682,19 +717,26 @@ def _flex(account: Account, job: GlueJob, config: Config, scan_id: str) -> Oppor
             action="Mudar ExecutionClass para FLEX",
             how_to_apply="Definir --execution-class FLEX no job; validar que o SLA tolera variação de início.",
             how_to_validate="Comparar custo por execução e tempo de conclusão por 2 semanas.",
-            risks=["tempo de início variável"],
+            risks=["tempo de início variável", "capacidade não garantida"],
             docs=[_DOC_FLEX],
+            # A troca não pode ser feita antes de alguém afirmar que o SLA
+            # aguenta esperar; a afirmação explícita no dataset conta.
+            blocked=not tolerates,
         ),
         Evidence(
             items=[
                 "execution_class=STANDARD",
-                "não sensível a tempo (batch)",
+                (
+                    "tolerância a início adiado declarada"
+                    if tolerates
+                    else "tolerância a início adiado não confirmada"
+                ),
                 f"{job.runs_per_month} execuções/mês",
             ],
             sources=["Glue GetJob"],
             observed_runs=job.observed_runs,
             coverage_days=job.coverage_days,
-            has_optional_metrics=True,
+            has_optional_metrics=tolerates,
             owner_tag=job.owner_tag,
         ),
         est,
@@ -704,6 +746,11 @@ def _flex(account: Account, job: GlueJob, config: Config, scan_id: str) -> Oppor
             scan_id=scan_id,
         ),
     )
+    if not tolerates:
+        opportunity.missing_evidence = [
+            "confirmação de que o SLA tolera início adiado e capacidade não garantida",
+        ]
+    return opportunity
 
 
 def _bookmark(

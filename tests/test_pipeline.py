@@ -207,3 +207,103 @@ def test_athena_layout_findings_carry_no_financial_claim(analysis):
     ]
     for opportunity in layout:
         assert opportunity.estimated_gain.is_strategic is True
+
+
+def test_an_unmeasured_table_is_not_accused_of_being_unused():
+    """A fonte de toques é opcional; sem ela toda tabela pareceria órfã."""
+    from julius.collection.models import Account, GlueJob, Table
+    from julius.knowledge.rules import families_without_evidence, missing_evidence
+
+    account = Account(
+        account_id="123456789012",
+        glue_jobs=[GlueJob(name="produz", runs_in_window=40, window_days=30)],
+        tables=[Table(name="saida", written_by="produz")],
+    )
+
+    found = run_all(account, DEFAULT_CONFIG, "scan")
+    assert not [o for o in found if o.rule_id.startswith("DATA-")]
+
+    # E o silêncio é explicado, em vez de a seção ficar vazia parecendo boa notícia.
+    familias = {f"{f.service}/{f.name}" for f in families_without_evidence(account)}
+    assert "cross_service/data_products" in familias
+    familia = next(
+        f for f in families_without_evidence(account) if f.name == "data_products"
+    )
+    assert "medição ausente" in missing_evidence(account, familia)
+
+
+def test_a_measured_zero_still_produces_the_finding():
+    """Medir e não achar toque é afirmação legítima — e continua valendo."""
+    from julius.collection.models import Account, GlueJob, Table
+
+    account = Account(
+        account_id="123456789012",
+        glue_jobs=[GlueJob(name="produz", runs_in_window=40, window_days=30)],
+        tables=[Table(name="saida", written_by="produz", touches_90d=0)],
+    )
+
+    found = run_all(account, DEFAULT_CONFIG, "scan")
+    assert "DATA-UNUSED-OUTPUT" in {o.rule_id for o in found}
+
+
+def test_an_endpoint_without_cloudwatch_is_not_declared_unused():
+    """Sem métrica, um endpoint em produção era reportado com o custo 24/7."""
+    from julius.collection.models import Account, SageMakerEndpoint
+
+    account = Account(
+        account_id="123456789012",
+        sagemaker_endpoints=[
+            SageMakerEndpoint(
+                name="modelo-em-producao",
+                instance_type="ml.m5.xlarge",
+                instance_count=3,
+                coverage_days=30,
+            )
+        ],
+    )
+
+    assert not run_all(account, DEFAULT_CONFIG, "scan")
+
+    account.sagemaker_endpoints[0].invocations_per_month = 4
+    found = run_all(account, DEFAULT_CONFIG, "scan")
+    assert "SM-ENDPOINT-UNUSED" in {o.rule_id for o in found}
+
+
+def test_flex_is_no_longer_dead_and_waits_for_the_sla_answer():
+    """`time_sensitive` nunca foi escrito por ninguém; a regra nunca disparava."""
+    from julius.collection.models import Account, GlueJob
+    from julius.knowledge.rules import collect_signals
+
+    job = GlueJob(
+        name="batch",
+        glue_version="4.0",
+        command_type="glueetl",
+        execution_class="STANDARD",
+        worker_type="G.1X",
+        number_of_workers=10,
+        runs_in_window=30,
+        window_days=30,
+        avg_execution_sec=1800,
+        dpu_seconds_window=540000,
+        observed_runs=30,
+        coverage_days=30,
+    )
+    account = Account(account_id="123456789012", glue_jobs=[job])
+
+    found = {o.rule_id: o for o in run_all(account, DEFAULT_CONFIG, "scan")}
+    flex = found["GLUE-FLEX-CANDIDATE"]
+    assert flex.blocked is True, "migrar sem saber o SLA seria recomendar às cegas"
+    assert flex.missing_evidence
+
+    sinais = {s.rule_id for s in collect_signals(account, DEFAULT_CONFIG)}
+    assert "GLUE-FLEX-TOLERANCE" in sinais
+
+    # A afirmação explícita libera a recomendação e cala a pergunta.
+    job.time_sensitive = False
+    flex = {o.rule_id: o for o in run_all(account, DEFAULT_CONFIG, "scan")}[
+        "GLUE-FLEX-CANDIDATE"
+    ]
+    assert flex.blocked is False
+    assert "GLUE-FLEX-TOLERANCE" not in {
+        s.rule_id for s in collect_signals(account, DEFAULT_CONFIG)
+    }

@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, field
 
 from julius.collection.redaction import redact_secrets
-from julius.knowledge.rules import families_without_evidence
+from julius.knowledge.rules import families_without_evidence, missing_evidence
 from julius.pipeline import Analysis
 
 
@@ -94,6 +94,7 @@ def build_agent_context(
                     "service": family.service,
                     "name": family.name,
                     "requires": list(family.requires),
+                    "reason": missing_evidence(analysis.account, family),
                 }
                 for family in families_without_evidence(analysis.account)
             ],

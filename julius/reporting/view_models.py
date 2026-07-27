@@ -10,7 +10,7 @@ from dataclasses import dataclass, field
 from julius.collection.models import Account, PreviousResult, ProducerCandidate
 from julius.findings.opportunity import Opportunity
 from julius.governance import recommend
-from julius.knowledge.rules import families_without_evidence
+from julius.knowledge.rules import families_without_evidence, missing_evidence
 from julius.reporting import formatters as fmt
 from julius.reporting.pareto import Pareto
 from julius.reporting.pareto import compute as compute_pareto
@@ -794,6 +794,7 @@ def build(
                 "service": family.service,
                 "name": family.name,
                 "requires": ", ".join(family.requires),
+                "reason": missing_evidence(account, family),
             }
             for family in families_without_evidence(account)
         ],

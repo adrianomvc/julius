@@ -50,9 +50,19 @@ def _clamp(v: float) -> int:
 
 
 def candidate_score(table: Table, recurring_writer: bool) -> int:
-    """Assumiu perfil de produção? (0–100, determinístico)."""
-    communities = {0: 0, 1: 10, 2: 25}.get(table.consuming_communities, 40)  # 3+ = 40
-    touches = min(25, table.touches_90d / 40)          # satura em 1000 toques/90d
+    """Assumiu perfil de produção? (0–100, determinístico).
+
+    Uso não medido não pontua. Ele não desconta também: a tabela simplesmente
+    ganha os pontos que consegue provar, e quem lê o score vê um candidato mais
+    fraco em vez de um número construído sobre ausência.
+    """
+    communities = (
+        {0: 0, 1: 10, 2: 25}.get(table.consuming_communities, 40)  # 3+ = 40
+        if table.consuming_communities is not None
+        else 0
+    )
+    # Satura em 1000 toques/90d.
+    touches = min(25, table.touches_90d / 40) if table.touches_90d is not None else 0
     persistence = 20 if recurring_writer else 0
     publication = 15 if table.datawarm_published else 0
     return _clamp(communities + touches + persistence + publication)
@@ -63,7 +73,7 @@ def readiness_score(table: Table, recurring_writer: bool) -> int:
     owner = 30 if table.owner_tag else 0
     lineage = 25 if table.written_by else 0
     not_temp = 0 if table.temporary else 15
-    consumers = 15 if table.consuming_accounts > 0 else 0
+    consumers = 15 if (table.consuming_accounts or 0) > 0 else 0
     stable = 15  # schema estável assumido quando não há sinal em contrário
     return _clamp(owner + lineage + not_temp + consumers + stable)
 
@@ -79,7 +89,10 @@ def compute_candidates(account: Account) -> list[ProducerCandidate]:
     for t in account.tables:
         if t.temporary:
             continue
-        if t.touches_90d <= 0 and not t.datawarm_published:
+        # Sem toques medidos não dá para dizer que a tabela é consumida; a
+        # publicação via DataWarm é a única evidência de uso independente
+        # dessa medição.
+        if not t.touches_90d and not t.datawarm_published:
             continue
         w = writers.get(t.written_by or "")
         recurring = bool(w and w.runs_per_month >= 4)

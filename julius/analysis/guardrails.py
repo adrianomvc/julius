@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from julius.analysis.context_builder import AgentContext
 
-PROMPT_VERSION = "1.4.0"
+PROMPT_VERSION = "1.5.0"
 
 #: As regras em si, separadas do texto que as apresenta — o validador de
 #: resposta verifica o resultado das mesmas restrições.
@@ -77,6 +77,8 @@ SCOPE = (
             "O modo de escrita casa com o filtro de quem lê a tabela a jusante?",
             "Há reprocessamento evitável — bookmark, overwrite total, retry "
             "silencioso?",
+            "O SLA tolera início adiado e capacidade não garantida, ou alguém "
+            "a jusante trava esperando este job terminar na hora?",
         ),
     ),
     (

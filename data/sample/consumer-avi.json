@@ -151,7 +151,6 @@
       "auto_scaling": true,
       "execution_class": "STANDARD",
       "job_bookmark": true,
-      "time_sensitive": true,
       "runs_in_window": 30,
       "avg_execution_sec": 1800,
       "avg_cpu_load": 0.68,
@@ -245,6 +244,13 @@
       "coverage_days": 90,
       "owner_tag": "Squad AVI",
       "datawarm_published": true
+    },
+    {
+      "name": "staging_parceiros_bruto",
+      "written_by": "sync_parceiros",
+      "storage_bytes": 32212254720,
+      "coverage_days": 90,
+      "owner_tag": "Squad AVI"
     }
   ],
   "interactive_sessions": [

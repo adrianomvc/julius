@@ -22,13 +22,22 @@ def detect(account: Account, config: Config, scan_id: str) -> list[Opportunity]:
     for table in account.tables:
         if table.temporary:
             continue
+        # Toques não medidos não são toques ausentes. A fonte só roda com
+        # `--touches-table`, e sem ela toda tabela pareceria órfã — com
+        # economia quantificada em cima de uma afirmação que ninguém fez.
+        if table.touches_90d is None:
+            continue
         writer = account.job_by_name(table.written_by)
         if writer is None or writer.runs_per_month < th.recurring_runs_min:
             continue  # sem job recorrente escritor não há compute a recuperar
 
         if table.touches_90d <= th.unused_touches_max:
             out.append(_unused(account, table, writer, config, scan_id))
-        elif table.touches_90d <= th.low_touches_max and table.consuming_communities <= 1:
+        elif (
+            table.touches_90d <= th.low_touches_max
+            and table.consuming_communities is not None
+            and table.consuming_communities <= 1
+        ):
             out.append(_low_use(account, table, writer, config, scan_id))
     return out
 
