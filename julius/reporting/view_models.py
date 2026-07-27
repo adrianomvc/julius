@@ -189,7 +189,9 @@ def _opp_vm(o: Opportunity, currency: str) -> OpportunityVM:
     return OpportunityVM(
         id=o.opportunity_id,
         title=o.finding,
-        asset=f"{o.asset_type}: {o.asset_name}",
+        # O chip de categoria já diz o serviço; repetir o tipo aqui só gasta
+        # a linha com vocabulário interno.
+        asset=o.asset_name,
         origin=o.origin,
         category_label=cat_label,
         category_fg=cat_fg,
@@ -354,6 +356,11 @@ class ReportViewModel:
     ai_implementation_order: list[dict] = field(default_factory=list)
     ai_recommendations: list[dict] = field(default_factory=list)
     ai_coverage: dict = field(default_factory=dict)
+    # IDs do foco 80/20. A lista de recomendações é ordenada por
+    # prioridade, então o Pareto não pode ser o prefixo dela — ele vira
+    # marcador em cada item, e o leitor continua vendo onde está a
+    # concentração sem uma segunda lista repetindo a primeira.
+    focus_ids: list[str] = field(default_factory=list)
     ai_signal_verdicts: list[dict] = field(default_factory=list)
     ai_uncovered_findings: list[dict] = field(default_factory=list)
     athena_coverage: dict = field(default_factory=dict)
@@ -809,6 +816,7 @@ def build(
             for o in integrity
         ],
         focus=[_opp_vm(o, account_currency) for o in pareto.financial_focus],
+        focus_ids=[o.opportunity_id for o in pareto.financial_focus],
         table=[_opp_vm(o, account_currency) for o in table_sorted],
         do_now=[_opp_vm(o, account_currency) for o in do_now],
         plan=[_opp_vm(o, account_currency) for o in plan],
