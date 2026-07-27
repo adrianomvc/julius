@@ -47,55 +47,42 @@
           <span style="font-weight:700;font-size:26px;letter-spacing:-.01em;">Julius</span>
           <span class="mono" style="font-size:11px;color:#8792a8;border:1px solid #2f4468;border-radius:4px;padding:2px 7px;">v{{ manifest_version }}</span>
         </div>
-        <div style="margin-top:14px;font-size:14px;line-height:1.55;color:#b6bece;">Portfólio contínuo de oportunidades de otimização — custos e governança sobre a plataforma Data&nbsp;Mesh. Detectar → priorizar → recomendar → acompanhar → validar o ganho.</div>
-        <div style="margin-top:12px;padding-left:12px;border-left:2px solid #e8730c;font-size:12.5px;font-style:italic;color:#e6b98d;">"Você sabe quanto esse job custa por mês? <span style="color:#f4a95c;font-style:normal;font-weight:600;">Eu sei — até o último centavo.</span>" — cada DPU conta.</div>
+        <div style="margin-top:14px;font-size:14px;line-height:1.55;color:#b6bece;">Onde a plataforma está gastando mais do que precisa, e o que fazer a respeito. Cada item traz o problema, a ação e quanto ela economiza.</div>
       </div>
       <div class="mono" style="display:grid;grid-template-columns:auto auto;gap:6px 20px;font-size:12px;">
         <span style="color:#7b8498;">conta</span><span style="color:#e6e8e0;text-align:right;">{{ r.account_id }}</span>
         <span style="color:#7b8498;">período</span><span style="color:#e6e8e0;text-align:right;">{{ r.period }}</span>
         <span style="color:#7b8498;">janela</span><span style="color:#e6e8e0;text-align:right;">{{ r.lookback }}</span>
-        <span style="color:#7b8498;">scan_id</span><span style="color:#e6e8e0;text-align:right;">{{ r.scan_id }}</span>
       </div>
     </div>
 
-    <div style="margin-top:22px;padding-top:16px;border-top:1px solid #2a3c5c;display:flex;gap:10px;flex-wrap:wrap;">
-      {% for s in ["detected → validated", "método 80/20 (Pareto)", "scores determinísticos", "contexto: Devin"] %}
-      <span class="mono" style="font-size:11px;color:#96a0b4;background:#1a2c4a;border:1px solid #2a3c5c;border-radius:5px;padding:5px 10px;">{{ s }}</span>
-      {% endfor %}
-    </div>
   </div>
 
-  <!-- KPI STRIP -->
-  <div style="display:grid;grid-template-columns:repeat(4,1fr);border-bottom:1px solid #e2e4dc;">
-    <div style="padding:22px 26px;border-right:1px solid #e2e4dc;">
-      <div class="kicker">Economia / mês</div>
-      <div style="margin-top:8px;font-size:30px;font-weight:700;color:#e8730c;letter-spacing:-.02em;">{{ r.identified_fmt }}</div>
-      <div style="margin-top:3px;font-size:12px;color:#8a9082;">soma das oportunidades quantificáveis</div>
-    </div>
-    <div style="padding:22px 26px;border-right:1px solid #e2e4dc;">
-      <div class="kicker">Acumulado até dez</div>
-      <div style="margin-top:8px;font-size:30px;font-weight:700;color:#12233f;letter-spacing:-.02em;">{{ r.realizable_year_fmt }}</div>
-      <div style="margin-top:3px;font-size:12px;color:#8a9082;">{{ r.months_remaining }} meses restantes no ano</div>
-    </div>
-    <div style="padding:22px 26px;border-right:1px solid #e2e4dc;">
-      <div class="kicker">Oportunidades</div>
-      <div style="margin-top:8px;font-size:30px;font-weight:700;color:#12233f;letter-spacing:-.02em;">{{ r.kpi_total }}</div>
-      <div style="margin-top:3px;font-size:12px;color:#8a9082;">{{ r.kpi_actionable }} acionáveis · {{ r.kpi_strategic }} estratégica(s)</div>
-    </div>
-    <div style="padding:22px 26px;">
-      <div class="kicker">Foco 80/20</div>
-      <div style="margin-top:8px;font-size:30px;font-weight:700;color:#12233f;letter-spacing:-.02em;">{{ r.pareto_pct }}%</div>
-      <div style="margin-top:3px;font-size:12px;color:#8a9082;">da economia em {{ r.pareto_count }} ações</div>
+  <!-- O NÚMERO QUE LIDERA, E O RESTO COMO APOIO -->
+  <div style="padding:30px 44px 26px;border-bottom:1px solid #e2e4dc;">
+    <div class="kicker">Economia identificada por mês</div>
+    <div style="margin-top:6px;font-size:52px;line-height:1.05;font-weight:700;color:#e8730c;letter-spacing:-.025em;">{{ r.identified_fmt }}</div>
+    <div style="margin-top:6px;font-size:14px;color:#4b5159;max-width:640px;line-height:1.5;">{{ r.recommendation }}</div>
+    <div style="margin-top:22px;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:26px;max-width:720px;">
+      <div>
+        <div class="kicker">Até dezembro</div>
+        <div style="margin-top:4px;font-size:21px;font-weight:600;color:#12233f;">{{ r.realizable_year_fmt }}</div>
+        <div style="margin-top:2px;font-size:11.5px;color:#8a9082;">{{ r.months_remaining }} meses restantes</div>
+      </div>
+      <div>
+        <div class="kicker">Ações recomendadas</div>
+        <div style="margin-top:4px;font-size:21px;font-weight:600;color:#12233f;">{{ r.kpi_total }}</div>
+        <div style="margin-top:2px;font-size:11.5px;color:#8a9082;">{{ r.pareto_count }} concentram {{ r.pareto_pct }}% do ganho</div>
+      </div>
+      <div>
+        <div class="kicker">Custo da conta no mês</div>
+        <div style="margin-top:4px;font-size:21px;font-weight:600;color:#12233f;">{{ r.total_cost_fmt }}</div>
+        <div style="margin-top:2px;font-size:11.5px;color:#8a9082;">a economia equivale a {{ r.account_saving_pct }}</div>
+      </div>
     </div>
   </div>
 
   <div style="padding:34px 44px 44px;">
-
-    <!-- RECOMENDAÇÃO -->
-    <div style="border-left:3px solid #e8730c;background:#fef7ef;border-radius:0 8px 8px 0;padding:12px 16px;margin-bottom:30px;">
-      <span class="kicker" style="color:#a5581a;">Recomendação do Julius</span>
-      <div style="margin-top:4px;font-size:14px;line-height:1.55;color:#3a3f46;">{{ r.recommendation }}</div>
-    </div>
 
     {% if r.ai_summary %}
     <div style="border:1px solid #cdd9ea;background:#f4f7fb;border-radius:10px;padding:16px 18px;margin-bottom:30px;">
@@ -113,6 +100,164 @@
     </div>
     {% endif %}
 
+    <!-- O QUE FAZER -->
+    <div class="sec" style="margin-top:40px;"><span class="n mono" style="color:#e8730c;">01</span><h2>O que fazer, em ordem</h2></div>
+    <p class="lead">Cada item diz o problema encontrado e a ação que resolve. A ordem já é a de prioridade — comece pelo topo. Abra “ver detalhes” quando precisar da evidência ou de como conferir o resultado.</p>
+
+    {% if r.pareto_count %}
+    <div style="margin-top:18px;border:1px solid #f1e2ce;background:#fef7ef;border-radius:10px;padding:14px 18px;">
+      <div style="display:flex;justify-content:space-between;align-items:baseline;gap:14px;flex-wrap:wrap;">
+        <span style="font-size:13.5px;color:#3a3f46;">As <b>{{ r.pareto_count }}</b> ações marcadas com <span class="chip" style="color:#8a3b12;background:#fdefdd;">foco</span> concentram a maior parte da economia.</span>
+        <span class="mono" style="font-size:13px;font-weight:600;color:#e8730c;">{{ r.pareto_pct }}% · {{ r.pareto_sum_fmt }}/mês</span>
+      </div>
+      <div style="margin-top:10px;height:10px;border-radius:5px;background:#f6e6d3;overflow:hidden;">
+        <div style="height:100%;width:{{ r.pareto_pct }}%;border-radius:5px;background:#e8730c;"></div>
+      </div>
+      <div style="margin-top:8px;font-size:11.5px;color:#8a6a4a;">De {{ r.kpi_total }} oportunidades no total. Resolver as de foco entrega quase todo o ganho.</div>
+    </div>
+    {% endif %}
+
+    <div style="margin-top:20px;display:flex;flex-direction:column;gap:12px;">
+      {% for o in r.table %}
+      <div style="border:1px solid {% if o.id in r.focus_ids %}#f1d9bd{% else %}#e2e4dc{% endif %};border-radius:12px;overflow:hidden;background:#fff;">
+        <div style="display:grid;grid-template-columns:1fr auto;gap:18px;padding:18px 22px;align-items:start;">
+          <div>
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px;">
+              <span class="mono" style="font-size:11px;font-weight:700;color:#8a9082;">{{ loop.index }}</span>
+              {% if o.id in r.focus_ids %}<span class="chip" style="color:#8a3b12;background:#fdefdd;">foco</span>{% endif %}
+              <span class="chip" style="color:{{ o.category_fg }};background:{{ o.category_bg }};">{{ o.category_label }}</span>
+              {% if o.bucket == "investigar_primeiro" %}<span class="chip" style="color:#8a6a2a;background:#faf0dd;">precisa investigar antes</span>{% endif %}
+              {% if o.origin == "ai_confirmed" %}<span class="chip" style="color:#0053b3;background:#e6effa;">confirmado na análise de código</span>{% endif %}
+            </div>
+            <div style="font-size:16px;font-weight:600;color:#12233f;line-height:1.35;">{{ o.title }}</div>
+            <div style="margin-top:7px;font-size:13.5px;line-height:1.55;color:#4b5159;">{{ o.why }}</div>
+            <div style="margin-top:12px;padding:11px 14px;background:#f7f8f4;border-left:3px solid #e8730c;border-radius:0 7px 7px 0;">
+              <div class="kicker" style="color:#a5581a;">O que fazer</div>
+              <div style="margin-top:4px;font-size:14px;line-height:1.5;color:#22262c;">{{ o.action }}</div>
+            </div>
+            <div class="mono" style="margin-top:10px;font-size:11.5px;color:#7c8374;">{{ o.asset }}{% if o.owner and o.owner != "—" %} · responsável: {{ o.owner }}{% endif %}</div>
+          </div>
+
+          <div style="text-align:right;white-space:nowrap;min-width:150px;">
+            {% if o.is_strategic %}
+            <div style="font-size:13px;font-weight:600;color:#0053b3;">Ganho estratégico</div>
+            <div style="margin-top:3px;font-size:11.5px;color:#8a9082;">sem valor financeiro direto</div>
+            {% elif o.monthly_fmt == "—" %}
+            <div style="font-size:13px;font-weight:600;color:#8a6a2a;">Valor a medir</div>
+            <div style="margin-top:3px;font-size:11.5px;color:#8a9082;">falta evidência</div>
+            {% else %}
+            <div style="font-size:26px;font-weight:700;color:#e8730c;letter-spacing:-.02em;">{{ o.monthly_fmt }}</div>
+            <div style="font-size:11.5px;color:#8a9082;">por mês</div>
+            <div style="margin-top:8px;font-size:12px;color:#5b6169;">{{ o.year_fmt }} até dezembro</div>
+            {% endif %}
+            <div style="margin-top:12px;display:flex;gap:6px;justify-content:flex-end;flex-wrap:wrap;">
+              <span class="chip" style="color:{{ o.conf_fg }};background:{{ o.conf_bg }};">confiança {{ o.confidence_label | lower }}</span>
+              <span class="chip" style="color:{{ o.diff_fg }};background:{{ o.diff_bg }};">esforço {{ o.difficulty_label | lower }}</span>
+            </div>
+            {% if not o.is_strategic and o.monthly_fmt != "—" %}
+            {# O quanto confiar no número decide se o analista age hoje ou pede
+               mais dado — precisa estar visível, não atrás de um clique. #}
+            <div style="margin-top:7px;font-size:11.5px;color:#7c8374;">{% if o.anchored_in_billing %}valor medido na fatura{% else %}valor estimado a partir do consumo{% endif %}</div>
+            {% endif %}
+          </div>
+        </div>
+
+        <details style="border-top:1px solid #edeee8;">
+          <summary style="padding:11px 22px;font-size:12.5px;color:#5b6169;cursor:pointer;background:#fbfcfa;">ver detalhes — evidência, como conferir e de onde vem o número</summary>
+          <div style="padding:4px 22px 20px;">
+            <div style="display:grid;grid-template-columns:1.3fr 1fr;gap:26px;">
+              <div>
+                <div class="kicker">O que sustenta este achado</div>
+                <div style="margin-top:7px;display:flex;flex-direction:column;gap:5px;">
+                  {% for e in o.evidence %}<div style="display:flex;gap:8px;align-items:baseline;font-size:13px;color:#3a3f46;line-height:1.45;"><span style="color:#e8730c;font-weight:700;">›</span><span>{{ e }}</span></div>{% endfor %}
+                </div>
+                {% if o.ai_diagnosis %}
+                <div class="kicker" style="margin-top:16px;color:#0053b3;">Leitura do código e do contexto</div>
+                <div style="margin-top:6px;font-size:13px;line-height:1.5;color:#3a3f46;">{{ o.ai_diagnosis }}</div>
+                {% if o.ai_implementation_steps %}
+                <div style="margin-top:9px;font-size:12.5px;color:#4b5159;"><b>Passo a passo sugerido</b>
+                  <ol style="margin:5px 0 0;padding-left:20px;">{% for step in o.ai_implementation_steps %}<li style="margin-top:3px;">{{ step }}</li>{% endfor %}</ol>
+                </div>
+                {% endif %}
+                {% if o.ai_conflicts %}<div style="margin-top:8px;font-size:12.5px;color:#b23b3b;"><b>Atenção:</b> {{ o.ai_conflicts | join("; ") }}</div>{% endif %}
+                {% endif %}
+                {% if o.next_action %}
+                <div class="kicker" style="margin-top:16px;color:#8a6a2a;">Antes de agir</div>
+                <div style="margin-top:5px;font-size:13px;color:#4b5159;">{{ o.next_action }}</div>
+                {% endif %}
+              </div>
+              <div>
+                <div class="kicker">Como aplicar</div>
+                <div style="margin-top:5px;font-size:13px;line-height:1.5;color:#3a3f46;">{{ o.how_to_apply }}{% if o.doc_url %} <a href="{{ o.doc_url }}" target="_blank" rel="noopener">documentação AWS ↗</a>{% endif %}</div>
+                <div class="kicker" style="margin-top:14px;">Como conferir que funcionou</div>
+                <div style="margin-top:5px;font-size:13px;line-height:1.5;color:#3a3f46;">{{ o.how_to_validate }}</div>
+                {% if not o.is_strategic and o.monthly_fmt != "—" %}
+                <div class="kicker" style="margin-top:14px;">De onde vem o número</div>
+                <div style="margin-top:5px;font-size:12.5px;line-height:1.5;color:#4b5159;">Entre {{ o.band_fmt }} por mês. Base de cálculo: {{ o.baseline_fmt }}{% if o.anchored_in_billing %}, vinda da fatura{% else %}, estimada a partir do consumo{% endif %}.</div>
+                {% endif %}
+                {% if o.source_process %}
+                <div class="kicker" style="margin-top:14px;color:#b23b3b;">Processo que gera este custo</div>
+                <div style="margin-top:4px;font-size:13px;font-weight:600;color:#b23b3b;">{{ o.source_process }}</div>
+                {% endif %}
+                <div class="mono" style="margin-top:16px;padding-top:12px;border-top:1px dashed #dfe1d9;font-size:10.5px;color:#a0a69a;line-height:1.5;">{{ o.id }} · qualidade da evidência: {{ o.evidence_quality_label }} · cobertura {{ o.coverage_pct }} · fontes: {{ o.sources }}</div>
+              </div>
+            </div>
+          </div>
+        </details>
+      </div>
+      {% endfor %}
+    </div>
+
+    {% if r.ai_signal_verdicts or r.ai_uncovered_findings %}
+    <!-- FORA DO CATÁLOGO -->
+    <div class="sec" style="margin-top:44px;"><span class="n mono" style="color:#0053b3;">AI</span><h2>Fora do catálogo</h2></div>
+    <p class="lead">Observações da análise contextual que <b>não</b> são achados determinísticos: não têm economia calculada e não ocupam posição no ranking. Servem para decidir o que investigar e o que vale virar regra.</p>
+
+    {% if r.ai_signal_verdicts %}
+    <div style="margin-top:16px;">
+      <div class="kicker" style="color:#0053b3;">Sinais julgados contra o artefato</div>
+      <div style="margin-top:10px;display:flex;flex-direction:column;gap:8px;">
+        {% for v in r.ai_signal_verdicts %}
+        <div style="border:1px solid #e2e4dc;border-radius:9px;padding:12px 15px;">
+          <div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;align-items:center;">
+            <div class="mono" style="font-size:11px;color:#7c8374;">{{ v.rule_id }} · {{ v.asset_name }}</div>
+            <span class="chip" style="font-size:9.5px;{% if v.verdict == 'confirmed' %}color:#8a3b12;background:#fdeee0;{% else %}color:#4b5159;background:#eef0ea;{% endif %}">{{ 'confirmado' if v.verdict == 'confirmed' else 'evidência pendente' }}</span>
+          </div>
+          <div style="margin-top:6px;font-size:13px;line-height:1.5;color:#3a3f46;">{{ v.rationale }}</div>
+          <div class="mono" style="margin-top:5px;font-size:9.5px;color:#8a9082;">artefato {{ v.evidence_ref.sha256[:16] }}{% if v.evidence_ref.lines %} · linhas {{ v.evidence_ref.lines | join(", ") }}{% endif %}</div>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+
+    {% if r.ai_uncovered_findings %}
+    <div style="margin-top:20px;">
+      <div class="kicker" style="color:#0053b3;">Padrões sem regra correspondente</div>
+      <p class="lead" style="margin-top:6px;">Candidatos a virar regra determinística depois de revisão humana. Nenhum tem valor financeiro atribuído.</p>
+      <div style="margin-top:10px;display:flex;flex-direction:column;gap:8px;">
+        {% for u in r.ai_uncovered_findings %}
+        <div style="border:1px solid #cdd9ea;background:#f4f7fb;border-radius:9px;padding:12px 15px;">
+          <div style="font-size:13.5px;font-weight:600;color:#12233f;">{{ u.title }}</div>
+          <div class="mono" style="margin-top:3px;font-size:11px;color:#7c8374;">{{ u.asset_type }} · {{ u.asset_name }} · regra proposta {{ u.proposed_rule_id }}</div>
+          <div style="margin-top:6px;font-size:13px;line-height:1.5;color:#3a3f46;">{{ u.why_not_covered }}</div>
+          <div style="margin-top:5px;font-size:12px;color:#4b5159;"><b>Base da confiança:</b> {{ u.confidence_basis }}</div>
+          <div class="mono" style="margin-top:5px;font-size:9.5px;color:#8a9082;">artefato {{ u.evidence_ref.sha256[:16] }}{% if u.evidence_ref.lines %} · linhas {{ u.evidence_ref.lines | join(", ") }}{% endif %}</div>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+    {% endif %}
+
+
+    <!-- APÊNDICE — o técnico fica disponível, e fora do caminho -->
+    <details style="margin-top:44px;border:1px solid #e2e4dc;border-radius:12px;overflow:hidden;">
+      <summary style="padding:16px 22px;background:#f7f8f4;cursor:pointer;font-size:14px;font-weight:600;color:#12233f;">
+        Detalhamento técnico
+        <span style="display:block;margin-top:3px;font-size:12px;font-weight:400;color:#7c8374;">Saúde da coleta, custo por processo, uso do Athena, governança e histórico. Necessário para auditar os números; dispensável para decidir o que fazer.</span>
+      </summary>
+      <div style="padding:8px 22px 26px;">
     <!-- SAÚDE DA COLETA -->
     <div style="margin-bottom:30px;border:1px solid #e2e4dc;border-radius:12px;overflow:hidden;">
       <div style="display:flex;justify-content:space-between;align-items:center;gap:16px;padding:14px 18px;background:#f7f8f4;flex-wrap:wrap;">
@@ -282,211 +427,6 @@
     </div>
     {% endif %}
 
-    <!-- 01 FOCO 80/20 -->
-    <div class="sec" style="margin-top:44px;"><span class="n mono" style="color:#e8730c;">01</span><h2>Foco 80/20 — faça primeiro</h2></div>
-    <p class="lead">{{ r.pareto_sentence }}</p>
-    <div style="margin-top:20px;border:1px solid #f1e2ce;border-radius:12px;background:#fef7ef;overflow:hidden;">
-      <div style="padding:16px 22px 6px;">
-        <div style="display:flex;justify-content:space-between;align-items:center;font-size:12px;color:#4b5159;">
-          <span style="font-weight:600;">Economia acumulada das ações do foco</span>
-          <span class="mono" style="color:#e8730c;font-weight:600;">{{ r.pareto_pct }}% · {{ r.pareto_sum_fmt }}/mês</span>
-        </div>
-        <div style="margin-top:10px;height:12px;border-radius:6px;background:#f2e3d2;overflow:hidden;display:flex;">
-          {% for seg in r.pareto_bar %}<div title="{{ seg.title }}" style="height:100%;width:{{ seg.w }};background:{{ seg.color }};border-right:2px solid #fef7ef;"></div>{% endfor %}
-        </div>
-      </div>
-      <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:1px;background:#efe3d6;margin-top:14px;">
-        {% for o in r.focus %}
-        <div style="background:#fff;padding:18px 22px;">
-          <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;">
-            <div><div style="font-size:15px;font-weight:600;color:#12233f;line-height:1.3;">{{ o.title }}</div>
-              <div class="mono" style="margin-top:5px;font-size:12px;color:#7c8374;">{{ o.asset }}</div></div>
-            <div style="text-align:right;white-space:nowrap;"><div style="font-weight:700;font-size:19px;color:#e8730c;">{{ o.monthly_fmt }}</div><div style="font-size:11px;color:#8a9082;">/mês</div></div>
-          </div>
-          <div style="margin-top:12px;display:flex;gap:7px;flex-wrap:wrap;">
-            <span class="chip" style="color:{{ o.diff_fg }};background:{{ o.diff_bg }};">Dif {{ o.difficulty }}/5</span>
-            <span class="chip" style="color:{{ o.conf_fg }};background:{{ o.conf_bg }};">Conf {{ o.confidence_label }}</span>
-            <span class="chip mono" style="color:#5b6169;background:#f1f2ec;border:1px solid #e2e4dc;">Economia estimada (SAVE): {{ o.saving_quality_label }}</span>
-            <span class="chip mono" style="color:#5b6169;background:#f1f2ec;border:1px solid #e2e4dc;">exec {{ o.exec_priority }}</span>
-            <span class="chip mono" style="color:#5b6169;background:#f1f2ec;border:1px solid #e2e4dc;">até dez {{ o.year_fmt }}</span>
-          </div>
-        </div>
-        {% endfor %}
-      </div>
-    </div>
-
-    <!-- 02 TABELA -->
-    <div class="sec" style="margin-top:44px;"><span class="n mono" style="color:#e8730c;">02</span><h2>Tabela priorizada</h2></div>
-    <p class="lead">Dois rankings: <b>Execução</b> (Ganho × Confiança × Urgência ÷ Esforço — o que fazer agora) e <b>Estratégico</b> (Ganho × Confiança × Risco de não agir — o que entra no planejamento).</p>
-    <div style="margin-top:18px;border:1px solid #e2e4dc;border-radius:12px;overflow:hidden;">
-      <div style="display:grid;grid-template-columns:54px 54px 1fr 82px 92px 96px 92px;background:#12233f;color:#c2c9d6;font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;font-weight:600;">
-        <div style="padding:11px 8px;text-align:center;">Exec</div><div style="padding:11px 8px;text-align:center;">Estrat</div>
-        <div style="padding:11px 14px;">Oportunidade · Ativo</div><div style="padding:11px 8px;text-align:center;">Dif·Conf</div>
-        <div style="padding:11px 10px;text-align:right;">Ganho/mês</div><div style="padding:11px 10px;text-align:right;">Até dez</div><div style="padding:11px 10px;">Aplicar</div>
-      </div>
-      {% for o in r.table %}
-      <div style="display:grid;grid-template-columns:54px 54px 1fr 82px 92px 96px 92px;border-top:1px solid #edeee8;align-items:center;">
-        <div style="padding:14px 8px;text-align:center;">
-          <div style="font-weight:700;font-size:16px;color:{{ o.exec_color }};">{{ o.exec_priority }}</div>
-          <div style="margin:4px auto 0;height:3px;width:34px;border-radius:2px;background:#ebede6;"><div style="height:100%;width:{{ o.exec_w }};border-radius:2px;background:{{ o.exec_color }};"></div></div>
-        </div>
-        <div style="padding:14px 8px;text-align:center;">
-          <div style="font-weight:700;font-size:16px;color:{{ o.strat_color }};">{{ o.strat_priority }}</div>
-          <div style="margin:4px auto 0;height:3px;width:34px;border-radius:2px;background:#ebede6;"><div style="height:100%;width:{{ o.strat_w }};border-radius:2px;background:{{ o.strat_color }};"></div></div>
-        </div>
-        <div style="padding:13px 14px;">
-          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
-            <span style="font-size:14px;font-weight:600;color:#12233f;">{{ o.title }}</span>
-            <span class="chip" style="color:{{ o.category_fg }};background:{{ o.category_bg }};font-size:10px;">{{ o.category_label }}</span>
-          </div>
-          <div class="mono" style="margin-top:4px;font-size:11px;color:#7c8374;">{{ o.asset }} · {{ o.owner }} ({{ o.owner_source }}){% if o.source_process %} · <span style="color:#b23b3b;">gera: {{ o.source_process }}</span>{% endif %}</div>
-          {% if o.baseline_fmt != "—" %}<div class="mono" style="margin-top:3px;font-size:10.5px;color:#7c8374;">custo baseline {{ o.baseline_fmt }} ({{ o.baseline_quality_label }}) · economia estimada (SAVE) {{ o.saving_quality_label }}</div>{% endif %}
-        </div>
-        <div style="padding:13px 6px;text-align:center;">
-          <span class="chip" style="color:{{ o.diff_fg }};background:{{ o.diff_bg }};">{{ o.difficulty }}/5</span>
-          <div style="margin-top:5px;font-size:11px;color:{{ o.conf_fg }};font-weight:600;">{{ o.confidence_label }}</div>
-        </div>
-        <div class="mono" style="padding:13px 10px;text-align:right;font-size:13px;font-weight:600;color:#e8730c;">{{ o.monthly_fmt }}</div>
-        <div class="mono" style="padding:13px 10px;text-align:right;font-size:12.5px;color:#5b6169;">{{ o.year_fmt }}</div>
-        <div style="padding:13px 10px;font-size:12px;">{% if o.doc_url %}<a href="{{ o.doc_url }}" target="_blank" rel="noopener">doc ↗</a>{% else %}—{% endif %}</div>
-      </div>
-      {% endfor %}
-    </div>
-
-    <!-- 03 DETALHE -->
-    <div class="sec" style="margin-top:44px;"><span class="n mono" style="color:#e8730c;">03</span><h2>Detalhe das ações (agrupadas por causa raiz)</h2></div>
-    <p class="lead">Cada cartão consolida as evidências num problema com uma ação principal — em linguagem que a squad executa.</p>
-    <div style="margin-top:20px;display:flex;flex-direction:column;gap:16px;">
-      {% for o in r.focus %}
-      <div style="border:1px solid #e2e4dc;border-radius:12px;overflow:hidden;">
-        <div style="display:flex;justify-content:space-between;align-items:center;gap:16px;padding:15px 22px;background:{{ o.bucket_bg }};border-bottom:1px solid #e8e9e3;flex-wrap:wrap;">
-          <div style="display:flex;align-items:center;gap:11px;flex-wrap:wrap;">
-            <span class="chip" style="color:{{ o.bucket_fg }};background:#ffffffaa;font-weight:700;">{{ o.bucket_label }}</span>
-            <span style="font-size:16px;font-weight:600;color:#12233f;">{{ o.title }}</span>
-          </div>
-          <span class="mono" style="font-size:11px;color:#8a9082;">{{ o.id }}</span>
-        </div>
-        <div style="display:grid;grid-template-columns:1.55fr 1fr;">
-          <div style="padding:20px 22px;border-right:1px solid #edeee8;">
-            <div class="kicker">Ação recomendada</div><div style="margin-top:6px;font-size:14.5px;line-height:1.5;color:#22262c;">{{ o.action }}</div>
-            <div class="kicker" style="margin-top:16px;">Por quê</div><div style="margin-top:6px;font-size:13.5px;line-height:1.5;color:#4b5159;">{{ o.why }}</div>
-            <div class="kicker" style="margin-top:16px;">Evidência</div>
-            <div style="margin-top:8px;display:flex;flex-direction:column;gap:5px;">
-              {% for e in o.evidence %}<div style="display:flex;gap:8px;align-items:baseline;font-size:13px;color:#3a3f46;"><span style="color:#e8730c;font-weight:700;">›</span><span>{{ e }}</span></div>{% endfor %}
-            </div>
-            {% if o.ai_diagnosis %}
-            <div class="kicker" style="margin-top:18px;color:#0053b3;">Contexto analisado pelo Devin</div>
-            <div style="margin-top:6px;font-size:13.5px;line-height:1.5;color:#3a3f46;">{{ o.ai_diagnosis }}</div>
-            <div style="margin-top:8px;font-size:13.5px;line-height:1.5;color:#12233f;"><b>Recomendação contextual:</b> {{ o.ai_recommendation }}</div>
-            {% if o.ai_implementation_steps %}
-            <div style="margin-top:10px;font-size:12.5px;color:#4b5159;"><b>Sequência sugerida:</b>
-              <ol style="margin:5px 0 0;padding-left:20px;">{% for step in o.ai_implementation_steps %}<li style="margin-top:3px;">{{ step }}</li>{% endfor %}</ol>
-            </div>
-            {% endif %}
-            {% if o.ai_conflicts %}<div style="margin-top:8px;font-size:12.5px;color:#b23b3b;"><b>Conflitos:</b> {{ o.ai_conflicts | join("; ") }}</div>{% endif %}
-            {% if o.ai_dependencies %}<div style="margin-top:8px;font-size:12.5px;color:#4b5159;"><b>Dependências:</b> {{ o.ai_dependencies | join("; ") }}</div>{% endif %}
-            {% endif %}
-          </div>
-          <div style="padding:20px 22px;background:#fbfcfa;">
-            <div style="display:flex;gap:10px;margin-bottom:6px;">
-              <div style="flex:1;"><div class="kicker">Este mês</div><div style="font-weight:700;font-size:20px;color:#e8730c;margin-top:2px;">{{ o.monthly_fmt }}</div></div>
-              <div style="flex:1;"><div class="kicker">Até dez</div><div style="font-weight:700;font-size:20px;color:#12233f;margin-top:2px;">{{ o.year_fmt }}</div></div>
-            </div>
-            <div style="font-size:11px;color:#8a9082;margin-bottom:14px;">faixa provável {{ o.band_fmt }}</div>
-            <div class="mono" style="font-size:11px;color:#5b6169;margin-bottom:14px;">custo do processo: {{ o.process_cost_fmt }} na janela · {{ o.process_monthly_fmt }}/mês · dados até {{ o.window_end }}</div>
-            <div style="font-size:11px;color:#8a9082;margin-bottom:14px;">custo baseline {{ o.baseline_fmt }} ({{ o.baseline_quality_label }}) · qualidade da economia estimada (SAVE): {{ o.saving_quality_label }}</div>
-            <div style="display:flex;gap:7px;flex-wrap:wrap;margin-bottom:14px;">
-              <span class="chip" style="color:{{ o.diff_fg }};background:{{ o.diff_bg }};">Dif {{ o.difficulty }}/5</span>
-              <span class="chip" style="color:{{ o.conf_fg }};background:{{ o.conf_bg }};">Conf {{ o.confidence_label }}</span>
-              {% if o.origin == "ai_confirmed" %}<span class="chip" style="color:#0053b3;background:#e6effa;">Sinal confirmado pela análise contextual</span>{% endif %}
-            </div>
-            {% if o.origin == "ai_confirmed" %}<div style="font-size:11.5px;color:#4b5159;margin-bottom:14px;line-height:1.5;">Este achado nasceu de um padrão que a análise contextual leu contra o artefato completo e sustentou. Ele não recebe economia estimada — o que a confirmação dá é um achado rastreável, não um número.</div>{% endif %}
-            {% if o.source_process %}<div class="kicker">Processo gerador (pode ser desligado)</div><div style="margin-top:5px;font-size:13.5px;font-weight:600;color:#b23b3b;">{{ o.source_process }}</div>{% endif %}
-            <div class="kicker" style="margin-top:13px;">Como aplicar</div><div style="margin-top:5px;font-size:13px;line-height:1.45;color:#3a3f46;">{{ o.how_to_apply }} {% if o.doc_url %}<a href="{{ o.doc_url }}" target="_blank" rel="noopener">doc AWS ↗</a>{% endif %}</div>
-            <div class="kicker" style="margin-top:13px;">Como validar</div><div style="margin-top:5px;font-size:13px;line-height:1.45;color:#3a3f46;">{{ o.how_to_validate }}</div>
-            <div class="kicker" style="margin-top:13px;">Responsável</div><div style="margin-top:4px;font-size:13px;font-weight:600;color:#12233f;">{{ o.owner }} <span class="mono" style="font-size:10px;font-weight:400;color:#5b6169;">fonte: {{ o.owner_source }} · {{ o.owner_event_time }}</span></div>
-            {% if o.ai_documentation %}
-            <div class="kicker" style="margin-top:13px;">Documentação validada pela IA</div>
-            {% for doc in o.ai_documentation %}<div style="margin-top:5px;font-size:12px;"><a href="{{ doc.url }}" target="_blank" rel="noopener">{{ doc.title }} ↗</a> — {{ doc.relevance }}</div>{% endfor %}
-            {% endif %}
-            <div class="mono" style="margin-top:13px;padding-top:12px;border-top:1px dashed #dfe1d9;font-size:11px;color:#8a9082;line-height:1.5;">cobertura {{ o.coverage_pct }} · fontes: {{ o.sources }}</div>
-            <div class="mono" style="margin-top:5px;font-size:10.5px;color:#8a9082;line-height:1.45;">rastreabilidade: {{ o.traceability }}</div>
-          </div>
-        </div>
-      </div>
-      {% endfor %}
-    </div>
-
-    <!-- 04 / 05 -->
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:28px;margin-top:44px;">
-      <div>
-        <div class="sec"><span class="n mono" style="color:#e8730c;">04</span><h2 style="font-size:19px;">Quick wins</h2></div>
-        <p class="lead">Alta execução, baixo esforço — resolvíveis nesta semana.</p>
-        <div style="margin-top:14px;display:flex;flex-direction:column;gap:8px;">
-          {% for o in r.do_now %}
-          <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;border:1px solid #e2e4dc;border-radius:9px;padding:12px 15px;">
-            <div><div style="font-size:13.5px;font-weight:600;color:#12233f;">{{ o.title }}</div><div class="mono" style="margin-top:3px;font-size:11px;color:#7c8374;">{{ o.asset }} · dif {{ o.difficulty }}/5</div></div>
-            <div style="text-align:right;white-space:nowrap;"><div style="font-weight:700;font-size:15px;color:#e8730c;">{{ o.monthly_fmt }}</div><div style="font-size:10px;color:#8a9082;">/mês</div></div>
-          </div>
-          {% else %}<p class="lead">—</p>{% endfor %}
-        </div>
-      </div>
-      <div>
-        <div class="sec"><span class="n mono" style="color:#b26a12;">05</span><h2 style="font-size:19px;">Investigações necessárias</h2></div>
-        <p class="lead">Evidência incompleta — reportadas separadamente, antes de recomendar ação técnica.</p>
-        <div style="margin-top:14px;display:flex;flex-direction:column;gap:8px;">
-          {% for o in r.investigate %}
-          <div style="border:1px solid #ecdcc4;background:#fdf8f0;border-radius:9px;padding:12px 15px;">
-            <div style="font-size:13.5px;font-weight:600;color:#12233f;">{{ o.title }}</div>
-            <div class="mono" style="margin-top:5px;font-size:11px;color:#a07326;">próxima ação: {{ o.next_action or 'coletar evidência' }}</div>
-          </div>
-          {% else %}<p class="lead">—</p>{% endfor %}
-        </div>
-      </div>
-    </div>
-
-    {% if r.ai_signal_verdicts or r.ai_uncovered_findings %}
-    <!-- FORA DO CATÁLOGO -->
-    <div class="sec" style="margin-top:44px;"><span class="n mono" style="color:#0053b3;">AI</span><h2>Fora do catálogo</h2></div>
-    <p class="lead">Observações da análise contextual que <b>não</b> são achados determinísticos: não têm economia calculada e não ocupam posição no ranking. Servem para decidir o que investigar e o que vale virar regra.</p>
-
-    {% if r.ai_signal_verdicts %}
-    <div style="margin-top:16px;">
-      <div class="kicker" style="color:#0053b3;">Sinais julgados contra o artefato</div>
-      <div style="margin-top:10px;display:flex;flex-direction:column;gap:8px;">
-        {% for v in r.ai_signal_verdicts %}
-        <div style="border:1px solid #e2e4dc;border-radius:9px;padding:12px 15px;">
-          <div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;align-items:center;">
-            <div class="mono" style="font-size:11px;color:#7c8374;">{{ v.rule_id }} · {{ v.asset_name }}</div>
-            <span class="chip" style="font-size:9.5px;{% if v.verdict == 'confirmed' %}color:#8a3b12;background:#fdeee0;{% else %}color:#4b5159;background:#eef0ea;{% endif %}">{{ 'confirmado' if v.verdict == 'confirmed' else 'evidência pendente' }}</span>
-          </div>
-          <div style="margin-top:6px;font-size:13px;line-height:1.5;color:#3a3f46;">{{ v.rationale }}</div>
-          <div class="mono" style="margin-top:5px;font-size:9.5px;color:#8a9082;">artefato {{ v.evidence_ref.sha256[:16] }}{% if v.evidence_ref.lines %} · linhas {{ v.evidence_ref.lines | join(", ") }}{% endif %}</div>
-        </div>
-        {% endfor %}
-      </div>
-    </div>
-    {% endif %}
-
-    {% if r.ai_uncovered_findings %}
-    <div style="margin-top:20px;">
-      <div class="kicker" style="color:#0053b3;">Padrões sem regra correspondente</div>
-      <p class="lead" style="margin-top:6px;">Candidatos a virar regra determinística depois de revisão humana. Nenhum tem valor financeiro atribuído.</p>
-      <div style="margin-top:10px;display:flex;flex-direction:column;gap:8px;">
-        {% for u in r.ai_uncovered_findings %}
-        <div style="border:1px solid #cdd9ea;background:#f4f7fb;border-radius:9px;padding:12px 15px;">
-          <div style="font-size:13.5px;font-weight:600;color:#12233f;">{{ u.title }}</div>
-          <div class="mono" style="margin-top:3px;font-size:11px;color:#7c8374;">{{ u.asset_type }} · {{ u.asset_name }} · regra proposta {{ u.proposed_rule_id }}</div>
-          <div style="margin-top:6px;font-size:13px;line-height:1.5;color:#3a3f46;">{{ u.why_not_covered }}</div>
-          <div style="margin-top:5px;font-size:12px;color:#4b5159;"><b>Base da confiança:</b> {{ u.confidence_basis }}</div>
-          <div class="mono" style="margin-top:5px;font-size:9.5px;color:#8a9082;">artefato {{ u.evidence_ref.sha256[:16] }}{% if u.evidence_ref.lines %} · linhas {{ u.evidence_ref.lines | join(", ") }}{% endif %}</div>
-        </div>
-        {% endfor %}
-      </div>
-    </div>
-    {% endif %}
-    {% endif %}
-
     {% if r.producers %}
     <!-- 06 PRODUCER -->
     <div class="sec" style="margin-top:44px;"><span class="n mono" style="color:#0053b3;">06</span><h2>Candidatos à Producer</h2></div>
@@ -574,6 +514,9 @@
       {% endfor %}
     </div>
     {% endif %}
+
+      </div>
+    </details>
 
     <!-- RUN MANIFEST -->
     <div style="margin-top:44px;border-top:1px solid #e2e4dc;padding-top:22px;">

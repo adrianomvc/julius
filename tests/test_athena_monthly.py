@@ -361,8 +361,10 @@ def test_result_reuse_saving_uses_only_exact_nearby_duplicates():
     report_html = renderer.render_html(analyze_account(account, scan_id="reuse").vm)
     assert "2 repetições exatas elegíveis" in report_html
     assert "US$ 2 evitável" in report_html
-    assert "Economia estimada (SAVE): Medido" in report_html
-    assert "US$ 3 (Alocado)" in report_html
+    # A qualidade do número continua dita — em português de analista, não
+    # no vocabulário interno das três escalas.
+    assert "valor medido na fatura" in report_html
+    assert "US$ 3" in report_html
 
 
 def test_partial_collection_uses_versioned_modeled_recovery():
@@ -607,7 +609,7 @@ def test_requested_rules_are_grouped_by_pattern_and_actor():
         == athena_opportunities[0].estimation.estimated_saving_high
     )
     report_html = renderer.render_html(analyzed.vm)
-    assert "Economia estimada (SAVE): Modelado por regra" in report_html
+    assert "valor estimado a partir do consumo" in report_html
     assert "Indisponível" not in report_html
     assert account.athena_actor_usage[0].opportunity_refs == [
         athena_opportunities[0].opportunity_id

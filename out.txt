@@ -1,0 +1,23 @@
+.......................................................FF...........F... [ 22%]
+........................................................................ [ 44%]
+.........................F.............................................. [ 67%]
+........................................................................ [ 89%]
+.................................                                        [100%]
+================================== FAILURES ===================================
+E   assert 'Athena — padrões de query e uso por pessoa' in '<!doctype html>\n<html lang="pt-BR">\n<head>\n<meta charset="utf-8">\n<meta http-equiv="Content-Type" content="text/h...ós benefícios validados. S3 permanece infraestrutura imutável.</div>\n    </div>\n\n  </div>\n</div>\n</body>\n</html>'
+D:\Projetos\julius\tests\test_athena_monthly.py:308: assert 'Athena — padrões de query e uso por pessoa' in '<!doctype html>\n<html lang="pt-BR">\n<head>\n<meta charset="utf-8">\n<meta http-equiv="Content-Type" content="text/h...ós benefícios validados. S3 permanece infraestrutura imutável.</div>\n    </div>\n\n  </div>\n</div>\n</body>\n</html>'
+E   assert 'US$ 2 evitável' in '<!doctype html>\n<html lang="pt-BR">\n<head>\n<meta charset="utf-8">\n<meta http-equiv="Content-Type" content="text/h...ós benefícios validados. S3 permanece infraestrutura imutável.</div>\n    </div>\n\n  </div>\n</div>\n</body>\n</html>'
+D:\Projetos\julius\tests\test_athena_monthly.py:363: assert 'US$ 2 evitável' in '<!doctype html>\n<html lang="pt-BR">\n<head>\n<meta charset="utf-8">\n<meta http-equiv="Content-Type" content="text/h...ós benefícios validados. S3 permanece infraestrutura imutável.</div>\n    </div>\n\n  </div>\n</div>\n</body>\n</html>'
+E   assert 'Saúde da coleta' in '<!doctype html>\n<html lang="pt-BR">\n<head>\n<meta charset="utf-8">\n<meta http-equiv="Content-Type" content="text/h...ós benefícios validados. S3 permanece infraestrutura imutável.</div>\n    </div>\n\n  </div>\n</div>\n</body>\n</html>'
+     +  where '<!doctype html>\n<html lang="pt-BR">\n<head>\n<meta charset="utf-8">\n<meta http-equiv="Content-Type" content="text/h...ós benefícios validados. S3 permanece infraestrutura imutável.</div>\n    </div>\n\n  </div>\n</div>\n</body>\n</html>' = <function render_html at 0x000001F3B227B110>(ReportViewModel(account_id='health-offline', account_masked='health-offline', region='sa-east-1', period='', lookback=...ts=[], ai_uncovered_findings=[], athena_coverage={}, athena_queries=[], athena_actors=[], athena_gaps=[], glue_cost={}))
+     +    where <function render_html at 0x000001F3B227B110> = renderer.render_html
+     +    and   ReportViewModel(account_id='health-offline', account_masked='health-offline', region='sa-east-1', period='', lookback=...ts=[], ai_uncovered_findings=[], athena_coverage={}, athena_queries=[], athena_actors=[], athena_gaps=[], glue_cost={}) = Analysis(account=Account(account_id='health-offline', region='sa-east-1', period='', lookback_days=30, generated_at=''...ation=Reconciliation(new=[], persisting=[], disappeared=[], reopened=[], suppressed=[], status_changes=[]), signals=[]).vm
+D:\Projetos\julius\tests\test_collection_health.py:224: assert 'Saúde da coleta' in '<!doctype html>\n<html lang="pt-BR">\n<head>\n<meta charset="utf-8">\n<meta http-equiv="Content-Type" content="text/h...ós benefícios validados. S3 permanece infraestrutura imutável.</div>\n    </div>\n\n  </div>\n</div>\n</body>\n</html>'
+E   assert 'cobrança Glue por usage type' in '<!doctype html>\n<html lang="pt-BR">\n<head>\n<meta charset="utf-8">\n<meta http-equiv="Content-Type" content="text/h...ós benefícios validados. S3 permanece infraestrutura imutável.</div>\n    </div>\n\n  </div>\n</div>\n</body>\n</html>'
+D:\Projetos\julius\tests\test_glue_cost.py:382: assert 'cobrança Glue por usage type' in '<!doctype html>\n<html lang="pt-BR">\n<head>\n<meta charset="utf-8">\n<meta http-equiv="Content-Type" content="text/h...ós benefícios validados. S3 permanece infraestrutura imutável.</div>\n    </div>\n\n  </div>\n</div>\n</body>\n</html>'
+=========================== short test summary info ===========================
+FAILED tests/test_athena_monthly.py::test_collection_reconciles_all_workgroups_and_never_serializes_raw_execution_data
+FAILED tests/test_athena_monthly.py::test_result_reuse_saving_uses_only_exact_nearby_duplicates
+FAILED tests/test_collection_health.py::test_health_roundtrip_and_report_json
+FAILED tests/test_glue_cost.py::test_report_shows_the_glue_cost_quality_and_the_unattributed_buckets
+4 failed, 317 passed in 18.03s

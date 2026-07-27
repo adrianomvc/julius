@@ -63,7 +63,8 @@ def group_by_asset(opportunities: list[Opportunity]) -> list[Opportunity]:
             f"Validar: {o.how_to_validate}"
             for o in others
         ]
-        primary.finding = f"{primary.finding} (+{len(others)} achados relacionados)"
+        plural = "achado relacionado" if len(others) == 1 else "achados relacionados"
+        primary.finding = f"{primary.finding} (+{len(others)} {plural})"
         primary.data_sources = sorted({s for o in members for s in o.data_sources})
         grouped.append(primary)
 

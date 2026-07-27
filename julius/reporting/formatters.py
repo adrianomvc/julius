@@ -19,12 +19,25 @@ BUCKET_COLORS = {
     "investigar_primeiro": ("#b26a12", "#faf0dd"),
 }
 
+# O rótulo é o que o leitor vê no cartão. Sem uma entrada aqui, o relatório
+# mostrava o nome interno do tipo — `sagemaker_app`, `s3_prefix` — que é
+# vocabulário de quem escreveu o código, não de quem lê o relatório.
 CATEGORY_LABELS = {
     "glue_job": ("Glue", "#7a4bc4", "#f1ebfb"),
-    "glue_service": ("Glue billing", "#7a4bc4", "#f1ebfb"),
-    "glue_session": ("Session", "#0053b3", "#e6effa"),
+    "glue_service": ("Glue", "#7a4bc4", "#f1ebfb"),
+    "glue_session": ("Notebook Glue", "#0053b3", "#e6effa"),
+    "glue_crawler": ("Crawler", "#7a4bc4", "#f1ebfb"),
+    "databrew_job": ("DataBrew", "#7a4bc4", "#f1ebfb"),
     "athena_query": ("Athena", "#e8730c", "#fdefdd"),
+    "athena_workgroup": ("Athena", "#e8730c", "#fdefdd"),
+    "state_machine": ("Step Functions", "#0053b3", "#e6effa"),
+    "sagemaker_app": ("SageMaker", "#1f8a70", "#e4f4ef"),
+    "sagemaker_endpoint": ("SageMaker", "#1f8a70", "#e4f4ef"),
+    "redshift_cluster": ("Redshift", "#b23b3b", "#f7e4e4"),
+    "s3_bucket": ("S3", "#b26a12", "#faf0dd"),
+    "s3_prefix": ("S3", "#b26a12", "#faf0dd"),
     "s3": ("S3", "#b26a12", "#faf0dd"),
+    "table": ("Tabela", "#5b6169", "#eef0ea"),
     "gov": ("Governança", "#b23b3b", "#f7e4e4"),
 }
 
