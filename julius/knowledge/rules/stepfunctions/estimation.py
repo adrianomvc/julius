@@ -48,7 +48,11 @@ def standard_to_express_saving(sm: StateMachine, config: Config) -> Estimation:
         ],
         pricing_region=pricing.region,
         estimation_version=pricing.version,
-        baseline_quality="measured",
+        # Transições contadas no histórico, não supostas — mas o baseline
+        # segue sendo tarifa versionada sobre consumo medido, que é o que
+        # `modeled` significa na escala. `measured` ali descrevia a coleta,
+        # não a origem do número, e caía no fallback da pior nota.
+        baseline_quality="modeled",
     )
 
 
@@ -90,5 +94,9 @@ def polling_loop_saving(sm: StateMachine, config: Config) -> Estimation:
         ],
         pricing_region=pricing.region,
         estimation_version=pricing.version,
-        baseline_quality="measured",
+        # Transições contadas no histórico, não supostas — mas o baseline
+        # segue sendo tarifa versionada sobre consumo medido, que é o que
+        # `modeled` significa na escala. `measured` ali descrevia a coleta,
+        # não a origem do número, e caía no fallback da pior nota.
+        baseline_quality="modeled",
     )

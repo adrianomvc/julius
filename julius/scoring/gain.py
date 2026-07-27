@@ -6,6 +6,7 @@ from datetime import date
 
 from julius.config import IMPL_OFFSET_BY_DIFFICULTY, Config
 from julius.findings.opportunity import EstimatedGain
+from julius.scoring.evidence_quality import EvidenceQuality
 
 
 def months_remaining_in_year(today: date | None = None) -> int:
@@ -18,19 +19,25 @@ def build_gain(
     difficulty: int,
     config: Config,
     *,
-    band: float = 0.35,
+    band: float | None = None,
     monthly_low: float | None = None,
     monthly_high: float | None = None,
     today: date | None = None,
     is_strategic: bool = False,
     maximum: float | None = None,
+    quality: EvidenceQuality | None = None,
 ) -> EstimatedGain:
     """Monta a projeção de ganho a partir da economia mensal esperada.
 
-    - faixa provável: expected × (1 ± band)
+    - faixa provável: expected × (1 ± band), onde `band` vem da qualidade da
+      evidência quando quem chama a informa
     - potencial anual: expected × 12 (referência teórica)
     - realizável no ano: expected × (meses_restantes − offset_impl) × fator
     """
+    if band is None:
+        band = (
+            quality.band if quality is not None else EvidenceQuality.MODELED_RULE.band
+        )
     today = today or date.today()
     if is_strategic:
         return EstimatedGain(is_strategic=True, realization_factor=config.realization_factor)

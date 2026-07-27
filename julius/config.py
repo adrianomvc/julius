@@ -30,6 +30,11 @@ from julius.knowledge.pricing import (
     RecoveryBand,
     is_gpu_instance,
 )
+from julius.knowledge.redshift_cost import (
+    REDSHIFT_COMPUTE_BUCKETS,
+    REDSHIFT_USAGE_TYPE_MARKERS,
+    UNATTRIBUTED_REDSHIFT_BUCKETS,
+)
 from julius.knowledge.thresholds import Thresholds
 
 # Versões usadas nas oportunidades (auditoria/calibração).
@@ -66,11 +71,25 @@ class GlueCostTaxonomy:
 
 
 @dataclass(frozen=True)
+class RedshiftCostTaxonomy:
+    """A mesma tradução, para um serviço com uma distinção própria.
+
+    Compute e armazenamento não se comportam igual: pausar o cluster para um e
+    não o outro. A taxonomia separa os dois porque a recomendação depende disso.
+    """
+
+    usage_type_markers: tuple[tuple[str, str], ...] = REDSHIFT_USAGE_TYPE_MARKERS
+    compute_buckets: frozenset[str] = REDSHIFT_COMPUTE_BUCKETS
+    unattributed_buckets: frozenset[str] = UNATTRIBUTED_REDSHIFT_BUCKETS
+    version: str = "1.0"
+
+@dataclass(frozen=True)
 class Config:
     pricing: Pricing = field(default_factory=Pricing.for_region)
     thresholds: Thresholds = field(default_factory=Thresholds)
     weights: Weights = field(default_factory=Weights)
     glue_cost: GlueCostTaxonomy = field(default_factory=GlueCostTaxonomy)
+    redshift_cost: RedshiftCostTaxonomy = field(default_factory=RedshiftCostTaxonomy)
     # Fator de realização padrão (parte da economia efetivamente capturada).
     realization_factor: float = 0.8
     preferred_glue_version: str = "5.1"

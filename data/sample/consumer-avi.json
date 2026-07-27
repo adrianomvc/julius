@@ -51,6 +51,15 @@
         "period_kind": "month_to_date",
         "data_through": "2026-07-22",
         "estimated": true
+      },
+      {
+        "name": "Amazon Redshift",
+        "subtitle": "provisionado + serverless",
+        "monthly_cost": 1874.4,
+        "currency": "USD",
+        "period_kind": "month_to_date",
+        "data_through": "2026-07-22",
+        "estimated": true
       }
     ]
   },
@@ -360,5 +369,54 @@
     "cost_quality": "partial",
     "allocation_version": "glue-cost-allocation-1.0",
     "gaps": []
+  },
+  "redshift_clusters": [
+    {
+      "name": "dw-legado",
+      "kind": "provisioned",
+      "node_type": "ra3.xlplus",
+      "node_count": 4,
+      "status": "available",
+      "paused": false,
+      "encrypted": true,
+      "avg_cpu_load": 0.02,
+      "max_cpu_load": 0.06,
+      "avg_connections": 0.0,
+      "observed_days": 30,
+      "coverage_days": 30,
+      "owner_tag": "Squad AVI",
+      "allocated_compute_cost": 1412.6,
+      "cost_quality": "partial"
+    },
+    {
+      "name": "dw-analitico",
+      "kind": "provisioned",
+      "node_type": "ra3.4xlarge",
+      "node_count": 6,
+      "status": "available",
+      "paused": false,
+      "encrypted": true,
+      "avg_cpu_load": 0.14,
+      "max_cpu_load": 0.31,
+      "avg_connections": 12.4,
+      "observed_days": 30,
+      "coverage_days": 30,
+      "owner_tag": "Squad Dados"
+    }
+  ],
+  "redshift_cost_coverage": {
+    "period_start": "2026-06-23",
+    "data_through": "2026-07-22",
+    "cost_metric": "NetUnblendedCost",
+    "currency": "USD",
+    "net_cost": 1874.4,
+    "buckets": {
+      "node_hours": 1670.2,
+      "managed_storage": 168.4,
+      "backup": 35.8
+    },
+    "unknown_usage_types": [],
+    "cost_quality": "partial",
+    "allocation_version": "1.0"
   }
 }

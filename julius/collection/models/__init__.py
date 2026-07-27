@@ -25,6 +25,7 @@ from julius.collection.models.athena import (
 from julius.collection.models.cost import (
     GlueCostCoverage,
     ProcessCost,
+    RedshiftCostCoverage,
     ServiceCost,
 )
 from julius.collection.models.glue import (
@@ -46,6 +47,7 @@ __all__ = [
     "CollectionHealth",
     "DataBrewJob",
     "GlueCostCoverage",
+    "RedshiftCostCoverage",
     "GlueCrawler",
     "GlueJob",
     "GlueTrigger",

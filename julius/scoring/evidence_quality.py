@@ -52,6 +52,19 @@ class EvidenceQuality(IntEnum):
         """A fatura sustenta este número, ainda que parcialmente?"""
         return self >= EvidenceQuality.ALLOCATED_PARTIAL
 
+    @property
+    def band(self) -> float:
+        """Largura da faixa provável em torno da economia esperada.
+
+        A faixa era fixa em ±35% para tudo. Um achado com contrafactual medido
+        e outro estimado por faixa de regra saíam com a mesma incerteza — o que
+        é pior que não ter faixa nenhuma, porque parece quantificação e não é.
+
+        Aqui ela passa a dizer o que esta escala já sabia. Nenhum número novo é
+        inventado: o que muda é a faixa parar de esconder a diferença.
+        """
+        return _BANDS[self]
+
 
 _LABELS = {
     EvidenceQuality.REALIZED: "Realizado",
@@ -60,6 +73,16 @@ _LABELS = {
     EvidenceQuality.ALLOCATED_PARTIAL: "Alocado parcial",
     EvidenceQuality.MODELED: "Modelado",
     EvidenceQuality.MODELED_RULE: "Modelado por regra",
+}
+
+#: Quanto o valor pode variar, por qualidade. Medir estreita; modelar alarga.
+_BANDS = {
+    EvidenceQuality.REALIZED: 0.10,
+    EvidenceQuality.MEASURED: 0.15,
+    EvidenceQuality.ALLOCATED: 0.20,
+    EvidenceQuality.ALLOCATED_PARTIAL: 0.30,
+    EvidenceQuality.MODELED: 0.40,
+    EvidenceQuality.MODELED_RULE: 0.50,
 }
 
 # Como cada vocabulário existente se projeta na escala.
@@ -72,6 +95,11 @@ _SAVING = {
     "realized": EvidenceQuality.REALIZED,
     "measured": EvidenceQuality.MEASURED,
     "modeled_evidence": EvidenceQuality.MODELED,
+    # `modeled` é o default de `Estimation` e faltava neste mapa: toda economia
+    # calculada por tarifa sobre consumo medido caía no fallback e recebia a
+    # pior nota da escala, indistinguível de uma faixa de regra. Enquanto a
+    # faixa era fixa em ±35% o erro não aparecia em lugar nenhum.
+    "modeled": EvidenceQuality.MODELED,
     "modeled_rule": EvidenceQuality.MODELED_RULE,
     # Sem contrafactual, a economia não é número — o achado é investigação.
     "unavailable": EvidenceQuality.MODELED_RULE,

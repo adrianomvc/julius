@@ -25,6 +25,8 @@ from julius.collection.models import (
     PreviousResult,
     ProcessCost,
     ProducerCandidate,
+    RedshiftCluster,
+    RedshiftCostCoverage,
     SageMakerApp,
     SageMakerEndpoint,
     Schedule,
@@ -147,6 +149,13 @@ def load_account(path: str | Path) -> Account:
     account.sagemaker_endpoints = [
         _pick(e, SageMakerEndpoint) for e in raw.get("sagemaker_endpoints", [])
     ]
+    account.redshift_clusters = [
+        _pick(c, RedshiftCluster) for c in raw.get("redshift_clusters", [])
+    ]
+    if raw.get("redshift_cost_coverage"):
+        account.redshift_cost_coverage = _pick(
+            raw["redshift_cost_coverage"], RedshiftCostCoverage
+        )
     account.tables = [_pick(t, Table) for t in raw.get("tables", [])]
     account.schedules = [_pick(s, Schedule) for s in raw.get("schedules", [])]
     account.actor_events = [_pick(e, ActorEvent) for e in raw.get("actor_events", [])]

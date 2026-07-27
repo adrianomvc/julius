@@ -101,3 +101,36 @@ class GlueCostCoverage:
             ),
             2,
         )
+
+
+@dataclass
+class RedshiftCostCoverage:
+    """Cobrança Redshift da janela, separada entre compute e o resto.
+
+    A separação não é organizacional: um cluster pausado para de cobrar compute
+    e continua cobrando armazenamento e snapshot. Um achado de ociosidade só
+    pode reivindicar o compute — reivindicar a linha inteira superestimaria a
+    recomendação justamente onde ela precisa ser confiável.
+    """
+
+    period_start: str = ""
+    data_through: str = ""
+    cost_metric: str = ""
+    currency: str = "USD"
+    net_cost: float | None = None
+    buckets: dict[str, float] = field(default_factory=dict)
+    unknown_usage_types: list[str] = field(default_factory=list)
+    cost_quality: str = "unavailable"
+    allocation_version: str = ""
+    gaps: list[str] = field(default_factory=list)
+
+    def compute_cost(self, compute_buckets: frozenset[str] | set[str]) -> float:
+        """O que deixa de ser cobrado quando o cluster para."""
+        return round(
+            sum(
+                value
+                for name, value in self.buckets.items()
+                if name in compute_buckets
+            ),
+            6,
+        )

@@ -23,6 +23,7 @@ from julius.collection.models.athena import (
 from julius.collection.models.cost import (
     GlueCostCoverage,
     ProcessCost,
+    RedshiftCostCoverage,
     ServiceCost,
 )
 from julius.collection.models.glue import (
@@ -72,6 +73,7 @@ class Account:
     athena_coverage: AthenaCoverage | None = None
     athena_actor_usage: list[AthenaActorUsage] = field(default_factory=list)
     glue_cost_coverage: GlueCostCoverage | None = None
+    redshift_cost_coverage: RedshiftCostCoverage | None = None
 
     def job_by_name(self, name: str | None) -> GlueJob | None:
         if not name:

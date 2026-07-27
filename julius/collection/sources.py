@@ -22,6 +22,7 @@ from julius.collection.collectors import (
     cost_explorer,
     datawarm,
     redshift,
+    redshift_cost,
     sagemaker,
     schedules,
     stepfunctions,
@@ -57,6 +58,9 @@ class CollectionContext:
     glue_usage_markers: Sequence[tuple[str, str]] = ()
     allocatable_glue_buckets: frozenset[str] = frozenset()
     glue_cost_version: str = ""
+    redshift_usage_markers: Sequence[tuple[str, str]] = ()
+    redshift_compute_buckets: frozenset[str] = frozenset()
+    redshift_cost_version: str = ""
     touches_table: str = ""
     athena_workgroup: str = "julius"
     athena_output: str | None = None
@@ -442,6 +446,30 @@ SOURCES: tuple[Source, ...] = (
         count=len,
         impact="capacidade e ociosidade de Redshift não são avaliadas",
         next_action="validar redshift:DescribeClusters e redshift-serverless:ListWorkgroups",
+    ),
+    Source(
+        # Depende do inventário de clusters para ratear o compute.
+        name="Redshift Cost Explorer",
+        collect=lambda ctx: redshift_cost.allocate_costs(
+            ctx.account,
+            redshift_cost.collect_redshift_costs(
+                ctx.client("ce"),
+                window=ctx.window,
+                markers=ctx.redshift_usage_markers,
+                version=ctx.redshift_cost_version,
+            ),
+            ctx.redshift_compute_buckets,
+        ),
+        into="redshift_cost_coverage",
+        default=lambda: None,
+        count=lambda coverage: 1 if coverage and coverage.buckets else 0,
+        expected=lambda ctx: 1 if getattr(ctx.account, "redshift_clusters", None) else 0,
+        data_through=lambda coverage: coverage.data_through if coverage else "",
+        impact=(
+            "sem cobrança rateada o cluster ocioso continua sendo investigação "
+            "sem economia quantificada"
+        ),
+        next_action="validar ce:GetCostAndUsage com GroupBy USAGE_TYPE",
     ),
     Source(
         name="Step Functions",
