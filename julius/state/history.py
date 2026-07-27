@@ -16,6 +16,7 @@ from julius.collection.models import Account
 from julius.findings.lifecycle import LifecycleEvent
 from julius.findings.opportunity import Opportunity
 from julius.state.diff import DiffEvent
+from julius.state.signal_ledger import SignalDecision
 from julius.state.validation import ValidationResult
 
 
@@ -170,6 +171,21 @@ class HistoryStore:
                 actor VARCHAR NOT NULL,
                 notes VARCHAR NOT NULL,
                 PRIMARY KEY (fingerprint, validated_at)
+            );
+
+            CREATE TABLE IF NOT EXISTS signal_verdicts (
+                fingerprint VARCHAR NOT NULL,
+                account VARCHAR NOT NULL,
+                rule_id VARCHAR NOT NULL,
+                asset_type VARCHAR NOT NULL,
+                asset_name VARCHAR NOT NULL,
+                verdict VARCHAR NOT NULL,
+                rationale VARCHAR NOT NULL,
+                evidence_hash VARCHAR NOT NULL,
+                scan_id VARCHAR NOT NULL,
+                prompt_version VARCHAR NOT NULL,
+                recorded_at TIMESTAMP NOT NULL,
+                PRIMARY KEY (fingerprint, recorded_at)
             );
 
             CREATE TABLE IF NOT EXISTS athena_recommendation_baselines (
@@ -520,6 +536,37 @@ class HistoryStore:
             ],
         )
 
+    def record_signal_verdicts(self, decisions: list[SignalDecision]) -> None:
+        """Guarda o julgamento da IA com a versão do prompt que o produziu.
+
+        Sem a versão o número não significa nada: comparar precisão entre dois
+        briefings diferentes seria comparar duas perguntas diferentes.
+        """
+        if not decisions:
+            return
+        self._db.executemany(
+            """
+            INSERT OR REPLACE INTO signal_verdicts
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            [
+                [
+                    item.fingerprint,
+                    item.account,
+                    item.rule_id,
+                    item.asset_type,
+                    item.asset_name,
+                    item.verdict,
+                    item.rationale,
+                    item.evidence_hash,
+                    item.scan_id,
+                    item.prompt_version,
+                    _as_timestamp(item.decided_at),
+                ]
+                for item in decisions
+            ],
+        )
+
     def record_lifecycle_event(self, event: LifecycleEvent) -> None:
         self._db.execute(
             """
@@ -715,3 +762,12 @@ def _ratio_change(previous, current) -> float | None:
     if previous is None or current is None or float(previous) == 0:
         return None
     return round((float(current) - float(previous)) / float(previous), 4)
+
+
+def _as_timestamp(value: str) -> datetime:
+    """ISO gravado pelo livro de vereditos, em datetime naive para o DuckDB."""
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError:
+        parsed = datetime.now(timezone.utc)
+    return parsed.replace(tzinfo=None)

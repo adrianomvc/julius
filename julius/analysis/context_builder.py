@@ -12,6 +12,10 @@ from julius.pipeline import Analysis
 @dataclass(frozen=True)
 class AgentContext:
     schema_version: str
+    # A versão do briefing que acompanha este pacote. Sem ela não dá para dizer
+    # qual pergunta produziu qual julgamento, e comparar precisão entre dois
+    # prompts diferentes seria comparar duas perguntas diferentes.
+    prompt_version: str
     account: dict
     scan_id: str
     constraints: dict
@@ -55,8 +59,11 @@ def build_agent_context(
         if (edge.source.kind, edge.source.name) in relevant_assets
         or (edge.target.kind, edge.target.name) in relevant_assets
     ]
+    from julius.analysis.guardrails import PROMPT_VERSION
+
     return AgentContext(
-        schema_version="1.1",
+        schema_version="1.2",
+        prompt_version=PROMPT_VERSION,
         account={
             "id": analysis.account.account_id,
             "region": analysis.account.region,

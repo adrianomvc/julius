@@ -24,10 +24,18 @@ def _key(o: Opportunity) -> tuple[str, str, str]:
 
 def group_by_asset(opportunities: list[Opportunity]) -> list[Opportunity]:
     buckets: dict[tuple, list[Opportunity]] = defaultdict(list)
+    # Um achado promovido de sinal não é ação concorrente sobre o ativo: é uma
+    # pergunta que a análise contextual sustentou, sem economia e bloqueada.
+    # Agrupá-lo com uma ação determinística o transformaria em texto dentro da
+    # lista de riscos de outro achado — perdendo o ID, a origem e o ciclo de
+    # vida que a promoção existe para dar.
+    grouped: list[Opportunity] = [
+        o for o in opportunities if o.origin == "ai_confirmed"
+    ]
     for o in opportunities:
-        buckets[_key(o)].append(o)
+        if o.origin != "ai_confirmed":
+            buckets[_key(o)].append(o)
 
-    grouped: list[Opportunity] = []
     for members in buckets.values():
         if len(members) == 1:
             grouped.append(members[0])

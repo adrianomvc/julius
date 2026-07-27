@@ -36,6 +36,13 @@ class ProductKPIs:
     reviewed_at_10: int = 0
     false_positives_at_10: int = 0
     false_positive_rate_at_10: float | None = None
+    # Precisão separada por quem produziu o achado: `rule` para a regra
+    # determinística, `ai_confirmed` para o sinal que a análise contextual
+    # sustentou. Sem separar, um erro de julgamento da IA some na média das
+    # regras — e a pergunta sobre qual camada acerta mais fica sem resposta.
+    precision_by_origin: dict[str, float] = field(default_factory=dict)
+    reviewed_by_origin: dict[str, int] = field(default_factory=dict)
+    false_positive_rate_by_origin: dict[str, float] = field(default_factory=dict)
     identified_monthly: float = 0.0
     committed_monthly: float = 0.0
     realized_monthly: float = 0.0
@@ -53,6 +60,36 @@ def _is_actionable(o: Opportunity) -> bool:
         and o.how_to_validate
         and (o.owner or o.actor)
     )
+
+
+def _precision_by_origin(
+    opportunities: list[Opportunity], labels: dict[str, bool] | None
+) -> tuple[dict[str, float], dict[str, int], dict[str, float]]:
+    """Agrupa os rótulos humanos pela camada que produziu cada achado.
+
+    Ao contrário de `precision_at_10`, aqui não há corte no Top 10: um achado
+    promovido de sinal nasce bloqueado e com economia zero, então quase nunca
+    chegaria ao topo do ranking — e o julgamento da IA ficaria sem medida
+    justamente onde ele acontece.
+    """
+    if not labels:
+        return {}, {}, {}
+    judged: dict[str, list[bool]] = {}
+    for opportunity in opportunities:
+        label = labels.get(opportunity.opportunity_id)
+        if label is None:
+            continue
+        judged.setdefault(opportunity.origin, []).append(label)
+    precision = {
+        origin: round(sum(1 for value in values if value) / len(values), 3)
+        for origin, values in judged.items()
+    }
+    reviewed = {origin: len(values) for origin, values in judged.items()}
+    false_positive_rate = {
+        origin: round(sum(1 for value in values if not value) / len(values), 3)
+        for origin, values in judged.items()
+    }
+    return precision, reviewed, false_positive_rate
 
 
 def compute_kpis(
@@ -102,6 +139,8 @@ def compute_kpis(
             precision = round(sum(1 for v in judged if v) / len(judged), 3)
             false_positive_rate = round(false_positives / reviewed, 3)
 
+    by_origin = _precision_by_origin(opportunities, labels)
+
     identified_monthly = sum(
         opportunity.estimated_gain.monthly_expected
         for opportunity in opportunities
@@ -125,6 +164,9 @@ def compute_kpis(
         reviewed_at_10=reviewed,
         false_positives_at_10=false_positives,
         false_positive_rate_at_10=false_positive_rate,
+        precision_by_origin=by_origin[0],
+        reviewed_by_origin=by_origin[1],
+        false_positive_rate_by_origin=by_origin[2],
         identified_monthly=round(identified_monthly, 2),
         committed_monthly=round(committed_monthly, 2),
         realized_monthly=round(realized_monthly, 2),

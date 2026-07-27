@@ -62,6 +62,8 @@ class Opportunity:
     how_to_apply: str = ""
     how_to_validate: str = ""
     why: str = ""
+    # `rule` ou `ai_confirmed`; ver `Finding.origin`.
+    origin: str = "rule"
     evidence: list[str] = field(default_factory=list)
     risks: list[str] = field(default_factory=list)
     doc_links: list[str] = field(default_factory=list)

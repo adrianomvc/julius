@@ -17,6 +17,8 @@ vestida de achado.
 
 from __future__ import annotations
 
+import hashlib
+import json
 from dataclasses import asdict, dataclass, field
 
 
@@ -40,6 +42,35 @@ class Signal:
     artifact_sha256: str = ""
     lines: list[int] = field(default_factory=list)
     doc_links: list[str] = field(default_factory=list)
+
+    def fingerprint(self, account: str) -> str:
+        """Identidade estável entre execuções, para religar sinal e veredito.
+
+        Mesma forma da de `Opportunity`, e pelo mesmo motivo: é o que permite a
+        um julgamento feito hoje continuar valendo amanhã. A conta entra como
+        parâmetro porque a regra que emitiu o sinal não conhece a conta — quem
+        conhece é o scan.
+        """
+        raw = f"{account}|{self.asset_type}:{self.asset_name}|{self.rule_id}"
+        digest = hashlib.sha1(raw.encode("utf-8")).hexdigest()[:8]
+        return f"{raw}#{digest}"
+
+    def evidence_signature(self) -> str:
+        """O que precisa mudar para um sinal descartado merecer nova análise.
+
+        Script com hash diferente, linhas diferentes, ou evidência que faltava e
+        apareceu. Um descarte vale enquanto o que o sustentou continuar igual —
+        a mesma disciplina que `Opportunity.evidence_signature` aplica a um
+        achado dispensado.
+        """
+        payload = {
+            "rule_id": self.rule_id,
+            "artifact_sha256": self.artifact_sha256,
+            "lines": sorted(self.lines),
+            "missing_evidence": sorted(self.missing_evidence),
+        }
+        raw = json.dumps(payload, ensure_ascii=False, sort_keys=True)
+        return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:16]
 
     def to_dict(self) -> dict:
         return asdict(self)

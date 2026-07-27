@@ -28,6 +28,7 @@ from julius.pipeline import Analysis
 
 REQUIRED_CONTEXT_KEYS = {
     "schema_version",
+    "prompt_version",
     "account",
     "scan_id",
     "constraints",

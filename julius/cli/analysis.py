@@ -10,12 +10,14 @@ import typer
 from julius.analysis import (
     AgentOutputError,
     append_candidates,
+    load_agent_context,
     prepare_agent_workspace,
     validate_result_file,
     write_validated_result,
 )
 from julius.cli._shared import (
     _DEFAULT_INPUT,
+    _DEFAULT_SIGNALS,
     agent_app,
 )
 from julius.collection.collectors.glue.scripts import (
@@ -31,7 +33,9 @@ from julius.collection.targets import (
     verify_account_targets,
     write_verified_accounts,
 )
+from julius.findings.signal import Signal
 from julius.pipeline import analyze
+from julius.state import SignalLedger
 
 
 @agent_app.command("prepare")
@@ -150,6 +154,11 @@ def agent_validate(
         "--rule-candidates",
         help="Fila de padrões fora do catálogo, acumulada entre scans e contas.",
     ),
+    signal_ledger: str = typer.Option(
+        _DEFAULT_SIGNALS,
+        "--signal-ledger",
+        help="Vereditos por sinal: evita re-julgar o que já foi julgado.",
+    ),
 ) -> None:
     """Valida a análise escrita pelo Devin contra o scan e os guardrails."""
     try:
@@ -157,6 +166,7 @@ def agent_validate(
         registered = (
             append_candidates(analysis, rule_candidates) if rule_candidates else 0
         )
+        judged = _record_verdicts(context, analysis, signal_ledger)
     except (
         AgentOutputError,
         FileNotFoundError,
@@ -181,6 +191,32 @@ def agent_validate(
         f"Sinais julgados: {len(analysis.signal_verdicts)} "
         f"({confirmed} confirmados) · achados fora do catálogo: {registered}"
     )
+    if judged:
+        typer.echo(
+            f"Vereditos gravados em {signal_ledger}: os descartados não voltam "
+            "até a evidência mudar."
+        )
     if registered:
         typer.echo(f"Candidatos a nova regra: {rule_candidates}")
     typer.echo(f"Resultado validado: {output_path}")
+
+
+def _record_verdicts(context_path: str, analysis, ledger_path: str) -> int:
+    """Reconstrói os sinais do pacote para ancorar cada veredito na evidência.
+
+    O veredito chega sem a assinatura de evidência — a IA responde sobre o que
+    leu, não sobre como o Julius identifica aquilo. Reidratar o sinal a partir
+    do contexto é o que permite dizer, na próxima execução, se o que sustentava
+    o descarte continua igual.
+    """
+    if not ledger_path:
+        return 0
+    context = load_agent_context(context_path)
+    signals = [Signal(**payload) for payload in context.signals]
+    return SignalLedger(ledger_path).record_verdicts(
+        analysis.signal_verdicts,
+        signals,
+        account=analysis.account,
+        scan_id=analysis.scan_id,
+        prompt_version=context.prompt_version,
+    )

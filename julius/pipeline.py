@@ -18,6 +18,7 @@ from julius.config import DEFAULT_CONFIG, Config
 from julius.findings.grouping import group_by_asset
 from julius.findings.lifecycle import transition
 from julius.findings.opportunity import Opportunity
+from julius.findings.promotion import promote
 from julius.findings.signal import Signal
 from julius.governance import compute_candidates
 from julius.graph import ProcessGraph, build_process_graph, enrich_opportunities
@@ -39,6 +40,7 @@ from julius.state import (
     DiffEvent,
     HistoryStore,
     LifecycleLeadTimes,
+    SignalLedger,
 )
 from julius.state.audit import build_manifest, new_scan_id
 from julius.state.diff import compare
@@ -70,6 +72,7 @@ def analyze(
     today: date | None = None,
     scan_id: str | None = None,
     artifacts_manifest: str | Path | None = None,
+    ledger: SignalLedger | None = None,
 ) -> Analysis:
     account = load_account(input_path)
     code_artifacts = (
@@ -109,6 +112,7 @@ def analyze(
         today=today,
         scan_id=scan_id,
         code_artifacts=code_artifacts,
+        ledger=ledger,
     )
 
 
@@ -123,6 +127,7 @@ def analyze_account(
     source: str = "dataset exportado",
     scan_id: str | None = None,
     code_artifacts: list[GlueCodeArtifact] | None = None,
+    ledger: SignalLedger | None = None,
 ) -> Analysis:
     scan_id = scan_id or new_scan_id()
     # Governança: candidatos a Producer calculados quando não fornecidos.
@@ -138,6 +143,14 @@ def analyze_account(
         )
         opportunities += code_opportunities
         signals += code_signals
+    # O que a análise contextual já julgou não volta a ser perguntado, e o que
+    # ela sustentou vira achado rastreável em vez de morrer numa linha de
+    # relatório.
+    if ledger is not None:
+        opportunities += _promote_confirmed(
+            ledger, signals, account.account_id, config, scan_id
+        )
+        signals = ledger.suppress(signals, account.account_id).open
     enrich_opportunities(account, graph, opportunities)
     # Consolida achados do mesmo ativo numa ação principal (causa raiz).
     opportunities = group_by_asset(opportunities)
@@ -255,6 +268,42 @@ def analyze_account(
         reconciliation=reconciliation,
         signals=signals,
     )
+
+
+def _promote_confirmed(
+    ledger: SignalLedger,
+    signals: list[Signal],
+    account_id: str,
+    config: Config,
+    scan_id: str,
+) -> list[Opportunity]:
+    """Confirmados que ainda não estavam no backlog entram nele agora.
+
+    A promoção acontece uma vez por sinal: `mark_promoted` fecha a porta, e a
+    partir daí o achado tem vida própria — se ele desaparecer do inventário,
+    quem decide é a reconciliação do backlog, não um novo veredito.
+    """
+    pending = {item.fingerprint: item for item in ledger.pending_promotions(account_id)}
+    if not pending:
+        return []
+    promoted: list[Opportunity] = []
+    done: list[str] = []
+    for signal in signals:
+        decision = pending.get(signal.fingerprint(account_id))
+        if decision is None:
+            continue
+        promoted.append(
+            promote(
+                signal,
+                decision.rationale,
+                account=account_id,
+                config=config,
+                scan_id=scan_id,
+            )
+        )
+        done.append(decision.fingerprint)
+    ledger.mark_promoted(done)
+    return promoted
 
 
 def _merge_validations(account: Account, rows: list[dict]) -> None:

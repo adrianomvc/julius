@@ -26,3 +26,8 @@ class Finding:
     # processo, não uma economia: divergência entre cron e execuções, cobrança
     # não atribuída. Ele precisa aparecer, mas não disputa vaga no portfólio.
     category: str = "cost_optimization"
+    # De onde o achado veio: `rule` quando uma regra determinística o fechou,
+    # `ai_confirmed` quando nasceu de um sinal que a análise contextual
+    # sustentou contra o artefato. Separar as duas é o que permite medir a
+    # precisão de cada camada em vez de discutir qual é melhor.
+    origin: str = "rule"
