@@ -52,6 +52,31 @@ ferramenta especializada. O Julius não chama a API do Devin.
 
 As responsabilidades são separadas:
 
+## O Julius analisa e recomenda — ele não altera nada
+
+Toda recomendação é instrução para o time dono. O Julius nunca apaga objeto,
+pausa cluster, reduz worker ou muda configuração de nenhum recurso, e isso não é
+uma promessa no texto: é o que `tests/test_read_only.py` cobra.
+
+A garantia é por **allowlist**: existe uma lista explícita de operações AWS que
+o Julius tem permissão de chamar, cada uma com o motivo escrito ao lado. Qualquer
+chamada nova falha no teste até alguém justificá-la ali. Proibir `delete_object`
+deixaria `delete_objects` passar; permitir só o que está escrito não deixa.
+
+**Uma única operação age, e está declarada:** `start_query_execution` roda um
+SELECT no workgroup do Julius para ler a tabela de toques. Não altera dado, mas
+custa bytes varridos e grava resultado em S3 — por isso a fonte é opcional
+(`--touches-table`), a consulta é validada contra qualquer palavra-chave de
+escrita, e o nome da tabela é verificado antes de entrar no SQL.
+
+O envio de e-mail é a única ação para fora, e já tinha porteiro próprio: modo
+explícito, configuração local, cadastro da conta, confirmação humana e log que
+impede reenvio. O teste garante que o transporte não é alcançável sem passar
+pela política.
+
+O Julius também não remove nenhum arquivo local. Ele escreve relatório, backlog
+e histórico; não apaga nada de ninguém.
+
 O critério da divisão é o grau de certeza, não o serviço. **O determinístico é
 para o que fecha**: config declarada mais métrica medida levam a uma ação única,
 e a economia sai do próprio fato. **A IA é para o que tem N variáveis**: um

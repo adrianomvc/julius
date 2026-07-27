@@ -1,20 +1,58 @@
 """Executor de query Athena com guardrails (modo collection do plano).
 
-Roda um SELECT num workgroup dedicado do Julius (que deve ter
-BytesScannedCutoffPerQuery configurado), espera concluir e devolve as linhas.
-Não emite CREATE/INSERT/CTAS/DROP — apenas SELECT.
+**Esta é a única operação do Julius que age**, e por isso o arquivo inteiro
+existe para limitá-la. Ele roda um SELECT num workgroup dedicado, espera
+concluir e devolve as linhas. Não altera dado, mas custa bytes varridos e grava
+o resultado em S3 — o suficiente para não ser leitura passiva.
+
+A verificação era só de prefixo: bastava a string começar com `select` para
+passar. Prefixo não é gramática. Agora, além do início, qualquer palavra-chave
+que escreva, crie ou remova barra a execução, e o identificador da tabela é
+validado antes de entrar no SQL — ele vem de `--touches-table`, e interpolar
+texto de fora numa consulta sem verificar é como esse tipo de coisa começa.
 """
 
 from __future__ import annotations
 
+import re
 import time
 from collections.abc import Callable
 
 _TERMINAL = {"SUCCEEDED", "FAILED", "CANCELLED"}
 
+#: Qualquer uma destas, em qualquer posição, impede a execução. A lista é de
+#: negação de propósito: ela complementa a exigência de que a consulta comece
+#: com SELECT/WITH, que já é a garantia principal.
+_PALAVRAS_PROIBIDAS = re.compile(
+    r"\b(insert|update|delete|drop|create|alter|truncate|merge|grant|revoke|"
+    r"msck|repair|unload|vacuum|optimize)\b",
+    re.IGNORECASE,
+)
+
+#: `catalogo.schema.tabela`, com aspas duplas opcionais. Nada além disso entra
+#: numa consulta por interpolação.
+_IDENTIFICADOR = re.compile(r'^"?[A-Za-z_][\w-]*"?(\."?[A-Za-z_][\w-]*"?){0,2}$')
+
 
 class AthenaQueryError(RuntimeError):
     pass
+
+
+def validate_identifier(nome: str) -> str:
+    """Aceita só um nome de tabela qualificado, e devolve o mesmo nome.
+
+    O valor vem da linha de comando e é interpolado no SQL. O Athena não
+    executa múltiplas instruções, então o risco não é um DROP escondido — é uma
+    consulta malformada custando uma varredura. Validar é mais barato que
+    descobrir depois.
+    """
+    limpo = (nome or "").strip()
+    if not limpo or not _IDENTIFICADOR.match(limpo):
+        raise AthenaQueryError(
+            f"identificador de tabela inválido: {nome!r}. "
+            "Use catalogo.schema.tabela, sem espaços nem pontuação extra."
+        )
+    return limpo
 
 
 def run_query(
@@ -29,6 +67,11 @@ def run_query(
 ) -> list[dict]:
     if not sql.lstrip().lower().startswith(("select", "with")):
         raise AthenaQueryError("Somente SELECT é permitido no modo collection.")
+    if (proibida := _PALAVRAS_PROIBIDAS.search(sql)) is not None:
+        raise AthenaQueryError(
+            f"palavra-chave de escrita na consulta: {proibida.group(0)!r}. "
+            "O Julius analisa e recomenda; alterar dado é ação do time dono."
+        )
 
     start_kwargs: dict = {"QueryString": sql, "WorkGroup": workgroup}
     if output_location:

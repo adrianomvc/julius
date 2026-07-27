@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from julius.collection.collectors.athena.query import run_query
+from julius.collection.collectors.athena.query import run_query, validate_identifier
 from julius.collection.window import AnalysisWindow
 
 
@@ -45,6 +45,8 @@ def collect_touches(
 ) -> dict[str, TouchStats]:
     if not touches_table:
         return {}
+    # O nome vem de `--touches-table` e entra no SQL por interpolação.
+    touches_table = validate_identifier(touches_table)
     cols = columns or TouchColumns()
     sql = (
         "WITH base AS ("
