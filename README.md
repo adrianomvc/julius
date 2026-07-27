@@ -158,10 +158,13 @@ novo em vez de reaproveitar o pacote antigo. `agent validate` também grava a
 fila de candidatos a regra em `data/state/rule-candidates.json`; use
 `--rule-candidates` para mudar o destino.
 
-Para preparar o workspace, use `scripts/bootstrap-devin.sh` no ambiente
-Linux/Devin Cloud ou `scripts/bootstrap-devin.ps1` no PowerShell. Ambos criam a
-`.venv`, instalam `.[aws,dev]`, executam os testes e fazem um smoke test com os
-dados de exemplo; não acessam uma conta AWS durante o bootstrap.
+Para preparar o workspace, rode `bash install/install.sh`. Ele escolhe um Python
+3.11+, cria a `.venv`, instala `.[aws,dev]`, publica o lançador `julius` e a
+skill `julius-aws-analysis` no DEVIN CLI, cria os arquivos `~/.julius-*.json`
+desabilitados e valida tudo com a suíte de testes e um smoke que gera o
+`report.html`. Não acessa conta AWS nenhuma durante a instalação. Os detalhes,
+inclusive como preencher o assistente de setup do Devin, estão em
+[install/README.md](install/README.md).
 
 ### Conta AWS via SSO
 
@@ -203,7 +206,7 @@ ID esperado e para em caso de divergência. Ele usa apenas
 ## Como rodar
 
 ```bash
-pip install -e .
+bash install/install.sh   # uma vez por máquina; ver install/README.md
 
 # Ranking de uma conta
 julius opportunities
@@ -324,7 +327,20 @@ O histórico padrão fica em `data/state/julius.duckdb`; os Parquets ficam em
 normalizado usado pelos datasets exportados.
 
 ## Testes
+
+O `install/install.sh` já roda a suíte no fim da instalação. Para rodar de novo,
+com a `.venv` que ele criou:
+
 ```bash
-pip install pytest
-PYTHONPATH=. python -m pytest -q tests/
+.venv/bin/python -m pytest -q          # .venv/Scripts/python.exe no Windows
+.venv/bin/ruff check . && .venv/bin/mypy julius
+```
+
+A suíte inclui uma referência congelada da saída do pipeline
+(`data/baseline/`, comparada por `tests/test_baseline.py`): ela pega mudança de
+comportamento que nenhum teste unitário previu. Quando a saída mudar de
+propósito, regrave a referência e diga no commit o porquê:
+
+```bash
+.venv/bin/python scripts/snapshot_baseline.py write
 ```
