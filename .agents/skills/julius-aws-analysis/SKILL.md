@@ -81,7 +81,7 @@ checklist while you read each artifact.
 number of workers, autoscaling? Is the schedule compatible with the nature of
 the source, or are there runs that find no new data? Does the write pattern
 match the filter used by whoever reads the table downstream? Is there avoidable
-reprocessing — bookmarks, full overwrite, silent retry?
+reprocessing — bookmarks, full overwrite, silent retry? Does the SLA tolerate a delayed start and unguaranteed capacity, or is something downstream blocked waiting for this job to finish on time?
 
 **Athena query** — Does the consumption this query serves still exist? Is the
 missing partition filter an oversight or a requirement of the use case? Does

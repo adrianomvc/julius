@@ -88,7 +88,10 @@ class SageMakerEndpoint:
     name: str
     instance_type: str = "ml.m5.large"
     instance_count: int = 1
-    invocations_per_month: int = 0
+    # `None` = CloudWatch não consultado; `0` = consultado e sem invocação.
+    # Enquanto os dois eram zero, um endpoint em produção numa coleta sem
+    # CloudWatch era reportado como ocioso, com o custo 24/7 inteiro.
+    invocations_per_month: int | None = None
     auto_scaling: bool = False
     min_capacity: int = 1
     coverage_days: int = 0
@@ -106,9 +109,13 @@ class Table:
 
     name: str
     written_by: str | None = None       # nome do Glue Job que escreve a tabela
-    touches_90d: int = 0                 # acessos na janela (tabela oficial de toques)
-    consuming_accounts: int = 0
-    consuming_communities: int = 0
+    # `None` = toques não medidos; `0` = medidos e ninguém tocou. Enquanto os
+    # dois eram zero, "não olhamos" e "ninguém usa" eram a mesma frase — e a
+    # segunda vira dinheiro no relatório. A fonte de toques é opcional, então o
+    # caso não medido é o comum, não a exceção.
+    touches_90d: int | None = None       # acessos na janela (tabela oficial de toques)
+    consuming_accounts: int | None = None
+    consuming_communities: int | None = None
     storage_bytes: int = 0
     coverage_days: int = 0
     owner_tag: str | None = None

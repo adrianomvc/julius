@@ -150,9 +150,10 @@
       {% endif %}
       {% if r.rule_families_without_evidence %}
       <div style="padding:13px 18px;border-top:1px solid #edeee8;background:#fff8ec;color:#8a5b18;font-size:12px;line-height:1.5;">
-        <b>Famílias de regra sem evidência:</b>
-        {% for f in r.rule_families_without_evidence %}{{ f.service }}/{{ f.name }}{% if not loop.last %}, {% endif %}{% endfor %}.
-        Nada foi analisado nessas famílias porque o inventário exigido chegou vazio — ausência de achado aqui não significa ausência de problema.
+        <b>Famílias de regra sem evidência:</b> nada foi analisado nelas — ausência de achado aqui não significa ausência de problema.
+        {% for f in r.rule_families_without_evidence %}
+        <div style="margin-top:4px;">{{ f.service }}/{{ f.name }} — {{ f.reason }}</div>
+        {% endfor %}
       </div>
       {% endif %}
     </div>

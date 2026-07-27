@@ -35,6 +35,9 @@ def detect(account: Account, config: Config, scan_id: str) -> list[Opportunity]:
         ):
             out.append(_idle_app(account, app, config, scan_id))
     for ep in account.sagemaker_endpoints:
+        # Sem medição não há como dizer que ninguém chama o endpoint.
+        if ep.invocations_per_month is None:
+            continue
         if ep.invocations_per_month <= th.sm_endpoint_unused_invocations:
             out.append(_unused_endpoint(account, ep, config, scan_id))
     return out
