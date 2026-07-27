@@ -9,7 +9,11 @@ Use this skill when asked to analyze AWS costs or governance with Julius.
 
 ## Non-negotiable safety boundary
 
-- Treat AWS as read-only.
+- Treat AWS as read-only. Julius itself enforces this with an allowlist of
+  permitted AWS operations (`tests/test_read_only.py`); the only operation that
+  acts is a validated SELECT against the touches table. Every recommendation —
+  deleting objects, pausing a cluster, resizing workers — is an instruction for
+  the owning team, never something you or Julius execute.
 - Never run create, update, put, delete, stop, terminate, modify, tag, untag,
   deploy, apply, import, restore, or mutation commands.
 - Never send e-mail during analysis.
