@@ -57,6 +57,16 @@ def workgroups(client, coverage: AthenaCoverage, telemetry) -> tuple[list[str], 
             cfg = configs[name].get("Configuration", {})
             if not cfg.get("PublishCloudWatchMetricsEnabled", False):
                 telemetry.unavailable("Athena CloudWatch", category="not_configured", detail=f"{name}: métricas desabilitadas no workgroup")
+            # A mesma resposta traz onde os resultados de query se acumulam e se
+            # existe teto de bytes por query. Ambos vinham sendo descartados.
+            saida = str(
+                (cfg.get("ResultConfiguration") or {}).get("OutputLocation") or ""
+            )
+            if saida:
+                coverage.workgroup_output_locations[name] = saida
+            coverage.workgroup_scan_cutoffs[name] = cfg.get(
+                "BytesScannedCutoffPerQuery"
+            )
         except Exception as exc:
             telemetry.failed("Athena API", exc, detail=f"{name}: get_work_group")
     return names, configs

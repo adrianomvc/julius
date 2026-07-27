@@ -67,5 +67,15 @@ class Thresholds:
     # SageMaker: idle shutdown "alto" (min) e horas ociosas/dia relevantes.
     sm_idle_shutdown_high_min: int = 120
     sm_idle_hours_min: float = 1.0
+    # S3: idade a partir da qual o objeto sob um prefixo descartável deixa
+    # de ter consumidor plausível. Resultado de query segue a janela de
+    # reuso do Athena, que é de 60 minutos — um dia já é folga larga.
+    s3_athena_results_stale_days: int = 1
+    s3_spark_logs_stale_days: int = 30
+    s3_staging_stale_days: int = 7
+    # Upload iniciado e não concluído há mais que isso não conclui mais.
+    s3_multipart_stale_days: int = 7
+    # Objetos sob o prefixo abaixo dos quais o achado não compensa a ação.
+    s3_min_stale_objects: int = 100
     # SageMaker: endpoint "sem uso" com até este nº de invocações/mês.
     sm_endpoint_unused_invocations: int = 50

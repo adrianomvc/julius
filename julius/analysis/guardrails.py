@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from julius.analysis.context_builder import AgentContext
 
-PROMPT_VERSION = "1.5.0"
+PROMPT_VERSION = "1.6.0"
 
 #: As regras em si, separadas do texto que as apresenta — o validador de
 #: resposta verifica o resultado das mesmas restrições.
@@ -133,6 +133,16 @@ SCOPE = (
             "O consumo justifica inferência em tempo real, ou Serverless/Async "
             "atende?",
             "Quem chama este endpoint hoje, e esse consumidor ainda existe?",
+        ),
+    ),
+    (
+        "s3_bucket",
+        (
+            "As versões não-correntes existem por exigência de retenção ou "
+            "por inércia? Há prazo regulatório que impeça apagá-las?",
+            "O padrão de acesso justifica reescrever este dado em classe "
+            "fria, contando o custo da reescrita e o mínimo de retenção da "
+            "classe alvo? Lifecycle não é opção neste ambiente.",
         ),
     ),
     (

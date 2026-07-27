@@ -34,6 +34,12 @@ from julius.collection.models.glue import (
     InteractiveSession,
 )
 from julius.collection.models.health import CollectionHealth
+from julius.collection.models.s3 import (
+    S3Bucket,
+    S3CostCoverage,
+    S3MultipartUpload,
+    S3Prefix,
+)
 from julius.collection.settings import ANALYSIS_WINDOW_DAYS
 
 
@@ -74,6 +80,10 @@ class Account:
     athena_actor_usage: list[AthenaActorUsage] = field(default_factory=list)
     glue_cost_coverage: GlueCostCoverage | None = None
     redshift_cost_coverage: RedshiftCostCoverage | None = None
+    s3_buckets: list[S3Bucket] = field(default_factory=list)
+    s3_prefixes: list[S3Prefix] = field(default_factory=list)
+    s3_multipart: list[S3MultipartUpload] = field(default_factory=list)
+    s3_cost_coverage: S3CostCoverage | None = None
 
     def job_by_name(self, name: str | None) -> GlueJob | None:
         if not name:

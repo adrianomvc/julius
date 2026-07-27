@@ -28,7 +28,7 @@
       {
         "name": "Amazon S3",
         "subtitle": "armazenamento + requests",
-        "monthly_cost": 646.15,
+        "monthly_cost": 812.9,
         "currency": "USD",
         "period_kind": "month_to_date",
         "data_through": "2026-07-22",
@@ -434,5 +434,105 @@
     "unknown_usage_types": [],
     "cost_quality": "partial",
     "allocation_version": "1.0"
+  },
+  "s3_buckets": [
+    {
+      "name": "consumer-avi-datalake",
+      "bytes_by_class": {
+        "StandardStorage": 2748779069440.0
+      },
+      "object_count": 4820000,
+      "versioning_enabled": true,
+      "observed_days": 1,
+      "coverage_days": 30,
+      "owner_tag": "Squad AVI",
+      "allocated_storage_cost": 612.4,
+      "cost_quality": "reconciled"
+    }
+  ],
+  "s3_prefixes": [
+    {
+      "bucket": "consumer-avi-datalake",
+      "prefix": "athena-results/",
+      "kind": "athena_results",
+      "object_count": 184320,
+      "total_bytes": 96636764160,
+      "oldest_object_age_days": 412,
+      "stale_object_count": 183900,
+      "stale_bytes": 96200000000,
+      "listing_complete": true,
+      "source_asset": "workgroup primary",
+      "owner_tag": "Squad AVI"
+    },
+    {
+      "bucket": "consumer-avi-datalake",
+      "prefix": "spark-logs/processa_interacoes/",
+      "kind": "spark_logs",
+      "object_count": 2400,
+      "total_bytes": 8589934592,
+      "oldest_object_age_days": 190,
+      "stale_object_count": 1980,
+      "stale_bytes": 7300000000,
+      "listing_complete": false,
+      "source_asset": "processa_interacoes",
+      "owner_tag": "Squad AVI"
+    },
+    {
+      "bucket": "consumer-avi-datalake",
+      "prefix": "curated/resumo_regional/",
+      "kind": "table_location",
+      "object_count": 320,
+      "total_bytes": 42949672960,
+      "oldest_object_age_days": 60,
+      "stale_object_count": 0,
+      "stale_bytes": 0,
+      "listing_complete": true,
+      "source_asset": "resumo_regional"
+    }
+  ],
+  "s3_multipart": [
+    {
+      "bucket": "consumer-avi-datalake",
+      "upload_count": 47,
+      "total_bytes": 21474836480,
+      "oldest_age_days": 240,
+      "listing_complete": true
+    }
+  ],
+  "s3_cost_coverage": {
+    "period_start": "2026-06-23",
+    "data_through": "2026-07-22",
+    "cost_metric": "NetUnblendedCost",
+    "currency": "USD",
+    "net_cost": 812.9,
+    "buckets": {
+      "storage_standard": 612.4,
+      "requests_read": 142.8,
+      "requests_write": 31.2,
+      "data_transfer": 26.5
+    },
+    "unknown_usage_types": [],
+    "cost_quality": "reconciled",
+    "allocation_version": "1.0"
+  },
+  "athena_coverage": {
+    "window_start": "2026-06-23",
+    "window_end": "2026-07-22",
+    "window_days": 30,
+    "workgroups_total": 2,
+    "workgroups_covered": 2,
+    "workgroups": [
+      "primary",
+      "analytics"
+    ],
+    "cost_quality": "partial",
+    "workgroup_output_locations": {
+      "primary": "s3://consumer-avi-datalake/athena-results/",
+      "analytics": "s3://consumer-avi-datalake/athena-results/analytics/"
+    },
+    "workgroup_scan_cutoffs": {
+      "primary": 0,
+      "analytics": 1099511627776
+    }
   }
 }

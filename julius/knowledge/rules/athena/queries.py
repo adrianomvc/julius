@@ -7,7 +7,7 @@ from julius.config import Config
 from julius.findings.build import RuleContext, build
 from julius.findings.evidence import Evidence
 from julius.findings.finding import Finding
-from julius.findings.opportunity import Opportunity
+from julius.findings.opportunity import Estimation, Opportunity
 from julius.findings.recommendation import Recommendation
 from julius.knowledge.rules.athena import estimation as athena_est
 
@@ -79,6 +79,7 @@ def detect(account: Account, config: Config, scan_id: str) -> list[Opportunity]:
             legacy and not q.result_reuse_enabled and q.executions_per_month >= 8
         ):
             out.append(_result_reuse(account, q, config, scan_id))
+    out += workgroup_findings(account, config, scan_id)
     return out
 
 
@@ -498,6 +499,29 @@ def _failures(account: Account, q: AthenaQuery, config: Config, scan_id: str) ->
     )
 
 
+def _request_cost_evidence(account: Account) -> list[str]:
+    """A magnitude do custo de request da conta, sem ratear ao ativo.
+
+    Ratear exigiria o número de requests por prefixo, e o Cost Explorer entrega
+    custo, não contagem — as métricas de request do S3 são opcionais e pagas.
+    Sem a contagem não existe tarifa implícita por request, então a evidência
+    dá ao leitor os dois números que ele precisa para julgar a ordem de
+    grandeza, em vez de o Julius inventar a proporção.
+    """
+    coverage = getattr(account, "s3_cost_coverage", None)
+    if coverage is None or not coverage.buckets:
+        return []
+    from julius.knowledge.s3_cost import S3_REQUEST_BUCKETS
+
+    custo = coverage.cost_for(S3_REQUEST_BUCKETS)
+    if custo <= 0:
+        return []
+    return [
+        f"requests S3 da conta na janela: {custo:.2f} USD "
+        "(não rateado ao ativo: a contagem por prefixo não é coletável)"
+    ]
+
+
 def _small_files(account: Account, q: AthenaQuery, config: Config, scan_id: str) -> Opportunity:
     return build(
         Finding(
@@ -508,7 +532,9 @@ def _small_files(account: Account, q: AthenaQuery, config: Config, scan_id: str)
             title="Muitos arquivos pequenos nas tabelas consultadas",
             why=(
                 f"Evidência S3 confirma {q.small_file_count} objetos com média de "
-                f"{q.average_file_bytes / 1024**2:.1f} MiB."
+                f"{q.average_file_bytes / 1024**2:.1f} MiB. Cada execução faz "
+                "LIST e GET por objeto, então o custo do padrão está tanto em "
+                "bytes varridos quanto em requests."
             ),
         ),
         Recommendation(
@@ -524,8 +550,10 @@ def _small_files(account: Account, q: AthenaQuery, config: Config, scan_id: str)
             + [
                 f"{q.small_file_count} objetos S3",
                 f"tamanho médio {q.average_file_bytes / 1024**2:.1f} MiB",
+                f"{q.executions_per_month} execuções/mês sobre esses objetos",
+                *_request_cost_evidence(account),
             ],
-            sources=["S3 ListObjectsV2", "Glue GetTable"],
+            sources=["S3 ListObjectsV2", "Glue GetTable", "Cost Explorer"],
             observed_runs=q.observed_runs,
             coverage_days=q.coverage_days,
             has_optional_metrics=True,
@@ -540,3 +568,89 @@ def _small_files(account: Account, q: AthenaQuery, config: Config, scan_id: str)
             scan_id=scan_id,
         ),
     )
+
+
+_DOC_WORKGROUP = (
+    "https://docs.aws.amazon.com/athena/latest/ug/workgroups-setting-control-limits-cloudwatch.html"
+)
+
+
+def workgroup_findings(
+    account: Account, config: Config, scan_id: str
+) -> list[Opportunity]:
+    """Workgroup sem teto de bytes por query.
+
+    Config declarada, decisão fechada: o limite existe justamente para impedir
+    que uma query mal escrita varra o lake inteiro, e a AWS informa se ele está
+    lá. `None` significa que a configuração não foi consultada — e aí não há o
+    que afirmar; `0` ou ausente significa consultada e sem teto.
+    """
+    coverage = account.athena_coverage
+    if coverage is None:
+        return []
+    out: list[Opportunity] = []
+    for workgroup, cutoff in sorted(coverage.workgroup_scan_cutoffs.items()):
+        if cutoff is None or cutoff > 0:
+            continue
+        out.append(
+            build(
+                Finding(
+                    asset_type="athena_workgroup",
+                    asset_name=workgroup,
+                    rule_id="ATHENA-BYTES-SCANNED-CUTOFF",
+                    rule_version="1.0.0",
+                    title="Workgroup sem limite de bytes por query",
+                    why=(
+                        f"O workgroup '{workgroup}' não define "
+                        "BytesScannedCutoffPerQuery: uma query sem filtro pode "
+                        "varrer todo o dado acessível sem nada interrompê-la."
+                    ),
+                ),
+                Recommendation(
+                    difficulty=1,
+                    action="Definir BytesScannedCutoffPerQuery no workgroup",
+                    how_to_apply=(
+                        "Escolher o teto a partir do p99 de bytes das queries "
+                        "legítimas do workgroup e aplicá-lo. A alteração é do "
+                        "time responsável; o Julius não altera workgroup."
+                    ),
+                    how_to_validate=(
+                        "Confirmar que nenhuma query legítima passa a ser "
+                        "cancelada na janela seguinte."
+                    ),
+                    risks=[
+                        "teto baixo demais cancela carga legítima",
+                        "o limite protege contra o acidente, não reduz o custo atual",
+                    ],
+                    docs=[_DOC_WORKGROUP],
+                ),
+                Evidence(
+                    items=[
+                        f"workgroup {workgroup}",
+                        "BytesScannedCutoffPerQuery não configurado",
+                    ],
+                    sources=["Athena GetWorkGroup"],
+                    observed_runs=1,
+                    coverage_days=coverage.window_days,
+                    has_optional_metrics=True,
+                    owner_tag=None,
+                ),
+                # Guardrail não recupera gasto: evita o acidente futuro. O ganho
+                # é de risco, e não entra na soma financeira do portfólio.
+                Estimation(
+                    method="athena_scan_cutoff_v1",
+                    baseline_cost=0.0,
+                    projected_cost=0.0,
+                    estimated_saving=0.0,
+                    assumptions=[
+                        "limite previne varredura acidental; não reduz consumo atual",
+                    ],
+                    is_strategic=True,
+                    saving_quality="unavailable",
+                ),
+                RuleContext(
+                    account=account.account_id, config=config, scan_id=scan_id
+                ),
+            )
+        )
+    return out

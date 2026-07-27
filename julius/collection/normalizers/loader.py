@@ -27,6 +27,10 @@ from julius.collection.models import (
     ProducerCandidate,
     RedshiftCluster,
     RedshiftCostCoverage,
+    S3Bucket,
+    S3CostCoverage,
+    S3MultipartUpload,
+    S3Prefix,
     SageMakerApp,
     SageMakerEndpoint,
     Schedule,
@@ -156,6 +160,13 @@ def load_account(path: str | Path) -> Account:
         account.redshift_cost_coverage = _pick(
             raw["redshift_cost_coverage"], RedshiftCostCoverage
         )
+    account.s3_buckets = [_pick(b, S3Bucket) for b in raw.get("s3_buckets", [])]
+    account.s3_prefixes = [_pick(x, S3Prefix) for x in raw.get("s3_prefixes", [])]
+    account.s3_multipart = [
+        _pick(m, S3MultipartUpload) for m in raw.get("s3_multipart", [])
+    ]
+    if raw.get("s3_cost_coverage"):
+        account.s3_cost_coverage = _pick(raw["s3_cost_coverage"], S3CostCoverage)
     account.tables = [_pick(t, Table) for t in raw.get("tables", [])]
     account.schedules = [_pick(s, Schedule) for s in raw.get("schedules", [])]
     account.actor_events = [_pick(e, ActorEvent) for e in raw.get("actor_events", [])]

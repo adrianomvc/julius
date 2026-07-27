@@ -110,6 +110,8 @@ seasonal load, for disaster recovery, or has it simply stopped being used? Who
 depends on it today? Does low CPU even at peak hide an I/O, per-query memory or
 queue bottleneck, or is it genuinely spare capacity?
 
+**S3 bucket** — Do the noncurrent versions exist because retention requires them, or out of inertia? Is there a regulatory period that forbids deleting them? Does the access pattern justify rewriting this data into a colder class, counting the cost of the rewrite itself and the target class's minimum retention? Lifecycle policies are not available in this environment, so rewriting is the only path.
+
 **Cross-service** — When producing is expensive and reading throws that effort
 away, do you adjust the write or the read? Say who breaks with the choice.
 
