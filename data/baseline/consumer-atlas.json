@@ -1,10 +1,13 @@
 {
   "account": "consumer-atlas",
   "ai_analysis": {
+    "coverage": {},
     "executive_summary": "",
     "implementation_order": [],
     "recommendations": [],
-    "source": null
+    "signal_verdicts": [],
+    "source": null,
+    "uncovered_findings": []
   },
   "athena": {
     "actor_usage": [],
@@ -19,6 +22,105 @@
     "summary": "Dataset sem telemetria de coleta; cobertura das fontes não informada."
   },
   "currency": "USD",
+  "glue_cost": {
+    "buckets": [
+      {
+        "cost_fmt": "US$ 1.520",
+        "name": "etl_job"
+      },
+      {
+        "cost_fmt": "US$ 210,30",
+        "name": "crawler"
+      },
+      {
+        "cost_fmt": "US$ 130",
+        "name": "catalog"
+      },
+      {
+        "cost_fmt": "US$ 108,90",
+        "name": "other"
+      }
+    ],
+    "cost_fmt": "US$ 1.969,20",
+    "cost_metric": "NetUnblendedCost",
+    "cost_quality": "partial",
+    "gaps": [
+      "consumo modelado e cobrança do Cost Explorer divergem além da banda",
+      "bucket etl_job cobrado sem consumo coletado para ratear",
+      "bucket crawler cobrado sem consumo coletado para ratear"
+    ],
+    "ratio": "0.0%",
+    "unattributed_fmt": "US$ 1.969,20",
+    "unknown_usage_types": [],
+    "window": " → 2026-07-23"
+  },
+  "integrity": {
+    "inventory": [
+      {
+        "action": "Detalhar Cost Explorer/CUR por usage type, operação e tag de alocação",
+        "asset": "AWS Glue",
+        "evidence": [
+          "Cost Explorer Glue na janela=1969.20",
+          "modelo atribuído na janela=176.00",
+          "data_through=2026-07-23",
+          "catalog=130.00 USD",
+          "other=108.90 USD"
+        ],
+        "finding": "Cobrança Glue relevante ainda não atribuída aos processos",
+        "rule_id": "GLUE-UNATTRIBUTED-COST"
+      }
+    ],
+    "rule_families_without_evidence": [
+      {
+        "name": "sessions",
+        "reason": "inventário vazio: interactive_sessions",
+        "requires": "interactive_sessions",
+        "service": "glue"
+      },
+      {
+        "name": "crawlers",
+        "reason": "inventário vazio: glue_crawlers",
+        "requires": "glue_crawlers",
+        "service": "glue"
+      },
+      {
+        "name": "databrew",
+        "reason": "inventário vazio: databrew_jobs",
+        "requires": "databrew_jobs",
+        "service": "glue"
+      },
+      {
+        "name": "state_machines",
+        "reason": "inventário vazio: state_machines",
+        "requires": "state_machines",
+        "service": "stepfunctions"
+      },
+      {
+        "name": "apps_and_endpoints",
+        "reason": "inventário vazio: sagemaker_apps, sagemaker_endpoints",
+        "requires": "sagemaker_apps, sagemaker_endpoints",
+        "service": "sagemaker"
+      },
+      {
+        "name": "clusters",
+        "reason": "inventário vazio: redshift_clusters",
+        "requires": "redshift_clusters",
+        "service": "redshift"
+      },
+      {
+        "name": "objects",
+        "reason": "inventário vazio: s3_buckets",
+        "requires": "s3_buckets",
+        "service": "s3"
+      },
+      {
+        "name": "data_products",
+        "reason": "inventário vazio: tables",
+        "requires": "tables",
+        "service": "cross_service"
+      }
+    ]
+  },
   "lifecycle": {
     "diff_events": [
       {
@@ -77,8 +179,8 @@
         "is_strategic": false,
         "likely_implementation_date": "2026-07",
         "monthly_expected": 7.39,
-        "monthly_high": 9.98,
-        "monthly_low": 4.8,
+        "monthly_high": 10.35,
+        "monthly_low": 4.44,
         "realizable_year": 29.57,
         "realization_factor": 0.8
       },
@@ -97,8 +199,8 @@
         "baseline_quality": "modeled",
         "currency": "USD",
         "estimated_saving": 7.39,
-        "estimated_saving_high": 9.98,
-        "estimated_saving_low": 4.8,
+        "estimated_saving_high": 10.35,
+        "estimated_saving_low": 4.44,
         "estimation_version": "2.0-usd",
         "is_strategic": false,
         "method": "glue_timeout_guardrail_v1",
@@ -110,10 +212,10 @@
       "evidence": [
         "timeout=2880 min",
         "duração média 40 min",
-        "Achados relacionados no mesmo ativo: Job com baixa utilização e capacidade fixa (sem Auto Scaling) (GLUE-AUTOSCALING); Glue 3.0 abaixo da versão preferencial 5.1 (GLUE-VERSION-REVIEW)"
+        "Achados relacionados no mesmo ativo: Job batch elegível a ExecutionClass FLEX (GLUE-FLEX-CANDIDATE); Job com baixa utilização e capacidade fixa (sem Auto Scaling) (GLUE-AUTOSCALING)"
       ],
       "evidence_coverage": 1.0,
-      "evidence_quality": "modeled_rule",
+      "evidence_quality": "modeled",
       "evidence_refs": [
         {
           "actual_dpu_hours": 0.0,
@@ -138,6 +240,7 @@
       "missing_evidence": [],
       "next_action": null,
       "opportunity_id": "GLUE-TIMEOUT-EXCESSIVE-6a67b7ef",
+      "origin": "rule",
       "owner": "Squad Atlas",
       "owner_confidence": 1.0,
       "owner_event_name": "",
@@ -149,8 +252,8 @@
       "recommended_action": "Alinhar o timeout à duração real (com folga)",
       "risks": [
         "timeout curto demais pode cortar picos legítimos",
-        "Ação relacionada GLUE-AUTOSCALING: Habilitar Auto Scaling e revisar o teto de workers. Validar: Comparar DPU-h e duração média por execução após a mudança.",
-        "Ação relacionada GLUE-VERSION-REVIEW: Avaliar migração controlada para Glue 5.1. Validar: Comparar saída, duração p95, falhas e DPU-h."
+        "Ação relacionada GLUE-FLEX-CANDIDATE: Mudar ExecutionClass para FLEX. Validar: Comparar custo por execução e tempo de conclusão por 2 semanas.",
+        "Ação relacionada GLUE-AUTOSCALING: Habilitar Auto Scaling e revisar o teto de workers. Validar: Comparar DPU-h e duração média por execução após a mudança."
       ],
       "rule_id": "GLUE-TIMEOUT-EXCESSIVE",
       "rule_version": "1.0.0",
@@ -242,6 +345,7 @@
       "missing_evidence": [],
       "next_action": null,
       "opportunity_id": "ATHENA-NO-PARTITION-FILTER-cb8213e5",
+      "origin": "rule",
       "owner": "Squad Atlas",
       "owner_confidence": 1.0,
       "owner_event_name": "",
@@ -277,7 +381,7 @@
       "blocked": true,
       "bucket": "investigar_primeiro",
       "calibration_factor": 1.0,
-      "category": "cost_optimization",
+      "category": "inventory_integrity",
       "confidence": 0.45,
       "confidence_label": "Baixa",
       "data_sources": [
@@ -328,7 +432,7 @@
         "other=108.90 USD"
       ],
       "evidence_coverage": 0.6,
-      "evidence_quality": "modeled_rule",
+      "evidence_quality": "modeled",
       "evidence_refs": [],
       "execution_priority": 0,
       "finding": "Cobrança Glue relevante ainda não atribuída aos processos",
@@ -342,6 +446,7 @@
       "missing_evidence": [],
       "next_action": "identificar responsável",
       "opportunity_id": "GLUE-UNATTRIBUTED-COST-b98e101d",
+      "origin": "rule",
       "owner": null,
       "owner_confidence": 0.0,
       "owner_event_name": "",
@@ -388,6 +493,20 @@
       "window_days": 30,
       "window_end": "2026-07-23",
       "window_start": ""
+    }
+  ],
+  "producer_candidates": [
+    {
+      "cand": 71,
+      "cand_w": "71%",
+      "color": "#0053b3",
+      "name": "base_pedidos_consolidada",
+      "note": "alta candidatura e prontidão — priorizar a migração do processo.",
+      "ready": 58,
+      "ready_w": "58%",
+      "rec_label": "Migrar",
+      "x": "58%",
+      "y": "71%"
     }
   ],
   "scan_id": "baseline",

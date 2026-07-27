@@ -335,3 +335,12 @@ com a `.venv` que ele criou:
 .venv/bin/python -m pytest -q          # .venv/Scripts/python.exe no Windows
 .venv/bin/ruff check . && .venv/bin/mypy julius
 ```
+
+A suíte inclui uma referência congelada da saída do pipeline
+(`data/baseline/`, comparada por `tests/test_baseline.py`): ela pega mudança de
+comportamento que nenhum teste unitário previu. Quando a saída mudar de
+propósito, regrave a referência e diga no commit o porquê:
+
+```bash
+.venv/bin/python scripts/snapshot_baseline.py write
+```

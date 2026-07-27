@@ -1,11 +1,16 @@
-"""Congela a saída do pipeline para comparar antes e depois de uma movimentação.
+"""Congela a saída do pipeline para comparar antes e depois de uma mudança.
 
-As fases de reestruturação só movem código: o `report.json` de um mesmo dataset
-tem que sair idêntico, exceto o manifesto, que carrega o scan_id e a data. Este
-script grava a referência e a compara.
+Uma mudança que só move código tem que produzir o mesmo `report.json` para o
+mesmo dataset, exceto o manifesto, que carrega o scan_id e a data. Este script
+grava a referência versionada em `data/baseline/` e a compara.
 
-    python scripts/snapshot_baseline.py write   # antes de mover
-    python scripts/snapshot_baseline.py check   # depois de mover
+    python scripts/snapshot_baseline.py write   # a saída mudou de propósito
+    python scripts/snapshot_baseline.py check   # conferência rápida, manual
+
+A conferência **não depende deste script**: `tests/test_baseline.py` roda a mesma
+comparação na suíte, a cada execução. O `check` daqui é conveniência para o
+meio de uma refatoração; o `write` é o que muda a referência, e é deliberado por
+desenho — mexe em arquivo versionado e aparece no diff junto com a razão.
 """
 
 from __future__ import annotations
