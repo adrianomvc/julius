@@ -10,7 +10,7 @@
       {
         "name": "AWS Glue",
         "subtitle": "Jobs, sessions e crawlers",
-        "monthly_cost": 3292.31,
+        "monthly_cost": 1188.55,
         "currency": "USD",
         "period_kind": "month_to_date",
         "data_through": "2026-07-22",
@@ -78,7 +78,9 @@
       "avg_cpu_load": 0.22,
       "observed_runs": 30,
       "coverage_days": 90,
-      "owner_tag": "Squad AVI"
+      "owner_tag": "Squad AVI",
+      "dpu_seconds_window": 2880000.0,
+      "window_days": 30
     },
     {
       "name": "agrega_vendas",
@@ -97,7 +99,9 @@
       "owner_tag": "Squad AVI",
       "writes_tables": [
         "resumo_regional"
-      ]
+      ],
+      "dpu_seconds_window": 1500120.0,
+      "window_days": 30
     },
     {
       "name": "sync_parceiros",
@@ -116,7 +120,9 @@
       "max_retries": 3,
       "observed_runs": 60,
       "coverage_days": 90,
-      "owner_tag": "Squad AVI"
+      "owner_tag": "Squad AVI",
+      "dpu_seconds_window": 2160000.0,
+      "window_days": 30
     },
     {
       "name": "treina_features",
@@ -133,7 +139,9 @@
       "avg_cpu_load": 0.2,
       "observed_runs": 20,
       "coverage_days": 90,
-      "owner_tag": "Squad AVI"
+      "owner_tag": "Squad AVI",
+      "dpu_seconds_window": 576000.0,
+      "window_days": 30
     },
     {
       "name": "gera_base_legado",
@@ -152,7 +160,9 @@
       "owner_tag": "Squad AVI",
       "writes_tables": [
         "base_legado_diaria"
-      ]
+      ],
+      "dpu_seconds_window": 432000.0,
+      "window_days": 30
     }
   ],
   "state_machines": [
@@ -247,7 +257,8 @@
       "active_days_per_month": 22,
       "observed_runs": 22,
       "coverage_days": 90,
-      "owner_tag": "Squad AVI"
+      "owner_tag": "Squad AVI",
+      "dpu_hours": 240.0
     }
   ],
   "athena_queries": [
@@ -357,11 +368,10 @@
     "data_through": "2026-07-23",
     "cost_metric": "NetUnblendedCost",
     "currency": "USD",
-    "net_cost": 2992.3,
+    "net_cost": 1188.55,
     "buckets": {
-      "etl_job": 2411.4,
-      "crawler": 180.5,
-      "interactive_session": 240.0,
+      "etl_job": 922.55,
+      "interactive_session": 105.6,
       "catalog": 96.4,
       "data_quality": 64.0
     },

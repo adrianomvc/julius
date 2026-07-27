@@ -115,7 +115,12 @@ def test_the_assumptions_sheet_explains_where_numbers_came_from(workbook):
     assert "Execução" in scopes, "o manifesto do scan precisa estar lá"
     # E as premissas de cálculo de cada achado, não só o manifesto.
     assert len(scopes) > 1
-    assert any("tarifa" in str(row[2]) for row in rows)
+    # A procedência do número, seja qual for: tarifa versionada quando o valor
+    # é modelado, cobrança rateada quando ele está ancorado na fatura.
+    procedencia = ("tarifa", "USD", "cobrança", "ratead", "faixa da regra")
+    assert any(
+        any(marca in str(row[2]) for marca in procedencia) for row in rows
+    ), "a aba precisa dizer de onde cada número veio"
 
 
 def test_the_sheet_reports_the_evidence_quality_scale(workbook):

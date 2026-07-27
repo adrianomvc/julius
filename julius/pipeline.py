@@ -12,6 +12,8 @@ from julius.collection.artifacts import (
     load_glue_artifacts,
     summarize_glue_artifact_health,
 )
+from julius.collection.collectors import redshift_cost
+from julius.collection.collectors.glue import cost as glue_cost
 from julius.collection.models import Account, CollectionHealth, PreviousResult
 from julius.collection.normalizers import load_account
 from julius.config import DEFAULT_CONFIG, Config
@@ -133,6 +135,10 @@ def analyze_account(
     # Governança: candidatos a Producer calculados quando não fornecidos.
     if not account.producer_candidates:
         account.producer_candidates = compute_candidates(account)
+    # O rateio da cobrança é derivação pura do que já está no inventário, e
+    # rodava só na coleta ao vivo. No caminho do dataset a cobrança chegava e
+    # ninguém a distribuía: o achado saía `modeled` com a fatura ali do lado.
+    _allocate_billing(account, config)
     account.process_costs = build_process_costs(account, config, today=today)
     graph = build_process_graph(account)
     opportunities = run_all(account, config, scan_id)
@@ -268,6 +274,36 @@ def analyze_account(
         reconciliation=reconciliation,
         signals=signals,
     )
+
+
+def _allocate_billing(account: Account, config: Config) -> None:
+    """Distribui a cobrança coletada entre os ativos, se ainda não foi.
+
+    Idempotente por construção: só roda quando existe cobrança classificada e
+    nenhum ativo recebeu rateio ainda. É o que faz o caminho do dataset chegar
+    à mesma conclusão do caminho ao vivo — sem isso, ancorar a economia na
+    fatura dependia de quem exportou o dataset ter rodado o rateio antes.
+    """
+    coverage = account.glue_cost_coverage
+    if coverage and coverage.buckets and not coverage.allocated_buckets:
+        glue_cost.allocate_costs(
+            account,
+            coverage,
+            config,
+            allocatable_buckets=config.glue_cost.allocatable_buckets,
+            jobs_collection_complete=bool(account.glue_jobs),
+        )
+
+    redshift_coverage = getattr(account, "redshift_cost_coverage", None)
+    clusters = getattr(account, "redshift_clusters", None) or []
+    if (
+        redshift_coverage
+        and redshift_coverage.buckets
+        and not any(c.allocated_compute_cost for c in clusters)
+    ):
+        redshift_cost.allocate_costs(
+            account, redshift_coverage, config.redshift_cost.compute_buckets
+        )
 
 
 def _promote_confirmed(
