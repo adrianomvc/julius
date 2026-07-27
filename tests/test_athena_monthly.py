@@ -305,7 +305,9 @@ def test_collection_reconciles_all_workgroups_and_never_serializes_raw_execution
     report_html = renderer.render_html(integrated.vm)
     report_json = renderer.render_json(integrated.vm, integrated.opportunities)
     email_html, email_text = renderer.render_email(integrated.vm)
-    assert "Athena — padrões de query e uso por pessoa" in report_html
+    # A tabela de padrões de query é triagem técnica: saiu do HTML junto com o
+    # apêndice e continua completa no JSON.
+    assert "Athena" in report_html, "as recomendações de Athena continuam no relatório"
     assert '"athena":' in report_json
     assert "Athena integrado" in email_html
     assert "Athena integrado" in email_text
@@ -358,13 +360,19 @@ def test_result_reuse_saving_uses_only_exact_nearby_duplicates():
         athena_actor_usage=analysis.actors,
         athena_coverage=analysis.coverage,
     )
-    report_html = renderer.render_html(analyze_account(account, scan_id="reuse").vm)
+    analyzed = analyze_account(account, scan_id="reuse")
+    report_html = renderer.render_html(analyzed.vm)
     assert "2 repetições exatas elegíveis" in report_html
-    assert "US$ 2 evitável" in report_html
+    # O que o analista lê é o ganho já ajustado pela confiança (US$ 2 estimados
+    # × 0,7), não o `estimated_saving` cru.
+    assert "US$ 1,40" in report_html
+    # O baseline sustenta o cálculo mas não é o que se decide: ficou no JSON.
+    assert '"baseline_cost": 3' in renderer.render_json(
+        analyzed.vm, analyzed.opportunities
+    )
     # A qualidade do número continua dita — em português de analista, não
     # no vocabulário interno das três escalas.
     assert "valor medido na fatura" in report_html
-    assert "US$ 3" in report_html
 
 
 def test_partial_collection_uses_versioned_modeled_recovery():

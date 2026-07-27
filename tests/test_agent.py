@@ -245,7 +245,10 @@ def test_validated_ai_context_enriches_delivery_without_changing_priority(contex
     ]
 
     assert before == after
-    assert "Análise contextual pelo Devin" in html
+    # O relatório desenhado não tem uma seção de análise da IA: o contexto do
+    # Devin entra no cartão do achado a que ele se refere, que é onde alguém
+    # decidindo sobre aquela ação vai lê-lo.
+    assert "Contexto do Devin" in html
     assert "ANÁLISE CONTEXTUAL PELO DEVIN" in email_html
     assert "ANÁLISE CONTEXTUAL PELO DEVIN" in email_text
     assert report_json["ai_analysis"]["source"] == "Devin"
@@ -282,9 +285,9 @@ def test_report_cli_accepts_only_context_bound_validated_result(tmp_path):
     )
 
     assert result.exit_code == 0, result.output
-    assert "Análise contextual pelo Devin" in (
-        report_dir / "report.html"
-    ).read_text(encoding="utf-8")
+    assert "Contexto do Devin" in (report_dir / "report.html").read_text(
+        encoding="utf-8"
+    )
 
 
 def test_context_declares_its_own_coverage_and_the_silence_it_carries(context):

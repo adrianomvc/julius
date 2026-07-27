@@ -12,6 +12,7 @@ from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from julius import __version__
 from julius.findings.opportunity import Opportunity
+from julius.reporting import design, design_view
 from julius.reporting.view_models import ReportViewModel, manifest_val
 
 _TEMPLATES = Path(__file__).parent / "templates"
@@ -38,13 +39,23 @@ def _env() -> Environment:
     )
 
 
-def render_html(vm: ReportViewModel) -> str:
-    env = _env()
-    return env.get_template("report.html.j2").render(
-        r=vm,
-        avatar=avatar_data_uri(),
-        manifest_version=manifest_val(vm.manifest, "julius_version") or __version__,
+def render_html(vm: ReportViewModel, *, variant: str = design.SCREEN) -> str:
+    """O relatório desenhado, alimentado pelo view model.
+
+    O template vem de `templates/design/` e não é editado aqui: `design.load`
+    traduz a sintaxe do editor na carga, e o adaptador entrega os nomes que o
+    desenho pede. Trocar o desenho por uma versão nova é trocar o arquivo.
+    """
+    version = manifest_val(vm.manifest, "julius_version") or __version__
+    fonte = design.inline_assets(
+        design.load(variant), avatar=avatar_data_uri(), fonts=design.font_face_css()
     )
+    return _env().from_string(fonte).render(design_view.build(vm, version=version))
+
+
+def render_print_html(vm: ReportViewModel) -> str:
+    """A variante de impressão: mesma fonte de dados, `details` abertos."""
+    return render_html(vm, variant=design.PRINT)
 
 
 def render_email(vm: ReportViewModel, report_url: str | None = None) -> tuple[str, str]:
@@ -92,12 +103,24 @@ def render_json(vm: ReportViewModel, opportunities: list[Opportunity]) -> str:
             "executive_summary": vm.ai_summary,
             "implementation_order": vm.ai_implementation_order,
             "recommendations": vm.ai_recommendations,
+            "coverage": vm.ai_coverage,
+            "signal_verdicts": vm.ai_signal_verdicts,
+            "uncovered_findings": vm.ai_uncovered_findings,
         },
         "athena": {
             "coverage": vm.athena_coverage,
             "query_patterns": vm.athena_queries,
             "actor_usage": vm.athena_actors,
             "gaps": vm.athena_gaps,
+        },
+        # O HTML desenhado é o documento do analista e não tem apêndice
+        # técnico. Nada do que saía lá pode sumir: o JSON passa a ser o registro
+        # completo do scan — é dele que a auditoria e o Devin leem.
+        "glue_cost": vm.glue_cost,
+        "producer_candidates": [asdict(pc) for pc in vm.producers],
+        "integrity": {
+            "inventory": vm.inventory_integrity,
+            "rule_families_without_evidence": vm.rule_families_without_evidence,
         },
         "manifest": vm.manifest,
         "collection_health": {
