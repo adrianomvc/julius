@@ -123,3 +123,9 @@ class AthenaCoverage:
     net_cost: float | None = None
     currency: str = "USD"
     gaps: list[str] = field(default_factory=list)
+    # Configuração declarada de cada workgroup, lida de `GetWorkGroup` — que
+    # já era chamado para resolver modalidade e nunca teve o resto lido.
+    # `None` no limite significa não consultado; `0` significa sem limite
+    # configurado, que é a informação que a regra precisa.
+    workgroup_output_locations: dict[str, str] = field(default_factory=dict)
+    workgroup_scan_cutoffs: dict[str, int | None] = field(default_factory=dict)

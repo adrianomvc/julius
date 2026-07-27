@@ -13,6 +13,14 @@ conta que gostaríamos de ter coletado, não a que a coleta produz.
 Estas duas asserções são mecânicas de propósito. Elas não sabem o que cada
 regra faz; sabem só que afirmar sobre um campo exige que alguém o preencha, e
 que medida ausente não pode ter default que passe por medida.
+
+**Limitação conhecida:** a correspondência é por *nome* de campo, não pelo par
+(classe, campo). Uma regra que lê `cluster.observed_days` faz com que qualquer
+classe com um campo `observed_days` seja cobrada, mesmo que nenhuma regra a
+leia. Resolver isso exigiria inferir o tipo da variável dentro do laço da
+regra. O erro é para o lado de cobrar demais, que é o que se quer de uma rede
+de segurança — mas quem adiciona uma exceção precisa saber que ela pode existir
+por homonímia, e escrever o motivo mesmo assim.
 """
 
 from __future__ import annotations
@@ -90,6 +98,7 @@ DEFAULT_LEGITIMO = {
     ("InteractiveSession", "idle_hours_per_day"),
     # Dias com datapoint; a regra de ociosidade exige `observed_days > 0`.
     ("RedshiftCluster", "observed_days"),
+    ("S3Bucket", "observed_days"),
 }
 
 #: Nome de campo que sugere medida, e não configuração declarada.

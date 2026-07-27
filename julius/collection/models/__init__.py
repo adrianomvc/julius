@@ -36,6 +36,13 @@ from julius.collection.models.glue import (
     InteractiveSession,
 )
 from julius.collection.models.health import CollectionHealth
+from julius.collection.models.s3 import (
+    PREFIX_KINDS,
+    S3Bucket,
+    S3CostCoverage,
+    S3MultipartUpload,
+    S3Prefix,
+)
 from julius.collection.models.window_math import monthly_factor
 
 __all__ = [
@@ -60,6 +67,11 @@ __all__ = [
     "SageMakerEndpoint",
     "Schedule",
     "ServiceCost",
+    "S3Prefix",
+    "S3MultipartUpload",
+    "S3CostCoverage",
+    "S3Bucket",
+    "PREFIX_KINDS",
     "StateMachine",
     "Table",
     "monthly_factor",

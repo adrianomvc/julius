@@ -28,6 +28,7 @@ from julius.knowledge.rules.glue import databrew as glue_databrew
 from julius.knowledge.rules.glue import jobs as glue_jobs
 from julius.knowledge.rules.glue import sessions as glue_sessions
 from julius.knowledge.rules.redshift import rules as redshift_rules
+from julius.knowledge.rules.s3 import rules as s3_rules
 from julius.knowledge.rules.sagemaker import rules as sagemaker_rules
 from julius.knowledge.rules.stepfunctions import rules as stepfunctions_rules
 
@@ -108,6 +109,14 @@ REGISTRY: tuple[RuleFamily, ...] = (
         detect=redshift_rules.detect,
         requires=("redshift_clusters",),
         signals=redshift_rules.signals,
+    ),
+    RuleFamily(
+        service="s3",
+        name="objects",
+        detect=s3_rules.detect,
+        requires=("s3_buckets",),
+        measures=("s3_buckets.object_count",),
+        signals=s3_rules.signals,
     ),
     RuleFamily(
         service="cross_service",
