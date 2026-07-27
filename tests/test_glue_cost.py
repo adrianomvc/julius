@@ -379,8 +379,11 @@ def test_report_shows_the_glue_cost_quality_and_the_unattributed_buckets():
     analysis = analyze_account(account, DEFAULT_CONFIG, today=TODAY)
     html = renderer.render_html(analysis.vm)
 
-    assert "cobrança Glue por usage type" in html
-    assert "etl_job" in html and "catalog" in html
+    # A atribuição por usage type é material de auditoria: saiu do HTML com o
+    # apêndice técnico e vive completa no JSON.
+    registro = json.loads(renderer.render_json(analysis.vm, analysis.opportunities))
+    assert "etl_job" in str(registro["glue_cost"])
+    assert "catalog" in str(registro["glue_cost"])
     assert analysis.vm.glue_cost["cost_quality"] == "reconciled"
     assert analysis.vm.glue_cost["unattributed_fmt"] == "US$ 20"
     # Nenhum valor fora da moeda canônica chega ao relatório.

@@ -221,7 +221,11 @@ def test_health_roundtrip_and_report_json(tmp_path):
     )
     assert payload["collection_health"]["status"] == "partial"
     assert payload["collection_health"]["sources"][1]["coverage"] == "50%"
-    assert "Saúde da coleta" in renderer.render_html(analysis.vm)
+    # A saúde da coleta saiu do HTML junto com o apêndice técnico — o desenho é
+    # o documento do analista. Ela continua íntegra no JSON, que é o registro
+    # completo do scan.
+    registro = json.loads(renderer.render_json(analysis.vm, analysis.opportunities))
+    assert registro["collection_health"]["sources"]
 
 
 def test_every_source_declares_impact_and_next_action():

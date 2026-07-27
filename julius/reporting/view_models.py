@@ -24,6 +24,13 @@ class OpportunityVM:
     id: str
     title: str
     asset: str
+    # O tipo é vocabulário interno e não se mostra ao analista, mas monta o ARN
+    # e atribui a economia ao serviço — os dois lugares onde o nome solto do
+    # ativo não basta.
+    asset_type: str
+    # O mesmo valor de `monthly_fmt`, sem formatar. Somar texto formatado é
+    # frágil, e o relatório precisa somar subconjuntos da lista.
+    monthly: float
     # `rule` ou `ai_confirmed`: de qual camada o achado veio.
     origin: str
     category_label: str
@@ -192,6 +199,8 @@ def _opp_vm(o: Opportunity, currency: str) -> OpportunityVM:
         # O chip de categoria já diz o serviço; repetir o tipo aqui só gasta
         # a linha com vocabulário interno.
         asset=o.asset_name,
+        asset_type=o.asset_type,
+        monthly=0.0 if g.is_strategic or saving_unavailable else g.monthly_expected,
         origin=o.origin,
         category_label=cat_label,
         category_fg=cat_fg,
@@ -391,11 +400,28 @@ def _recommendation(do_now: list[Opportunity], currency: str) -> str:
 
 def _services(account: Account, opportunities: list[Opportunity]) -> tuple[list[dict], float]:
     """Reconciliação: custo por serviço + economia identificada mapeada a cada serviço."""
+    # Todo tipo de ativo que o catálogo produz precisa cair num serviço. Este
+    # mapa cobria quatro de doze, e o efeito era grave: a economia de Redshift,
+    # SageMaker, S3 e Step Functions — US$ 1.253,62 no dataset de exemplo —
+    # aparecia como "—" na tabela, ao lado de recomendações que a reivindicavam
+    # na mesma página.
     service_of = {
         "glue_job": "AWS Glue",
         "glue_session": "AWS Glue",
+        "glue_crawler": "AWS Glue",
+        "glue_service": "AWS Glue",
+        "databrew_job": "AWS Glue",
         "athena_query": "Amazon Athena",
+        "athena_workgroup": "Amazon Athena",
+        "state_machine": "Step Functions",
+        "sagemaker_app": "Amazon SageMaker",
+        "sagemaker_endpoint": "Amazon SageMaker",
+        "redshift_cluster": "Amazon Redshift",
         "s3": "Amazon S3",
+        "s3_bucket": "Amazon S3",
+        "s3_prefix": "Amazon S3",
+        # A economia de uma tabela sem uso é o compute do job que a escreve.
+        "table": "AWS Glue",
     }
     saving_by_service: dict[str, float] = {}
     saving_currency_by_service: dict[str, str] = {}
@@ -432,6 +458,30 @@ def _services(account: Account, opportunities: list[Opportunity]) -> tuple[list[
                 "saving_color": "#e8730c" if saving > 0 else "#b6bcae",
                 "pct_opt": f"{round(saving / s.monthly_cost * 100)}%" if saving > 0 and s.monthly_cost else "—",
                 "bar_base_w": f"{s.monthly_cost / total * 100:.1f}%",
+                "bar_save_w": f"{saving / total * 100:.1f}%",
+            }
+        )
+
+    # Um serviço pode ter economia sem ter linha própria no Cost Explorer: no
+    # dataset de exemplo o SageMaker está dentro de "Outros". Antes, essa
+    # economia sumia da tabela e continuava contada no total — o relatório
+    # prometia um valor que a primeira seção não explicava. Agora ela aparece
+    # com o custo em branco, que é a informação verdadeira: sabemos o que dá
+    # para economizar, não sabemos quanto o serviço custa isolado.
+    listados = {s.name for s in account.services}
+    for nome, saving in saving_by_service.items():
+        if nome in listados or saving <= 0:
+            continue
+        moeda = saving_currency_by_service.get(nome, account.currency)
+        rows.append(
+            {
+                "name": nome,
+                "sub": "custo não separado na fatura coletada",
+                "cost_fmt": "—",
+                "saving_fmt": fmt.money(saving, moeda),
+                "saving_color": "#e8730c",
+                "pct_opt": "—",
+                "bar_base_w": "0.0%",
                 "bar_save_w": f"{saving / total * 100:.1f}%",
             }
         )

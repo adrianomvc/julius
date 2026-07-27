@@ -28,7 +28,16 @@ include = ["julius*"]
 [tool.setuptools.package-data]
 # Se este caminho não existir, o pacote instalado sai sem template e o `report`
 # quebra só em produção — os testes rodam do repositório e não pegam.
-"julius.reporting" = ["templates/*.j2", "assets/*.png"]
+"julius.reporting" = [
+    "templates/*.j2",
+    # O relatório desenhado. Sem isto o pacote instalado renderiza sem template.
+    "templates/design/*.dc.html",
+    "assets/*.png",
+    # As fontes são opcionais: se não estiverem lá, o desenho usa o `<link>` do
+    # Google Fonts que o designer escreveu. Declaradas aqui para que colocá-las
+    # na pasta baste — sem mexer no empacotamento depois.
+    "assets/fonts/*.woff2",
+]
 "julius.knowledge.pricing" = ["tables/*.toml", "mapping.toml"]
 
 # A reestruturação move ~14 mil linhas entre pacotes. A suíte pega o que executa;

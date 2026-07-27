@@ -1,0 +1,561 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&amp;family=IBM+Plex+Mono:wght@400;500;600&amp;family=Space+Grotesk:wght@500;600;700&amp;display=swap" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body { background: #eceee7; }
+  a { color: #0053b3; text-decoration: none; }
+  a:hover { color: #003a80; text-decoration: underline; }
+</style>
+<script src="./doc-page.js"></script>
+<style>
+  doc-page:not(:defined){visibility:hidden}
+  * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+</style>
+</helmet>
+<doc-page margin="0.45in">
+<div style="font-family:'IBM Plex Sans',system-ui,sans-serif; color:#1a1e24; background:#ffffff;">
+
+  <!-- HEADER -->
+  <div style="background:#12233f; color:#f4f5f1; padding:32px 44px 28px;">
+    <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:32px; flex-wrap:wrap;">
+      <div style="max-width:540px;">
+        <div style="display:flex; align-items:center; gap:12px;">
+          <img src="assets/julius-avatar.png" alt="Julius" style="width:44px; height:44px; border-radius:50%; object-fit:cover; border:2px solid #e8730c; box-shadow:0 2px 8px rgba(0,0,0,.3);">
+          <span style="font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:26px; letter-spacing:-.01em;">Julius</span>
+          <span style="font-family:'IBM Plex Mono',monospace; font-size:11px; color:#8792a8; border:1px solid #2f4468; border-radius:4px; padding:2px 7px; margin-left:2px;">v0.3.0</span>
+        </div>
+        <div style="margin-top:14px; padding-left:14px; border-left:2px solid #e8730c; font-size:14.5px; font-style:italic; color:#e6b98d; line-height:1.5;">"Você sabe quanto esse job custa por mês? <span style="color:#f4a95c; font-style:normal; font-weight:600;">Eu sei — até o último centavo.</span>" <span style="color:#b6bece; font-style:normal;">— cada DPU conta.</span></div>
+        <div style="margin-top:14px; font-size:14px; line-height:1.55; color:#b6bece;">Onde esta conta está gastando mais do que precisa — e o que fazer, em ordem de retorno. Sem jargão: cada recomendação diz o problema e a ação.</div>
+      </div>
+      <div style="display:grid; grid-template-columns:auto auto; gap:6px 20px; font-size:12px; font-family:'IBM Plex Mono',monospace;">
+        <span style="color:#7b8498;">conta</span><span style="color:#e6e8e0; text-align:right;">{{ m.account }}</span>
+        <span style="color:#7b8498;">período</span><span style="color:#e6e8e0; text-align:right;">{{ m.period }}</span>
+        <span style="color:#7b8498;">janela</span><span style="color:#e6e8e0; text-align:right;">{{ m.lookback }}</span>
+        <span style="color:#7b8498;">scan_id</span><span style="color:#e6e8e0; text-align:right;">{{ m.scanId }}</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- KPI STRIP -->
+  <div style="display:grid; grid-template-columns:repeat(4,1fr); border-bottom:1px solid #e2e4dc;">
+    <div style="padding:22px 26px; border-right:1px solid #e2e4dc;">
+      <div style="font-size:11px; text-transform:uppercase; letter-spacing:.09em; color:#7c8374; font-weight:600;">Custo da conta / mês</div>
+      <div style="margin-top:8px; font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:29px; color:#12233f; letter-spacing:-.02em;">{{ account.totalFmt }}</div>
+      <div style="margin-top:3px; font-size:12px; color:#8a9082;">o que a conta gasta hoje</div>
+    </div>
+    <div style="padding:22px 26px; border-right:1px solid #e2e4dc;">
+      <div style="font-size:11px; text-transform:uppercase; letter-spacing:.09em; color:#7c8374; font-weight:600;">Dá para economizar</div>
+      <div style="margin-top:8px; font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:29px; color:#e8730c; letter-spacing:-.02em;">{{ k.monthly }}</div>
+      <div style="margin-top:3px; font-size:12px; color:#8a9082;">{{ account.savingPct }} do custo · por mês</div>
+    </div>
+    <div style="padding:22px 26px; border-right:1px solid #e2e4dc;">
+      <div style="font-size:11px; text-transform:uppercase; letter-spacing:.09em; color:#7c8374; font-weight:600;">Acumulado até dez/2026</div>
+      <div style="margin-top:8px; font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:29px; color:#12233f; letter-spacing:-.02em;">{{ k.yearEnd }}</div>
+      <div style="margin-top:3px; font-size:12px; color:#8a9082;">se aplicar agora · {{ k.monthsRemaining }} meses</div>
+    </div>
+    <div style="padding:22px 26px;">
+      <div style="font-size:11px; text-transform:uppercase; letter-spacing:.09em; color:#7c8374; font-weight:600;">Foco 80/20</div>
+      <div style="margin-top:8px; font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:29px; color:#12233f; letter-spacing:-.02em;">{{ k.paretoPct }}</div>
+      <div style="margin-top:3px; font-size:12px; color:#8a9082;">da economia em só {{ k.paretoCount }} ações</div>
+    </div>
+  </div>
+
+  <!-- BODY -->
+  <div style="padding:38px 44px 44px;">
+
+    <!-- 01 · COST -->
+    <div style="display:flex; align-items:baseline; gap:12px; margin-bottom:4px;">
+      <span style="font-family:'IBM Plex Mono',monospace; font-size:12px; color:#e8730c; font-weight:600;">01</span>
+      <h2 style="margin:0; font-family:'Space Grotesk',sans-serif; font-size:22px; font-weight:700; letter-spacing:-.01em; color:#12233f;">De onde vem o custo</h2>
+    </div>
+    <p style="margin:6px 0 0; font-size:14.5px; line-height:1.6; color:#4b5159; max-width:720px;">Primeiro, o retrato: quanto a conta gasta por serviço. Dos serviços que o Julius consegue otimizar — Glue, Athena, S3, Step Functions, SageMaker e Redshift — a coluna "economia" mostra quanto dá para recuperar. Onde aparece "—", o scan não encontrou oportunidade nesta rodada.</p>
+
+    <div style="margin-top:18px; display:grid; grid-template-columns:250px 1fr; gap:0; border:1px solid #e2e4dc; border-radius:12px; overflow:hidden;">
+      <div style="background:#12233f; color:#f4f5f1; padding:22px 24px; display:flex; flex-direction:column; justify-content:center;">
+        <div style="font-size:11px; text-transform:uppercase; letter-spacing:.09em; color:#96a0b4; font-weight:600;">Custo total / mês</div>
+        <div style="margin-top:6px; font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:34px; letter-spacing:-.02em;">{{ account.totalFmt }}</div>
+        <div style="margin-top:2px; font-family:'IBM Plex Mono',monospace; font-size:11px; color:#8792a8;">Cost Explorer · jul/2026</div>
+        <div style="margin-top:20px; padding-top:16px; border-top:1px solid #2a3c5c;">
+          <div style="display:flex; justify-content:space-between; align-items:baseline;">
+            <span style="font-size:11px; text-transform:uppercase; letter-spacing:.06em; color:#96a0b4; font-weight:600;">Dá para economizar</span>
+            <span style="font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:18px; color:#f4a95c;">{{ account.savingPct }}</span>
+          </div>
+          <div style="margin-top:8px; height:8px; border-radius:4px; background:#1a2c4a; overflow:hidden;"><div style="height:100%; width:{{ account.savingBarW }}; border-radius:4px; background:#e8730c;"></div></div>
+          <div style="margin-top:8px; font-family:'IBM Plex Mono',monospace; font-size:12px; color:#e6b98d;">{{ account.savingFmt }}/mês</div>
+        </div>
+      </div>
+      <div style="background:#ffffff;">
+        <div style="display:grid; grid-template-columns:1fr 96px 100px; padding:11px 20px; background:#f3f4ee; font-size:10.5px; text-transform:uppercase; letter-spacing:.07em; font-weight:600; color:#7c8374;">
+          <div>Serviço</div>
+          <div style="text-align:right;">Custo/mês</div>
+          <div style="text-align:right;">Economia</div>
+        </div>
+        <sc-for list="{{ account.services }}" as="s" hint-placeholder-count="5">
+          <div style="display:grid; grid-template-columns:1fr 96px 100px; align-items:center; padding:12px 20px; border-top:1px solid #edeee8;">
+            <div style="padding-right:18px;">
+              <div style="display:flex; justify-content:space-between; align-items:baseline;">
+                <span style="font-size:13.5px; font-weight:600; color:#12233f;">{{ s.name }}</span>
+                <span style="font-family:'IBM Plex Mono',monospace; font-size:11px; color:#a07326;">{{ s.pctOpt }} recuperável</span>
+              </div>
+              <div style="margin-top:2px; font-family:'IBM Plex Mono',monospace; font-size:11px; color:#8a9082;">{{ s.sub }}</div>
+              <div style="margin-top:7px; position:relative; height:7px; border-radius:4px; background:#eef0ea; overflow:hidden;">
+                <div style="position:absolute; left:0; top:0; height:100%; width:{{ s.barBaseW }}; border-radius:4px; background:#c2c9d6;"></div>
+                <div style="position:absolute; left:0; top:0; height:100%; width:{{ s.barSaveW }}; border-radius:4px; background:#e8730c;"></div>
+              </div>
+            </div>
+            <div style="text-align:right; font-family:'IBM Plex Mono',monospace; font-size:13px; color:#3a3f46;">{{ s.costFmt }}</div>
+            <div style="text-align:right; font-family:'IBM Plex Mono',monospace; font-size:13px; font-weight:600; color:{{ s.savingColor }};">{{ s.savingFmt }}</div>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+
+    <!-- 02 · 80/20 -->
+    <div style="display:flex; align-items:baseline; gap:12px; margin-bottom:4px;">
+      <span style="font-family:'IBM Plex Mono',monospace; font-size:12px; color:#e8730c; font-weight:600;">02</span>
+      <h2 style="margin:0; font-family:'Space Grotesk',sans-serif; font-size:22px; font-weight:700; letter-spacing:-.01em; color:#12233f;">Comece por aqui</h2>
+    </div>
+    <p style="margin:6px 0 0; font-size:14.5px; line-height:1.6; color:#4b5159; max-width:720px;">{{ k.paretoSentence }}</p>
+
+    <div style="margin-top:20px; border:1px solid #f1e2ce; border-radius:12px; background:#fef7ef; overflow:hidden;">
+      <div style="padding:18px 22px 8px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; font-size:12px; color:#4b5159;">
+          <span style="font-weight:600;">Quanto cada ação prioritária pesa na economia mensal</span>
+          <span style="font-family:'IBM Plex Mono',monospace; color:#e8730c; font-weight:600;">{{ k.paretoPct }} · {{ k.paretoSum }}/mês</span>
+        </div>
+        <div style="margin-top:10px; height:12px; border-radius:6px; background:#f2e3d2; overflow:hidden; display:flex;">
+          <sc-for list="{{ paretoBar }}" as="seg" hint-placeholder-count="4">
+            <div title="{{ seg.title }}" style="height:100%; width:{{ seg.w }}; background:{{ seg.color }}; border-right:2px solid #fef7ef;"></div>
+          </sc-for>
+        </div>
+      </div>
+      <div style="padding:6px 12px 14px;">
+        <sc-for list="{{ focus }}" as="o" hint-placeholder-count="4">
+          <a href="#{{ o.id }}" style="display:flex; align-items:center; gap:14px; padding:11px 12px; border-radius:9px; color:inherit;" style-hover="background:#fdeede;">
+            <span style="flex-shrink:0; width:26px; height:26px; border-radius:50%; background:#12233f; color:#fff; font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:14px; display:flex; align-items:center; justify-content:center;">{{ o.rank }}</span>
+            <span style="flex:1; font-size:14.5px; font-weight:600; color:#12233f;">{{ o.title }}</span>
+            <span style="{{ o.effortChip }}">{{ o.effortLabel }}</span>
+            <span style="font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:16px; color:#e8730c; min-width:96px; text-align:right;">{{ o.gainMonthFmt }}<span style="font-size:11px; color:#b58a5a; font-weight:500;">/mês</span></span>
+          </a>
+        </sc-for>
+      </div>
+    </div>
+
+    <!-- 03 · RECOMMENDATIONS -->
+    <div style="display:flex; align-items:baseline; gap:12px; margin:46px 0 4px;">
+      <span style="font-family:'IBM Plex Mono',monospace; font-size:12px; color:#e8730c; font-weight:600;">03</span>
+      <h2 style="margin:0; font-family:'Space Grotesk',sans-serif; font-size:22px; font-weight:700; letter-spacing:-.01em; color:#12233f;">Recomendações, por prioridade</h2>
+    </div>
+    <p style="margin:6px 0 0; font-size:14.5px; line-height:1.6; color:#4b5159; max-width:720px;">Da que mais compensa para a que menos compensa. Cada uma explica <b>o problema</b> e <b>o que fazer</b>. O detalhe técnico fica recolhido, para quem for executar.</p>
+
+    <div style="margin-top:22px; display:flex; flex-direction:column; gap:14px;">
+      <sc-for list="{{ recsPrimary }}" as="o" hint-placeholder-count="4">
+        <div id="{{ o.id }}" style="border:1px solid #e2e4dc; border-radius:14px; overflow:hidden; scroll-margin-top:20px; background:#ffffff;">
+          <!-- head -->
+          <div style="display:flex; gap:16px; padding:20px 22px 0;">
+            <span style="flex-shrink:0; width:34px; height:34px; border-radius:50%; background:{{ o.rankBg }}; color:{{ o.rankFg }}; font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:17px; display:flex; align-items:center; justify-content:center;">{{ o.rank }}</span>
+            <div style="flex:1; min-width:0;">
+              <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:16px; flex-wrap:wrap;">
+                <div style="display:flex; align-items:center; gap:9px; flex-wrap:wrap;">
+                  <span style="font-size:17px; font-weight:700; color:#12233f;">{{ o.title }}</span>
+                  <span style="{{ o.catChip }}">{{ o.catLabel }}</span>
+                </div>
+                <div style="text-align:right; white-space:nowrap;">
+                  <span style="font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:22px; color:#e8730c;">{{ o.gainMonthFmt }}</span>
+                  <span style="font-size:12px; color:#8a9082;">/mês</span>
+                </div>
+              </div>
+              <div style="margin-top:8px; display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+                <span style="font-size:9.5px; text-transform:uppercase; letter-spacing:.07em; color:#a0a698; font-weight:700;">recurso</span>
+                <code style="font-family:'IBM Plex Mono',monospace; font-size:11.5px; color:#5b6169; background:#f3f4ee; border:1px solid #e2e4dc; border-radius:5px; padding:2px 9px; word-break:break-all;">{{ o.arn }}</code>
+              </div>
+            </div>
+          </div>
+          <!-- problem + action -->
+          <div style="padding:14px 22px 4px 72px;">
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:0; border:1px solid #edeee8; border-radius:10px; overflow:hidden;">
+              <div style="padding:14px 18px; background:#fbf6f2; border-right:1px solid #edeee8;">
+                <div style="font-size:10.5px; text-transform:uppercase; letter-spacing:.08em; color:#a5603a; font-weight:700;">O problema</div>
+                <div style="margin-top:6px; font-size:14px; line-height:1.5; color:#3a3f46;">{{ o.problem }}</div>
+              </div>
+              <div style="padding:14px 18px; background:#f4f8fb;">
+                <div style="font-size:10.5px; text-transform:uppercase; letter-spacing:.08em; color:#2b62a8; font-weight:700;">O que fazer</div>
+                <div style="margin-top:6px; font-size:14px; line-height:1.5; color:#22334a;">{{ o.action }}</div>
+              </div>
+            </div>
+          </div>
+          <!-- meta row -->
+          <div style="padding:14px 22px 18px 72px; display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+            <span style="{{ o.effortChip }}">{{ o.effortLabel }}</span>
+            <span style="{{ o.confChip }}">Confiança {{ o.conf }}</span>
+            <span style="font-size:12px; color:#5b6169;">até dez/26: <b style="color:#12233f;">{{ o.gainYearFmt }}</b></span>
+            <span style="font-size:12px; color:#5b6169;">responsável: <b style="color:#12233f;">{{ o.resp }}</b> <span style="font-family:'IBM Plex Mono',monospace; font-size:10.5px; color:#8a9082;">({{ o.ownerSrc }})</span></span>
+          </div>
+          <!-- technical detail -->
+          <details open style="border-top:1px solid #edeee8;">
+            <summary style="list-style:none; cursor:pointer; user-select:none; padding:12px 22px 12px 72px; font-size:12px; font-weight:600; color:#0053b3; background:#fbfcfa;">Ver detalhe técnico (evidência e como aplicar)</summary>
+            <div style="background:#fbfcfa; padding:4px 22px 20px 72px;">
+              <div style="display:grid; grid-template-columns:1fr 1fr; gap:22px;">
+                <div>
+                  <div style="font-size:10.5px; text-transform:uppercase; letter-spacing:.08em; color:#7c8374; font-weight:600;">Evidência (dados do scan)</div>
+                  <div style="margin-top:8px; display:flex; flex-direction:column; gap:5px;">
+                    <sc-for list="{{ o.evidence }}" as="e" hint-placeholder-count="3">
+                      <div style="display:flex; gap:8px; align-items:baseline; font-size:12.5px; color:#3a3f46;"><span style="color:#e8730c; font-weight:700;">›</span><span>{{ e }}</span></div>
+                    </sc-for>
+                  </div>
+                </div>
+                <div>
+                  <div style="font-size:10.5px; text-transform:uppercase; letter-spacing:.08em; color:#7c8374; font-weight:600;">Como aplicar</div>
+                  <div style="margin-top:6px; font-size:12.5px; line-height:1.45; color:#3a3f46;">{{ o.howTo }} <a href="{{ o.docUrl }}" target="_blank" rel="noopener">doc AWS ↗</a></div>
+                  <div style="margin-top:13px; font-size:10.5px; text-transform:uppercase; letter-spacing:.08em; color:#7c8374; font-weight:600;">Como validar o ganho</div>
+                  <div style="margin-top:6px; font-size:12.5px; line-height:1.45; color:#3a3f46;">{{ o.howValidate }}</div>
+                </div>
+              </div>
+              <sc-if value="{{ o.devinNote }}" hint-placeholder-val="{{ false }}">
+                <div style="margin-top:16px; border-left:3px solid #7a5cc0; background:#f6f3fc; border-radius:0 8px 8px 0; padding:11px 14px;">
+                  <div style="font-size:10.5px; text-transform:uppercase; letter-spacing:.08em; color:#6a4fb0; font-weight:700; display:flex; align-items:center; gap:6px;"><span style="width:6px; height:6px; border-radius:50%; background:#7a5cc0; display:inline-block;"></span>Contexto do Devin</div>
+                  <div style="margin-top:6px; font-size:12.5px; line-height:1.5; color:#4a4360;">{{ o.devinNote }}</div>
+                </div>
+              </sc-if>
+            </div>
+          </details>
+        </div>
+      </sc-for>
+    </div>
+
+    <sc-if value="{{ hasMore }}" hint-placeholder-val="{{ false }}">
+      <details open style="margin-top:16px; border:1px solid #e2e4dc; border-radius:14px; overflow:hidden;">
+        <summary style="list-style:none; cursor:pointer; user-select:none; display:flex; align-items:center; gap:14px; padding:16px 20px; background:#f7f8f3;">
+          <span style="flex-shrink:0; width:30px; height:30px; border-radius:50%; background:#eef0ea; color:#7c8374; font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:13px; display:flex; align-items:center; justify-content:center;">+{{ moreCount }}</span>
+          <span style="flex:1; font-size:14.5px; font-weight:600; color:#12233f;">Ver mais {{ moreCount }} recomendações de menor prioridade</span>
+          <span style="font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:15px; color:#e8730c;">+{{ moreSum }}<span style="font-size:11px; color:#b58a5a; font-weight:500;">/mês</span></span>
+        </summary>
+        <div>
+          <sc-for list="{{ recsMore }}" as="o" hint-placeholder-count="2">
+            <details open id="{{ o.id }}" style="border-top:1px solid #e6e8e0; scroll-margin-top:20px;">
+              <summary style="list-style:none; cursor:pointer; user-select:none; display:flex; align-items:center; gap:14px; padding:14px 20px; background:#ffffff;">
+                <span style="flex-shrink:0; width:28px; height:28px; border-radius:50%; background:#eef0ea; color:#7c8374; font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:14px; display:flex; align-items:center; justify-content:center;">{{ o.rank }}</span>
+                <span style="flex:1; min-width:0;"><span style="font-size:14px; font-weight:600; color:#12233f;">{{ o.title }}</span> <span style="{{ o.catChip }}">{{ o.catLabel }}</span></span>
+                <span style="{{ o.effortChip }}">{{ o.effortLabel }}</span>
+                <span style="font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:15px; color:#e8730c; white-space:nowrap;">{{ o.gainMonthFmt }}<span style="font-size:11px; color:#b58a5a; font-weight:500;">/mês</span></span>
+              </summary>
+              <div style="padding:2px 20px 20px 62px; background:#fbfcfa;">
+                <div style="margin-top:12px; display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+                  <span style="font-size:9.5px; text-transform:uppercase; letter-spacing:.07em; color:#a0a698; font-weight:700;">recurso</span>
+                  <code style="font-family:'IBM Plex Mono',monospace; font-size:11.5px; color:#5b6169; background:#f3f4ee; border:1px solid #e2e4dc; border-radius:5px; padding:2px 9px; word-break:break-all;">{{ o.arn }}</code>
+                </div>
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:0; border:1px solid #edeee8; border-radius:10px; overflow:hidden; margin-top:10px;">
+                  <div style="padding:13px 16px; background:#fbf6f2; border-right:1px solid #edeee8;">
+                    <div style="font-size:10px; text-transform:uppercase; letter-spacing:.08em; color:#a5603a; font-weight:700;">O problema</div>
+                    <div style="margin-top:5px; font-size:13.5px; line-height:1.5; color:#3a3f46;">{{ o.problem }}</div>
+                  </div>
+                  <div style="padding:13px 16px; background:#f4f8fb;">
+                    <div style="font-size:10px; text-transform:uppercase; letter-spacing:.08em; color:#2b62a8; font-weight:700;">O que fazer</div>
+                    <div style="margin-top:5px; font-size:13.5px; line-height:1.5; color:#22334a;">{{ o.action }}</div>
+                  </div>
+                </div>
+                <div style="margin-top:12px; display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+                  <span style="{{ o.confChip }}">Confiança {{ o.conf }}</span>
+                  <span style="font-size:12px; color:#5b6169;">até dez/26: <b style="color:#12233f;">{{ o.gainYearFmt }}</b></span>
+                  <span style="font-size:12px; color:#5b6169;">responsável: <b style="color:#12233f;">{{ o.resp }}</b> <span style="font-family:'IBM Plex Mono',monospace; font-size:10.5px; color:#8a9082;">({{ o.ownerSrc }})</span></span>
+                </div>
+                <div style="margin-top:14px; display:grid; grid-template-columns:1fr 1fr; gap:22px;">
+                  <div>
+                    <div style="font-size:10px; text-transform:uppercase; letter-spacing:.08em; color:#7c8374; font-weight:600;">Evidência</div>
+                    <div style="margin-top:7px; display:flex; flex-direction:column; gap:4px;">
+                      <sc-for list="{{ o.evidence }}" as="e" hint-placeholder-count="3">
+                        <div style="display:flex; gap:8px; align-items:baseline; font-size:12.5px; color:#3a3f46;"><span style="color:#e8730c; font-weight:700;">›</span><span>{{ e }}</span></div>
+                      </sc-for>
+                    </div>
+                  </div>
+                  <div>
+                    <div style="font-size:10px; text-transform:uppercase; letter-spacing:.08em; color:#7c8374; font-weight:600;">Como aplicar</div>
+                    <div style="margin-top:5px; font-size:12.5px; line-height:1.45; color:#3a3f46;">{{ o.howTo }} <a href="{{ o.docUrl }}" target="_blank" rel="noopener">doc AWS ↗</a></div>
+                    <div style="margin-top:11px; font-size:10px; text-transform:uppercase; letter-spacing:.08em; color:#7c8374; font-weight:600;">Como validar</div>
+                    <div style="margin-top:5px; font-size:12.5px; line-height:1.45; color:#3a3f46;">{{ o.howValidate }}</div>
+                  </div>
+                </div>
+                <sc-if value="{{ o.devinNote }}" hint-placeholder-val="{{ false }}">
+                  <div style="margin-top:14px; border-left:3px solid #7a5cc0; background:#f6f3fc; border-radius:0 8px 8px 0; padding:10px 14px;">
+                    <div style="font-size:10px; text-transform:uppercase; letter-spacing:.08em; color:#6a4fb0; font-weight:700;">Contexto do Devin</div>
+                    <div style="margin-top:5px; font-size:12.5px; line-height:1.5; color:#4a4360;">{{ o.devinNote }}</div>
+                  </div>
+                </sc-if>
+              </div>
+            </details>
+          </sc-for>
+        </div>
+      </details>
+    </sc-if>
+
+    <!-- CONTEXT DIVIDER -->
+    <div style="margin:52px 0 0; padding-top:26px; border-top:2px solid #e2e4dc;">
+      <div style="font-size:11px; text-transform:uppercase; letter-spacing:.12em; color:#a0a698; font-weight:600;">Contexto e validação</div>
+    </div>
+
+    <!-- 04 · PREVIOUS RESULTS -->
+    <div style="display:flex; align-items:baseline; gap:12px; margin:38px 0 4px;">
+      <span style="font-family:'IBM Plex Mono',monospace; font-size:12px; color:#7b8498; font-weight:600;">04</span>
+      <h2 style="margin:0; font-family:'Space Grotesk',sans-serif; font-size:20px; font-weight:700; letter-spacing:-.01em; color:#12233f;">O que já economizamos antes</h2>
+    </div>
+    <p style="margin:6px 0 0; font-size:14px; line-height:1.6; color:#4b5159; max-width:720px;">Ações passadas: quanto o Julius previu × quanto de fato economizou. A precisão mostra o quanto confiar nas estimativas acima.</p>
+
+    <div style="margin-top:18px; border:1px solid #e2e4dc; border-radius:12px; overflow:hidden;">
+      <div style="display:grid; grid-template-columns:1.4fr 96px 96px 84px 1fr; background:#f3f4ee; font-size:10.5px; text-transform:uppercase; letter-spacing:.07em; font-weight:600; color:#7c8374;">
+        <div style="padding:11px 16px;">Ação implementada</div>
+        <div style="padding:11px 12px; text-align:right;">Prevista</div>
+        <div style="padding:11px 12px; text-align:right;">Realizada</div>
+        <div style="padding:11px 12px; text-align:center;">Precisão</div>
+        <div style="padding:11px 16px;">Custo por unidade</div>
+      </div>
+      <sc-for list="{{ prevResults }}" as="r" hint-placeholder-count="3">
+        <div style="display:grid; grid-template-columns:1.4fr 96px 96px 84px 1fr; border-top:1px solid #edeee8; align-items:center;">
+          <div style="padding:14px 16px;">
+            <div style="font-size:13.5px; font-weight:600; color:#12233f;">{{ r.title }}</div>
+            <div style="margin-top:3px; font-family:'IBM Plex Mono',monospace; font-size:11px; color:#7c8374;">{{ r.asset }} · impl. {{ r.date }}</div>
+          </div>
+          <div style="padding:14px 12px; text-align:right; font-family:'IBM Plex Mono',monospace; font-size:13px; color:#5b6169;">{{ r.predicted }}</div>
+          <div style="padding:14px 12px; text-align:right; font-family:'IBM Plex Mono',monospace; font-size:13px; font-weight:600; color:#e8730c;">{{ r.realized }}</div>
+          <div style="padding:14px 12px; text-align:center;"><span style="{{ r.precChip }}">{{ r.precision }}</span></div>
+          <div style="padding:14px 16px; font-size:12.5px; color:#4b5159; line-height:1.4;">{{ r.unit }}</div>
+        </div>
+      </sc-for>
+    </div>
+
+    <!-- FOOTER -->
+    <div style="margin-top:38px; border-top:1px solid #e2e4dc; padding-top:22px;">
+      <div style="font-size:11px; text-transform:uppercase; letter-spacing:.08em; color:#7c8374; font-weight:600; margin-bottom:12px;">Como este relatório foi gerado</div>
+      <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:14px 28px; font-family:'IBM Plex Mono',monospace; font-size:11.5px; color:#5b6169;">
+        <sc-for list="{{ manifest }}" as="mf" hint-placeholder-count="6">
+          <div style="display:flex; justify-content:space-between; gap:10px; border-bottom:1px dotted #e2e4dc; padding-bottom:6px;"><span style="color:#96a0b4;">{{ mf.k }}</span><span style="color:#22262c; text-align:right;">{{ mf.v }}</span></div>
+        </sc-for>
+      </div>
+      <div style="margin-top:20px; font-size:11.5px; color:#96a0b4; line-height:1.6;">Dados coletados por acesso somente-leitura. Ganho, esforço, confiança e prioridade são calculados por regra fixa — não por opinião. O Devin adiciona apenas contexto e nunca aumenta a confiança sem evidência nova. Armazenamento (S3) é tratado como infraestrutura: o Julius só recomenda juntar arquivos pequenos, nunca apagar dados.</div>
+    </div>
+
+  </div>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1020,&quot;height&quot;:900}}">
+class Component extends DCLogic {
+  state = { open: {} };
+
+  fmt(n) {
+    if (n == null) return "—";
+    return "$\u00a0" + n.toLocaleString("en-US");
+  }
+  effortChip(dif) {
+    const c = dif <= 2 ? ["#0053b3", "#e6effa", "Esforço baixo"] : dif === 3 ? ["#b26a12", "#faf0dd", "Esforço médio"] : ["#b23b3b", "#f7e4e4", "Esforço alto"];
+    return { style: `display:inline-block; font-size:11px; font-weight:600; color:${c[0]}; background:${c[1]}; border-radius:6px; padding:4px 10px;`, label: c[2] };
+  }
+  confChip(conf) {
+    const map = { "Alta": ["#0053b3", "#e6effa"], "Média": ["#b26a12", "#faf0dd"], "Baixa": ["#8a5a5a", "#f0e6e6"] };
+    const c = map[conf] || map["Média"];
+    return `display:inline-block; font-size:11px; font-weight:600; color:${c[0]}; background:${c[1]}; border-radius:6px; padding:4px 10px;`;
+  }
+  catChip(cat) {
+    const map = {
+      glue: ["#7a4bc4", "#f1ebfb", "AWS Glue"],
+      athena: ["#e8730c", "#fdefdd", "Amazon Athena"],
+      session: ["#0053b3", "#e6effa", "AWS Glue · sessão"],
+      s3: ["#b26a12", "#faf0dd", "Amazon S3"]
+    };
+    const c = map[cat];
+    return { style: `display:inline-block; font-size:10.5px; font-weight:600; color:${c[0]}; background:${c[1]}; border-radius:5px; padding:3px 9px; letter-spacing:.01em;`, label: c[2] };
+  }
+
+  renderVals() {
+    const D = "https://docs.aws.amazon.com";
+    const src = [
+      { id: "GLUE-AUTOSCALING-123", prio: 92, title: "Job reserva o dobro de máquinas que usa", asset: "processa_interacoes", cat: "glue", dif: 1, conf: "Alta", gain: 1300,
+        problem: "O job processa_interacoes reserva 20 máquinas o tempo todo, mas usa em média só 22% delas — você paga por capacidade parada.",
+        action: "Ligar o ajuste automático de capacidade, para o job usar só o que precisa em cada execução (teto de ~12 máquinas).",
+        howTo: "No job: ativar --enable-auto-scaling e definir máx. ~12 workers; testar 1 execução.", how_validate: "Comparar o custo por execução (DPU-h) e a duração média antes e depois da mudança.",
+        evidence: ["uso médio de CPU: 22% em 30 execuções", "20 máquinas reservadas de forma fixa", "recurso de ajuste automático desligado"],
+        docUrl: D + "/glue/latest/dg/auto-scaling.html",
+        devinNote: "Fazer depois de corrigir a distribuição de dados do job — reduzir capacidade antes pode esconder um gargalo. Sequência: 1) reparticionar, 2) reavaliar capacidade." },
+      { id: "GLUE-IS-IDLE-088", prio: 88, title: "Ambiente de análise fica ligado sem uso", asset: "etl-explore", cat: "session", dif: 1, conf: "Alta", gain: 700,
+        problem: "As sessões de exploração ficam ligadas cerca de 3h por dia sem ninguém usando — e continuam custando enquanto estão de pé.",
+        action: "Configurar o desligamento automático após 1h sem uso e reduzir o tamanho do ambiente para o mínimo necessário.",
+        howTo: "Ajustar --idle-timeout para 60 min (default é 2880) e reduzir a capacidade da sessão (DPU 5→2).", how_validate: "Medir o tempo ocioso e o custo por sessão na semana seguinte.",
+        evidence: ["desligamento automático em 2880 min (padrão máximo)", "média de 3h20 ligada e ociosa por dia", "capacidade acima do necessário observado"],
+        docUrl: D + "/glue/latest/dg/interactive-sessions.html",
+        devinNote: null },
+      { id: "ATHENA-PARTITION-207", prio: 84, title: "Relatório diário lê a tabela inteira toda vez", asset: "relatorio_diario", cat: "athena", dif: 2, conf: "Alta", gain: 800,
+        problem: "Uma consulta que roda todo dia varre a tabela inteira (1,8 TB por execução) quando precisaria só de um dia de dados. No Athena, você paga pelo volume lido.",
+        action: "Filtrar a consulta por data e trazer apenas as colunas usadas no relatório — em vez de ler tudo.",
+        howTo: "Adicionar filtro de partição (WHERE dt=) e substituir o SELECT * pelas colunas necessárias.", how_validate: "Comparar o volume lido (bytes escaneados) na mesma janela antes e depois.",
+        evidence: ["1,8 TB lidos por execução", "sem filtro por data", "traz 40+ colunas, usa poucas", "22 execuções por mês"],
+        docUrl: D + "/athena/latest/ug/partitions.html",
+        devinNote: null },
+      { id: "GLUE-OVERPROV-341", prio: 76, title: "Job maior do que precisa", asset: "agrega_vendas", cat: "glue", dif: 2, conf: "Média", gain: 600,
+        problem: "O job agrega_vendas usa em média 28% da capacidade contratada — está dimensionado bem acima do necessário.",
+        action: "Reduzir o tamanho do job (de 20 para 12 máquinas), confirmando antes que não há gargalo de leitura.",
+        howTo: "Reduzir number_of_workers para 12 com teste controlado em 3 execuções.", how_validate: "Comparar duração e custo por execução em 3 execuções após a mudança.",
+        evidence: ["uso médio de capacidade: 28%", "20 máquinas reservadas", "sem sinal de falta de memória nos logs"],
+        docUrl: D + "/glue/latest/dg/monitor-spark-ui.html",
+        devinNote: "Confiança média: faltou parte dos dados de execução (Spark UI em 40% dos casos). Confirmar que não há concentração de dados antes de reduzir." },
+      { id: "GLUE-VERSION-118", prio: 70, title: "Job numa versão antiga que cobra por blocos maiores", asset: "carga_cadastro", cat: "glue", dif: 2, conf: "Alta", gain: 430,
+        problem: "O job carga_cadastro roda numa versão antiga que cobra em blocos de 10 minutos. Como cada execução dura ~4 min, você paga como se fossem 10.",
+        action: "Atualizar para a versão atual, que cobra por minuto e é mais rápida — sem mudar a lógica do job.",
+        howTo: "Migrar para Glue 4.0 (cobrança por 1 min, otimizações automáticas) e rodar a suíte de regressão.", how_validate: "Comparar custo e duração por execução; validar que os resultados continuam iguais.",
+        evidence: ["versão Glue 1.0 (antiga)", "duração média de 4m12s", "cobrança mínima de 10 min por execução"],
+        docUrl: D + "/glue/latest/dg/release-notes.html",
+        devinNote: null },
+      { id: "S3-SMALLFILES-455", prio: 48, title: "Tabela gravada em milhares de arquivos minúsculos", asset: "eventos_raw", cat: "s3", dif: 3, conf: "Média", gain: 250,
+        problem: "A tabela eventos_raw é gravada em ~14 mil arquivos de 3 MB por dia. Ler tantos arquivos pequenos deixa as consultas mais lentas e mais caras.",
+        action: "Ajustar o processo que gera a tabela para juntar os dados em arquivos maiores (~128 MB).",
+        howTo: "Aplicar groupFiles/coalesce na origem para gerar objetos de ~128 MB.", how_validate: "Contar arquivos por dia e medir o tempo de leitura no Athena.",
+        evidence: ["~14.000 arquivos por dia", "tamanho médio de 3 MB (ideal: 128 MB)", "leitura mais lenta no Athena e no Glue"],
+        docUrl: D + "/glue/latest/dg/grouping-input-files.html",
+        devinNote: "O armazenamento em si não é apagado — a mudança é no processo que grava a tabela, para gerar arquivos maiores." }
+    ];
+
+    const ownership = {
+      "GLUE-AUTOSCALING-123": { resp: "Marcos Tavares", src: "tag oficial" },
+      "ATHENA-PARTITION-207": { resp: "Marcos Tavares", src: "tag oficial" },
+      "GLUE-IS-IDLE-088": { resp: "Renata Lopes", src: "tabela corporativa" },
+      "GLUE-OVERPROV-341": { resp: "Renata Lopes", src: "Squad do job" },
+      "GLUE-VERSION-118": { resp: "Bruno Sales", src: "Squad do job" },
+      "S3-SMALLFILES-455": { resp: "Bruno Sales", src: "config DataWarm" }
+    };
+
+    const arns = {
+      "GLUE-AUTOSCALING-123": "arn:aws:glue:us-east-1:481516234567:job/processa_interacoes",
+      "GLUE-IS-IDLE-088": "arn:aws:glue:us-east-1:481516234567:session/etl-explore",
+      "ATHENA-PARTITION-207": "arn:aws:athena:us-east-1:481516234567:workgroup/avi-analytics · query: relatorio_diario",
+      "GLUE-OVERPROV-341": "arn:aws:glue:us-east-1:481516234567:job/agrega_vendas",
+      "GLUE-VERSION-118": "arn:aws:glue:us-east-1:481516234567:job/carga_cadastro",
+      "S3-SMALLFILES-455": "arn:aws:s3:::avi-datalake/eventos_raw/"
+    };
+    const ordered = [...src].sort((a, b) => b.prio - a.prio);
+    const withDisplay = (o, i) => {
+      const cc = this.catChip(o.cat);
+      const ec = this.effortChip(o.dif);
+      const ow = ownership[o.id] || { resp: "não identificado", src: "desconhecido" };
+      const isOpen = !!this.state.open[o.id];
+      return Object.assign({}, o, {
+        rank: i + 1,
+        rankBg: i < 4 ? "#e8730c" : "#eef0ea",
+        rankFg: i < 4 ? "#ffffff" : "#7c8374",
+        gainMonthFmt: this.fmt(o.gain),
+        gainYearFmt: this.fmt(o.gain * 6),
+        effortChip: ec.style, effortLabel: ec.label,
+        confChip: this.confChip(o.conf),
+        catChip: cc.style, catLabel: cc.label,
+        howValidate: o.how_validate,
+        resp: ow.resp, ownerSrc: ow.src,
+        arn: arns[o.id] || o.asset,
+        isOpen,
+        toggleLabel: isOpen ? "Ocultar detalhe técnico ▴" : "Ver detalhe técnico ▾",
+        toggle: () => this.setState(s => ({ open: Object.assign({}, s.open, { [o.id]: !s.open[o.id] }) }))
+      });
+    };
+    const recs = ordered.map(withDisplay);
+    const LIMIT = 4;
+    const recsPrimary = recs.slice(0, LIMIT);
+    const recsMore = recs.slice(LIMIT);
+    const hasMore = recsMore.length > 0;
+    const moreCount = recsMore.length;
+    const moreSum = this.fmt(recsMore.reduce((s, o) => s + o.gain, 0));
+
+    // 80/20
+    const monthlyTotal = recs.reduce((s, o) => s + o.gain, 0);
+    const sorted = [...recs].sort((a, b) => b.gain - a.gain);
+    let cum = 0; const focus = [];
+    for (const o of sorted) { focus.push(o); cum += o.gain; if (cum / monthlyTotal >= 0.78) break; }
+    const paretoSum = focus.reduce((s, o) => s + o.gain, 0);
+    const paretoPct = Math.round(paretoSum / monthlyTotal * 100) + "%";
+    const barColors = ["#e8730c", "#f0902f", "#f4a95c", "#f8c793"];
+    const paretoBar = focus.map((o, i) => ({ w: (o.gain / monthlyTotal * 100) + "%", color: barColors[i % barColors.length], title: o.title + " · " + o.gainMonthFmt }));
+    const rem = monthlyTotal - paretoSum;
+    if (rem > 0) paretoBar.push({ w: (rem / monthlyTotal * 100) + "%", color: "#e6dccf", title: "Demais ações · " + this.fmt(rem) });
+
+    // previous results
+    const precChip = (p) => {
+      const c = p >= 85 ? ["#e8730c", "#fdefdd"] : p >= 70 ? ["#b26a12", "#faf0dd"] : ["#b23b3b", "#f7e4e4"];
+      return `display:inline-block; font-family:'IBM Plex Mono',monospace; font-size:12px; font-weight:600; color:${c[0]}; background:${c[1]}; border-radius:5px; padding:3px 9px;`;
+    };
+    const prevSrc = [
+      { title: "Redução de capacidade do job", asset: "normaliza_clientes", date: "abr/2026", pred: 1100, real: 1240, prec: 89, unit: "$620 → $470 por execução" },
+      { title: "Reaproveitar resultado de consultas", asset: "wg-avi-analytics", date: "mai/2026", pred: 540, real: 500, prec: 92, unit: "$38 → $21 por consulta" },
+      { title: "Desligar ambientes ociosos", asset: "adhoc-ds", date: "mai/2026", pred: 380, real: 300, prec: 79, unit: "$12.80 → $5.10 por hora" }
+    ];
+    const prevResults = prevSrc.map(r => ({
+      title: r.title, asset: r.asset, date: r.date,
+      predicted: this.fmt(r.pred) + "/mês", realized: this.fmt(r.real) + "/mês",
+      precision: r.prec + "%", precChip: precChip(r.prec), unit: r.unit
+    }));
+
+    const m = { account: "consumer-avi", period: "jul/2026", lookback: "90 dias", scanId: "scan-20260722-001" };
+
+    // account cost
+    const svcSrc = [
+      { name: "AWS Glue", sub: "jobs + sessões interativas", cost: 21400, saving: 3030 },
+      { name: "Amazon Athena", sub: "consultas + workgroups", cost: 6800, saving: 800 },
+      { name: "Amazon SageMaker", sub: "notebooks + endpoints", cost: 5200, saving: 0 },
+      { name: "Amazon S3", sub: "armazenamento + requisições", cost: 4200, saving: 250 },
+      { name: "Amazon Redshift", sub: "clusters + Spectrum", cost: 3400, saving: 0 },
+      { name: "AWS Step Functions", sub: "fluxos de orquestração", cost: 2100, saving: 0 },
+      { name: "Outros (fora do escopo)", sub: "monitoramento, chaves, tráfego", cost: 4000, saving: 0 }
+    ];
+    const accTotal = svcSrc.reduce((s, x) => s + x.cost, 0);
+    const accSaving = svcSrc.reduce((s, x) => s + x.saving, 0);
+    const services = svcSrc.map(x => ({
+      name: x.name, sub: x.sub,
+      costFmt: this.fmt(x.cost),
+      savingFmt: x.saving > 0 ? this.fmt(x.saving) : "—",
+      savingColor: x.saving > 0 ? "#e8730c" : "#b6bcae",
+      barBaseW: (x.cost / accTotal * 100) + "%",
+      barSaveW: (x.saving / accTotal * 100) + "%",
+      pctOpt: x.saving > 0 ? Math.round(x.saving / x.cost * 100) + "%" : "—"
+    }));
+    const account = {
+      totalFmt: this.fmt(accTotal),
+      savingFmt: this.fmt(accSaving),
+      savingPct: Math.round(accSaving / accTotal * 100) + "%",
+      savingBarW: (accSaving / accTotal * 100) + "%",
+      services
+    };
+
+    const k = {
+      monthly: this.fmt(monthlyTotal),
+      yearEnd: this.fmt(monthlyTotal * 6),
+      monthsRemaining: 6,
+      paretoPct, paretoCount: focus.length, paretoSum: this.fmt(paretoSum),
+      paretoSentence: `A maior parte da economia está concentrada: ${focus.length} ações trazem ${paretoPct} do total possível (${this.fmt(paretoSum)} de ${this.fmt(monthlyTotal)} por mês). Se o tempo for curto, comece por estas — as demais entram depois.`
+    };
+    const manifest = [
+      { k: "versão do Julius", v: "0.3.0" },
+      { k: "scan_id", v: "scan-20260722-001" },
+      { k: "conta", v: "consumer-avi" },
+      { k: "período analisado", v: "23/abr–22/jul/2026" },
+      { k: "acesso", v: "somente-leitura" },
+      { k: "serviços cobertos", v: "Glue, Athena, S3, Step Functions, SageMaker, Redshift" },
+      { k: "base de regras", v: "GLUE 1.2, ATHENA 1.1" },
+      { k: "conhecimento", v: "glue-guidance-2026-07" },
+      { k: "dados ausentes", v: "Spark UI (parcial)" },
+      { k: "gerado em", v: "2026-07-22 06:14 -03" },
+      { k: "método", v: "priorização + 80/20" },
+      { k: "moeda", v: "USD ($)" }
+    ];
+
+    return { m, k, account, focus, paretoBar, recs, recsPrimary, recsMore, hasMore, moreCount, moreSum, prevResults, manifest };
+  }
+}
+</script>
+</body>
+</html>

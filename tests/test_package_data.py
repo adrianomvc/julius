@@ -77,8 +77,10 @@ def test_every_declared_package_still_exists():
 def test_the_things_the_report_and_the_pricing_need_are_there():
     """Os dois casos concretos, nomeados: sem eles o produto não roda."""
     declared = _declared()
-    templates = PACKAGE / "reporting" / "templates" / "report.html.j2"
+    desenho = PACKAGE / "reporting" / "templates" / "design" / "Relatorio Julius.dc.html"
+    email = PACKAGE / "reporting" / "templates" / "email.html.j2"
     table = PACKAGE / "knowledge" / "pricing" / "tables" / "sa-east-1.toml"
 
-    assert templates.is_file() and _is_covered(templates, declared)
+    assert desenho.is_file() and _is_covered(desenho, declared)
+    assert email.is_file() and _is_covered(email, declared)
     assert table.is_file() and _is_covered(table, declared)

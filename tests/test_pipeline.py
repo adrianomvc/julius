@@ -146,8 +146,10 @@ def test_html_has_no_unrendered_template(analysis):
     html = renderer.render_html(analysis.vm)
     assert "{{" not in html and "{%" not in html
     assert "consumer-avi" in html
-    assert "Candidatos à Producer" in html
-    assert "Resultado das recomendações anteriores" in html
+    # Os candidatos a Producer são triagem de arquitetura, não recomendação de
+    # economia: ficaram no JSON quando o HTML virou o documento do analista.
+    assert "Candidatos à Producer" not in html
+    assert "O que já economizamos antes" in html
 
 
 def test_config_signals_leave_the_backlog_and_reach_the_analysis_package(analysis):
