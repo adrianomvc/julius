@@ -101,6 +101,16 @@ def review(
             f"falsos positivos {kpis.false_positives_at_10} "
             f"({false_positive_rate*100:.0f}%)"
         )
+    # Um erro de julgamento da IA some na média das regras se as duas camadas
+    # forem contadas juntas — e é a comparação entre elas que interessa.
+    for origin, precision in sorted(kpis.precision_by_origin.items()):
+        origin_label = (
+            "regra determinística" if origin == "rule" else "sinal confirmado pela IA"
+        )
+        typer.echo(
+            f"  {origin_label}: precisão {precision*100:.0f}% "
+            f"em {kpis.reviewed_by_origin.get(origin, 0)} revisadas"
+        )
 
 
 @app.command("lifecycle")

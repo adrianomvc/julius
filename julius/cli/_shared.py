@@ -30,6 +30,7 @@ app.add_typer(pricing_app, name="pricing")
 
 _DEFAULT_INPUT = "data/sample/consumer-avi.json"
 _DEFAULT_STORE = "data/state/backlog.json"
+_DEFAULT_SIGNALS = "data/state/signals.json"
 _DEFAULT_HISTORY = "data/state/julius.duckdb"
 _DEFAULT_PARQUET = "data/state/parquet"
 

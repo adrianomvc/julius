@@ -74,6 +74,7 @@ def build(
         asset_type=finding.asset_type,
         asset_name=finding.asset_name,
         category=finding.category,
+        origin=finding.origin,
         rule_id=finding.rule_id,
         finding=finding.title,
         why=finding.why,

@@ -10,6 +10,7 @@ from julius.cli._shared import (
     _DEFAULT_HISTORY,
     _DEFAULT_INPUT,
     _DEFAULT_PARQUET,
+    _DEFAULT_SIGNALS,
     _DEFAULT_STORE,
     _load_agent_enrichment,
     _require_same_opportunity_set,
@@ -19,7 +20,7 @@ from julius.collection.normalizers import load_account
 from julius.pipeline import analyze
 from julius.reporting import excel, renderer
 from julius.reporting.contextual import attach_contextual_analysis
-from julius.state import BacklogStore, HistoryStore
+from julius.state import BacklogStore, HistoryStore, SignalLedger
 
 
 @app.command()
@@ -37,6 +38,11 @@ def report(
     artifacts_manifest: str = typer.Option(
         "", "--artifacts-manifest", help="Manifesto read-only usado na análise de código."
     ),
+    signal_ledger: str = typer.Option(
+        _DEFAULT_SIGNALS,
+        "--signal-ledger",
+        help="Vereditos por sinal: suprime o descartado e promove o confirmado.",
+    ),
 ) -> None:
     """Gera os artefatos (report.html, report.json, report.xlsx, email.html/.txt)."""
     context, contextual = _load_agent_enrichment(agent_context, agent_result)
@@ -49,6 +55,7 @@ def report(
             history=history,
             scan_id=context.scan_id if context else None,
             artifacts_manifest=artifacts_manifest or None,
+            ledger=SignalLedger(signal_ledger) if signal_ledger else None,
         )
         history.export_parquet(parquet_dir)
     _require_same_opportunity_set(context, a)

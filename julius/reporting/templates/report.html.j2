@@ -397,7 +397,9 @@
             <div style="display:flex;gap:7px;flex-wrap:wrap;margin-bottom:14px;">
               <span class="chip" style="color:{{ o.diff_fg }};background:{{ o.diff_bg }};">Dif {{ o.difficulty }}/5</span>
               <span class="chip" style="color:{{ o.conf_fg }};background:{{ o.conf_bg }};">Conf {{ o.confidence_label }}</span>
+              {% if o.origin == "ai_confirmed" %}<span class="chip" style="color:#0053b3;background:#e6effa;">Sinal confirmado pela análise contextual</span>{% endif %}
             </div>
+            {% if o.origin == "ai_confirmed" %}<div style="font-size:11.5px;color:#4b5159;margin-bottom:14px;line-height:1.5;">Este achado nasceu de um padrão que a análise contextual leu contra o artefato completo e sustentou. Ele não recebe economia estimada — o que a confirmação dá é um achado rastreável, não um número.</div>{% endif %}
             {% if o.source_process %}<div class="kicker">Processo gerador (pode ser desligado)</div><div style="margin-top:5px;font-size:13.5px;font-weight:600;color:#b23b3b;">{{ o.source_process }}</div>{% endif %}
             <div class="kicker" style="margin-top:13px;">Como aplicar</div><div style="margin-top:5px;font-size:13px;line-height:1.45;color:#3a3f46;">{{ o.how_to_apply }} {% if o.doc_url %}<a href="{{ o.doc_url }}" target="_blank" rel="noopener">doc AWS ↗</a>{% endif %}</div>
             <div class="kicker" style="margin-top:13px;">Como validar</div><div style="margin-top:5px;font-size:13px;line-height:1.45;color:#3a3f46;">{{ o.how_to_validate }}</div>

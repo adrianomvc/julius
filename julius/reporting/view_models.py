@@ -24,6 +24,8 @@ class OpportunityVM:
     id: str
     title: str
     asset: str
+    # `rule` ou `ai_confirmed`: de qual camada o achado veio.
+    origin: str
     category_label: str
     category_fg: str
     category_bg: str
@@ -188,6 +190,7 @@ def _opp_vm(o: Opportunity, currency: str) -> OpportunityVM:
         id=o.opportunity_id,
         title=o.finding,
         asset=f"{o.asset_type}: {o.asset_name}",
+        origin=o.origin,
         category_label=cat_label,
         category_fg=cat_fg,
         category_bg=cat_bg,

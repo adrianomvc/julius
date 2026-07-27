@@ -8,6 +8,7 @@ from julius.state.history import (
     LifecycleLeadTimes,
     ReviewSummary,
 )
+from julius.state.signal_ledger import SignalDecision, SignalLedger, Suppression
 from julius.state.store import BacklogStore
 from julius.state.validation import ValidationResult, validate_benefit
 
@@ -19,6 +20,9 @@ __all__ = [
     "HistoryStore",
     "LifecycleLeadTimes",
     "ReviewSummary",
+    "SignalDecision",
+    "SignalLedger",
+    "Suppression",
     "ValidationResult",
     "validate_benefit",
 ]
