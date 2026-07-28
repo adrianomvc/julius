@@ -1,12 +1,27 @@
-"""Coletor CloudWatch: enriquece os Glue Jobs com utilização de CPU.
+"""Coletor CloudWatch: enriquece os Glue Jobs com CPU e observabilidade.
 
-O Glue publica métricas no namespace "Glue". Usamos `glue.ALL.system.cpuSystemLoad`
-(carga média de CPU dos executores, 0–1) para preencher `avg_cpu_load` — o que
-destrava as regras de capacidade (Auto Scaling / workers superdimensionados) ao vivo.
+O Glue publica métricas no namespace "Glue". `glue.ALL.system.cpuSystemLoad`
+(carga média dos executores, 0–1) preenche `avg_cpu_load` e destrava as regras
+de capacidade; as métricas de observabilidade preenchem memória, disco, skew e
+executores.
+
+São onze métricas por job. Uma chamada `GetMetricStatistics` por métrica dava
+onze idas à AWS por job — 3.300 numa conta com 300 jobs, em série, cada uma
+pagando a latência inteira. `GetMetricData` aceita **500 consultas por chamada**
+(e 100.800 pontos; com período diário em 30 dias são 30 pontos por consulta, de
+modo que o limite que vale é o de 500), então as mesmas 3.300 consultas cabem em
+sete chamadas.
+
+O que não muda: `Maximum` continua `Maximum` e `Sum` continua `Sum`. Não
+suavizar pressão de memória, disco e skew é decisão de comportamento — o gate de
+capacidade precisa do pior pico da janela, não da média dele. E ausência de
+métrica continua `None`, nunca zero: zero significaria "medido e vazio".
 """
 
 from __future__ import annotations
 
+from collections.abc import Callable, Iterator, Sequence
+from dataclasses import dataclass, field
 from datetime import datetime
 from statistics import mean
 
@@ -14,189 +29,204 @@ from julius.collection.models import GlueJob
 from julius.collection.window import AnalysisWindow
 
 _NAMESPACE = "Glue"
+_PERIOD_SECONDS = 86400  # um ponto por dia
+#: Teto da API para consultas numa única chamada `GetMetricData`.
+MAX_QUERIES_PER_CALL = 500
+
 _CPU_METRIC = "glue.ALL.system.cpuSystemLoad"
-_OBSERVABILITY_METRICS = {
-    "avg_worker_utilization": ("glue.driver.workerUtilization", "Average"),
-    "max_memory_used_pct": ("glue.ALL.memory.total.used.percentage", "Maximum"),
-    "max_disk_used_pct": ("glue.ALL.disk.used.percentage", "Maximum"),
-    "max_task_skew": ("glue.driver.skewness.job", "Maximum"),
-    "avg_all_executors": (
+
+
+@dataclass(frozen=True)
+class _Metric:
+    """Uma métrica do Glue e como ela vira um número da janela.
+
+    O `ObservabilityGroup` era deduzido do nome da métrica por uma cadeia de
+    `startswith`/`in`. Passou a ser declarado aqui: a dimensão é um fato da
+    métrica, não algo a inferir do texto do nome dela.
+    """
+
+    name: str
+    stat: str
+    reduce: Callable[[Sequence[float]], float]
+    extra_dimensions: tuple[tuple[str, str], ...] = ()
+    count_type: bool = False
+
+
+def _mean(values: Sequence[float]) -> float:
+    return mean(values)
+
+
+def _max(values: Sequence[float]) -> float:
+    return max(values)
+
+
+def _sum(values: Sequence[float]) -> float:
+    return sum(values)
+
+
+_RESOURCE = (("ObservabilityGroup", "resource_utilization"),)
+_PERFORMANCE = (("ObservabilityGroup", "job_performance"),)
+
+_CPU: dict[str, _Metric] = {
+    # A única sem `JobRunId`: a carga de CPU é publicada por job, não por run.
+    "avg_cpu_load": _Metric(_CPU_METRIC, "Average", _mean),
+}
+
+_OBSERVABILITY: dict[str, _Metric] = {
+    "avg_worker_utilization": _Metric(
+        "glue.driver.workerUtilization", "Average", _mean, _RESOURCE
+    ),
+    "max_memory_used_pct": _Metric(
+        "glue.ALL.memory.total.used.percentage", "Maximum", _max, _RESOURCE
+    ),
+    "max_disk_used_pct": _Metric(
+        "glue.ALL.disk.used.percentage", "Maximum", _max, _RESOURCE
+    ),
+    "max_task_skew": _Metric(
+        "glue.driver.skewness.job", "Maximum", _max, _PERFORMANCE
+    ),
+    "avg_all_executors": _Metric(
         "glue.driver.ExecutorAllocationManager.executors.numberAllExecutors",
         "Average",
+        _mean,
     ),
-    "avg_max_needed_executors": (
+    "avg_max_needed_executors": _Metric(
         "glue.driver.ExecutorAllocationManager.executors.numberMaxNeededExecutors",
         "Average",
+        _mean,
     ),
-}
-_WINDOW_SUM_METRICS = {
-    # Métrica agregada clássica: cobre S3 e fontes não-S3.
-    "bytes_read_window": ("glue.driver.aggregate.bytesRead", None, None),
-    # Métricas de observabilidade por sink, agregadas em JobRunId=ALL.
-    "bytes_written_window": (
+    # Somas da janela: métricas de contagem, agregadas em JobRunId=ALL.
+    "bytes_read_window": _Metric(
+        "glue.driver.aggregate.bytesRead", "Sum", _sum, count_type=True
+    ),
+    "bytes_written_window": _Metric(
         "glue.driver.throughput.bytesWritten",
-        "throughput",
-        "Sink",
+        "Sum",
+        _sum,
+        (("ObservabilityGroup", "throughput"), ("Sink", "ALL")),
+        count_type=True,
     ),
-    "files_written_window": (
+    "files_written_window": _Metric(
         "glue.driver.throughput.filesWritten",
-        "throughput",
-        "Sink",
+        "Sum",
+        _sum,
+        (("ObservabilityGroup", "throughput"), ("Sink", "ALL")),
+        count_type=True,
     ),
-    # Métrica do framework de streaming; ausência permanece None.
-    "streaming_records_window": (
-        "glue.driver.streaming.numRecords",
-        None,
-        None,
+    "streaming_records_window": _Metric(
+        "glue.driver.streaming.numRecords", "Sum", _sum, count_type=True
     ),
 }
 
 
-def enrich_glue_cpu(
-    cw_client,
-    jobs: list[GlueJob],
-    *,
-    window: AnalysisWindow,
-) -> None:
-    """Preenche `avg_cpu_load` (0–1) de cada job in place, best-effort por job."""
-    start, now = window.start, window.end
-    for job in jobs:
-        avg = _avg_cpu(cw_client, job.name, start, now)
-        if avg is not None:
-            job.avg_cpu_load = round(avg, 3)
+@dataclass
+class _Request:
+    """Uma consulta pendente e onde o resultado dela aterrissa."""
+
+    job: GlueJob
+    field_name: str
+    metric: _Metric
+    values: list[float] = field(default_factory=list)
+
+
+def enrich_glue_cpu(cw_client, jobs: list[GlueJob], *, window: AnalysisWindow) -> None:
+    """Preenche `avg_cpu_load` (0–1) de cada job in place."""
+    _enrich(cw_client, jobs, _CPU, window)
 
 
 def enrich_glue_observability(
+    cw_client, jobs: list[GlueJob], *, window: AnalysisWindow
+) -> None:
+    """Coleta os sinais que tornam recomendações de capacidade acionáveis."""
+    _enrich(cw_client, jobs, _OBSERVABILITY, window)
+
+
+def _enrich(
     cw_client,
     jobs: list[GlueJob],
-    *,
+    metrics: dict[str, _Metric],
     window: AnalysisWindow,
 ) -> None:
-    """Coleta sinais que tornam recomendações de capacidade acionáveis.
-
-    Falhas são isoladas por métrica; ausência permanece `None` e nunca é
-    interpretada como ausência de pressão.
-    """
-    start, now = window.start, window.end
-    for job in jobs:
-        for field, (metric_name, statistic) in _OBSERVABILITY_METRICS.items():
-            value = _metric(cw_client, job.name, metric_name, statistic, start, now)
-            if value is not None:
-                setattr(job, field, round(value, 3))
-        for field, (metric_name, group, aggregate_dimension) in (
-            _WINDOW_SUM_METRICS.items()
-        ):
-            value = _sum_metric(
-                cw_client,
-                job.name,
-                metric_name,
-                start,
-                now,
-                group,
-                aggregate_dimension,
-            )
-            if value is not None:
-                setattr(job, field, round(value, 3))
-
-
-def _avg_cpu(cw_client, job_name: str, start: datetime, end: datetime) -> float | None:
-    try:
-        resp = cw_client.get_metric_statistics(
-            Namespace=_NAMESPACE,
-            MetricName=_CPU_METRIC,
-            Dimensions=[
-                {"Name": "JobName", "Value": job_name},
-                {"Name": "Type", "Value": "gauge"},
-            ],
-            StartTime=start,
-            EndTime=end,
-            Period=86400,  # média diária
-            Statistics=["Average"],
-        )
-    except Exception:
-        return None
-    points = [d["Average"] for d in resp.get("Datapoints", []) if "Average" in d]
-    return mean(points) if points else None
-
-
-def _metric(
-    cw_client,
-    job_name: str,
-    metric_name: str,
-    statistic: str,
-    start: datetime,
-    end: datetime,
-) -> float | None:
-    dimensions = [
-        {"Name": "JobName", "Value": job_name},
-        {"Name": "JobRunId", "Value": "ALL"},
-        {"Name": "Type", "Value": "gauge"},
+    requests = [
+        _Request(job=job, field_name=name, metric=metric)
+        for job in jobs
+        for name, metric in metrics.items()
     ]
-    if metric_name.startswith("glue.driver.worker") or "memory." in metric_name or "disk." in metric_name or "skewness." in metric_name:
-        dimensions.append(
-            {"Name": "ObservabilityGroup", "Value": (
-                "job_performance" if "skewness." in metric_name else "resource_utilization"
-            )}
-        )
-    try:
-        response = cw_client.get_metric_statistics(
-            Namespace=_NAMESPACE,
-            MetricName=metric_name,
-            Dimensions=dimensions,
-            StartTime=start,
-            EndTime=end,
-            Period=86400,
-            Statistics=[statistic],
-        )
-    except Exception:
-        return None
-    values = [
-        float(point[statistic])
-        for point in response.get("Datapoints", [])
-        if statistic in point
-    ]
-    if not values:
-        return None
-    # Não suaviza pressão de memória/disco/skew: para métricas pedidas como
-    # Maximum, o gate de capacidade precisa preservar o pior pico da janela.
-    return max(values) if statistic == "Maximum" else mean(values)
+    for block in _blocks(requests, MAX_QUERIES_PER_CALL):
+        # O isolamento de falha muda de grão junto com o lote: antes uma métrica
+        # ruim afetava uma métrica, agora uma chamada ruim afeta o bloco. O que
+        # não muda é o efeito — os campos do bloco ficam `None`, exatamente como
+        # ficariam se a métrica não existisse.
+        try:
+            _fetch(cw_client, block, window.start, window.end)
+        except Exception:
+            continue
+        for request in block:
+            if request.values:
+                setattr(
+                    request.job,
+                    request.field_name,
+                    round(request.metric.reduce(request.values), 3),
+                )
 
 
-def _sum_metric(
-    cw_client,
-    job_name: str,
-    metric_name: str,
-    start: datetime,
-    end: datetime,
-    observability_group: str | None,
-    aggregate_dimension: str | None,
-) -> float | None:
-    dimensions = [
-        {"Name": "JobName", "Value": job_name},
-        {"Name": "JobRunId", "Value": "ALL"},
-        {"Name": "Type", "Value": "count"},
+def _blocks(
+    requests: list[_Request], size: int
+) -> Iterator[list[_Request]]:
+    for start in range(0, len(requests), size):
+        yield requests[start : start + size]
+
+
+def _fetch(
+    cw_client, block: list[_Request], start: datetime, end: datetime
+) -> None:
+    """Executa um bloco e acumula os valores por consulta, página a página."""
+    by_id = {f"m{index}": request for index, request in enumerate(block)}
+    queries = [
+        {
+            "Id": query_id,
+            "MetricStat": {
+                "Metric": {
+                    "Namespace": _NAMESPACE,
+                    "MetricName": request.metric.name,
+                    "Dimensions": _dimensions(request),
+                },
+                "Period": _PERIOD_SECONDS,
+                "Stat": request.metric.stat,
+            },
+            "ReturnData": True,
+        }
+        for query_id, request in by_id.items()
     ]
-    if observability_group:
-        dimensions.append(
-            {"Name": "ObservabilityGroup", "Value": observability_group}
-        )
-    if aggregate_dimension:
-        dimensions.append({"Name": aggregate_dimension, "Value": "ALL"})
-    try:
-        response = cw_client.get_metric_statistics(
-            Namespace=_NAMESPACE,
-            MetricName=metric_name,
-            Dimensions=dimensions,
-            StartTime=start,
-            EndTime=end,
-            Period=86400,
-            Statistics=["Sum"],
-        )
-    except Exception:
-        return None
-    values = [
-        float(point["Sum"])
-        for point in response.get("Datapoints", [])
-        if "Sum" in point
-    ]
-    return sum(values) if values else None
+
+    token = None
+    while True:
+        kwargs = {
+            "MetricDataQueries": queries,
+            "StartTime": start,
+            "EndTime": end,
+        }
+        if token:
+            kwargs["NextToken"] = token
+        response = cw_client.get_metric_data(**kwargs)
+        for result in response.get("MetricDataResults", []):
+            request = by_id.get(str(result.get("Id")))
+            if request is None:
+                continue
+            request.values.extend(float(value) for value in result.get("Values", []))
+        token = response.get("NextToken")
+        if not token:
+            return
+
+
+def _dimensions(request: _Request) -> list[dict[str, str]]:
+    dimensions = [{"Name": "JobName", "Value": request.job.name}]
+    if request.metric.name != _CPU_METRIC:
+        dimensions.append({"Name": "JobRunId", "Value": "ALL"})
+    dimensions.append(
+        {"Name": "Type", "Value": "count" if request.metric.count_type else "gauge"}
+    )
+    dimensions.extend(
+        {"Name": name, "Value": value} for name, value in request.metric.extra_dimensions
+    )
+    return dimensions

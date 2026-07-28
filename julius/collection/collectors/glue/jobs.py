@@ -12,6 +12,7 @@ eram usadas lado a lado como se cobrissem o mesmo período.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from datetime import datetime, timezone
 from statistics import mean, median, pstdev
 
@@ -280,32 +281,42 @@ def _interval_stats(
     return active_seconds, overlap_seconds, len(participants)
 
 
-def collect_tables(glue_client) -> list[Table]:
-    """Coleta tabelas do Glue Catalog e metadados de ownership/linhagem."""
+def list_database_names(glue_client) -> list[str]:
+    """Os nomes dos bancos do catálogo, sem ler tabela nenhuma.
+
+    Separado de `collect_tables` porque é entre os dois que o escopo decide: um
+    `get_tables` por banco é o que custa, e o banco de outra conta não deve
+    chegar lá.
+    """
+    names: list[str] = []
+    paginator = glue_client.get_paginator("get_databases")
+    for page in paginator.paginate():
+        names.extend(
+            database["Name"] for database in page.get("DatabaseList", []) if database.get("Name")
+        )
+    return names
+
+
+def collect_tables(glue_client, databases: Sequence[str]) -> list[Table]:
+    """Coleta tabelas dos bancos informados, com ownership/linhagem."""
     tables: list[Table] = []
-    databases = glue_client.get_paginator("get_databases")
-    for db_page in databases.paginate():
-        for database in db_page.get("DatabaseList", []):
-            db_name = database["Name"]
-            paginator = glue_client.get_paginator("get_tables")
-            for page in paginator.paginate(DatabaseName=db_name):
-                for raw in page.get("TableList", []):
-                    params = raw.get("Parameters", {}) or {}
-                    name = f"{db_name}.{raw['Name']}"
-                    tables.append(
-                        Table(
-                            name=name,
-                            written_by=params.get("julius:written_by")
-                            or params.get("written_by")
-                            or params.get("producer_job"),
-                            owner_tag=params.get("Owner") or params.get("owner"),
-                            corporate_owner=params.get("corporate_owner"),
-                            datawarm_owner=params.get("datawarm_owner"),
-                            datawarm_published=_truthy(
-                                params.get("datawarm_published")
-                            ),
-                        )
+    paginator = glue_client.get_paginator("get_tables")
+    for db_name in databases:
+        for page in paginator.paginate(DatabaseName=db_name):
+            for raw in page.get("TableList", []):
+                params = raw.get("Parameters", {}) or {}
+                tables.append(
+                    Table(
+                        name=f"{db_name}.{raw['Name']}",
+                        written_by=params.get("julius:written_by")
+                        or params.get("written_by")
+                        or params.get("producer_job"),
+                        owner_tag=params.get("Owner") or params.get("owner"),
+                        corporate_owner=params.get("corporate_owner"),
+                        datawarm_owner=params.get("datawarm_owner"),
+                        datawarm_published=_truthy(params.get("datawarm_published")),
                     )
+                )
     return tables
 
 

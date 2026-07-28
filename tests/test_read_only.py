@@ -34,6 +34,10 @@ OPERACOES_PERMITIDAS = {
     "get_cost_forecast",
     # CloudWatch.
     "get_metric_statistics",
+    # Mesma leitura de métrica, em lote: uma chamada carrega até 500 consultas.
+    # Não lê nada que `get_metric_statistics` já não lesse — muda quantas idas à
+    # AWS as mesmas onze métricas por job custam.
+    "get_metric_data",
     # Athena: histórico e configuração declarada.
     "batch_get_query_execution",
     "get_query_execution",

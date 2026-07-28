@@ -181,8 +181,28 @@ ficar vazio. Para várias contas, cada entrada usa o seu perfil SSO.
 ```bash
 aws sso login --profile <perfil-sso>
 julius collect --sso-profile <perfil-sso> \
+  --account-name <conta> \
   --output data/collected/<conta>.json
 ```
+
+### Escopo do Glue Catalog
+
+Numa conta Consumer do Data Mesh o Glue Catalog enxerga bancos compartilhados
+por **outras** contas. Percorrê-los custa uma chamada por banco e devolve
+tabelas sobre as quais esta conta não pode agir: não gera, não desliga, não
+redimensiona.
+
+`--account-name` restringe o catálogo aos bancos cujo nome **termina** com o
+nome da conta — a convenção `dbcompartilhado_<conta>`. A comparação ignora
+maiúsculas, `-` e `_`, e o valor cai para o `--sso-profile` quando não é
+informado, porque no cadastro os dois costumam coincidir. Para um ambiente sem
+essa convenção, `--glue-databases banco1,banco2` substitui a regra.
+
+Sem nenhum dos dois o comportamento é o antigo — todos os bancos — e a saúde da
+coleta registra isso na fonte **Glue Catalog Scope**, que mostra quantos bancos
+entraram de quantos vistos e por qual regra. Menos tabelas por escopo e menos
+tabelas por permissão faltando se parecem no relatório; essa linha é o que
+separa as duas.
 
 Access key, secret, token e cache SSO nunca devem ser copiados para o
 repositório nem para os arquivos Julius. O boto3/AWS CLI lê essas credenciais

@@ -175,26 +175,176 @@ def test_glue_collector_jobs_and_failure_rate():
     assert job.observed_runs == 3
 
 
-def test_cloudwatch_enriches_cpu():
+class _FakeCloudWatch:
+    """Responde `get_metric_data` a partir de um mapa métrica → valores.
+
+    O Stubber valida a forma da chamada, e há um teste dedicado a isso logo
+    abaixo. Aqui o que importa é o mapeamento: qual consulta alimenta qual campo
+    de qual job, o que só se enxerga controlando a resposta por `Id`.
+    """
+
+    def __init__(self, values_by_metric: dict[str, list[float]], pages: int = 1):
+        self.values_by_metric = values_by_metric
+        self.pages = pages
+        self.calls: list[dict] = []
+
+    def get_metric_data(self, **kwargs):
+        self.calls.append(kwargs)
+        page = len(self.calls)
+        results = []
+        for query in kwargs["MetricDataQueries"]:
+            metric = query["MetricStat"]["Metric"]["MetricName"]
+            values = self.values_by_metric.get(metric, [])
+            # Numa paginação, cada página traz um pedaço dos valores.
+            chunk = values[page - 1 :: self.pages] if self.pages > 1 else values
+            results.append({"Id": query["Id"], "Values": list(chunk)})
+        response = {"MetricDataResults": results}
+        if page < self.pages:
+            response["NextToken"] = f"token-{page}"
+        return response
+
+
+class _BrokenCloudWatch:
+    def get_metric_data(self, **_kwargs):
+        raise AwsError("throttled")
+
+
+class AwsError(Exception):
+    pass
+
+
+def test_cloudwatch_asks_for_cpu_with_the_shape_the_api_expects():
+    """Stubber: um parâmetro fora do lugar aqui é erro de chamada real.
+
+    A CPU é a única métrica sem `JobRunId` — ela é publicada por job, não por
+    execução — e é isso que este teste prende.
+    """
     cw = _client("cloudwatch")
     stub = Stubber(cw)
     now = datetime.now(timezone.utc)
+    window = AnalysisWindow.trailing(now=now)
     stub.add_response(
-        "get_metric_statistics",
+        "get_metric_data",
+        {"MetricDataResults": [{"Id": "m0", "Values": [0.20, 0.24]}]},
         {
-            "Label": "glue.ALL.system.cpuSystemLoad",
-            "Datapoints": [
-                {"Timestamp": now, "Average": 0.20, "Unit": "None"},
-                {"Timestamp": now, "Average": 0.24, "Unit": "None"},
+            "MetricDataQueries": [
+                {
+                    "Id": "m0",
+                    "MetricStat": {
+                        "Metric": {
+                            "Namespace": "Glue",
+                            "MetricName": "glue.ALL.system.cpuSystemLoad",
+                            "Dimensions": [
+                                {"Name": "JobName", "Value": "processa"},
+                                {"Name": "Type", "Value": "gauge"},
+                            ],
+                        },
+                        "Period": 86400,
+                        "Stat": "Average",
+                    },
+                    "ReturnData": True,
+                }
             ],
+            "StartTime": window.start,
+            "EndTime": window.end,
         },
     )
     jobs = [GlueJob(name="processa", worker_type="G.1X", number_of_workers=20)]
     with stub:
-        cloudwatch_collector.enrich_glue_cpu(cw, jobs, window=AnalysisWindow.trailing(now=now))
+        cloudwatch_collector.enrich_glue_cpu(cw, jobs, window=window)
 
     # média das duas leituras → destrava as regras de capacidade.
     assert jobs[0].avg_cpu_load == pytest.approx(0.22, abs=0.001)
+
+
+def test_every_metric_of_every_job_travels_in_a_single_call():
+    """Era uma ida à AWS por métrica por job; são dez métricas e três jobs."""
+    cw = _FakeCloudWatch(
+        {
+            "glue.driver.workerUtilization": [0.4, 0.6],
+            "glue.ALL.memory.total.used.percentage": [10.0, 90.0],
+            "glue.driver.aggregate.bytesRead": [100.0, 200.0],
+        }
+    )
+    jobs = [GlueJob(name=f"job-{index}") for index in range(3)]
+
+    cloudwatch_collector.enrich_glue_observability(
+        cw, jobs, window=AnalysisWindow.trailing()
+    )
+
+    assert len(cw.calls) == 1
+    assert len(cw.calls[0]["MetricDataQueries"]) == 30  # 3 jobs × 10 métricas
+    for job in jobs:
+        assert job.avg_worker_utilization == pytest.approx(0.5)
+        assert job.bytes_read_window == pytest.approx(300.0)
+
+
+def test_the_peak_is_preserved_and_the_average_is_averaged():
+    """Suavizar pressão de memória, disco ou skew esconderia o pior momento."""
+    cw = _FakeCloudWatch(
+        {
+            "glue.ALL.memory.total.used.percentage": [10.0, 90.0],
+            "glue.driver.workerUtilization": [10.0, 90.0],
+        }
+    )
+    jobs = [GlueJob(name="processa")]
+
+    cloudwatch_collector.enrich_glue_observability(
+        cw, jobs, window=AnalysisWindow.trailing()
+    )
+
+    assert jobs[0].max_memory_used_pct == pytest.approx(90.0)
+    assert jobs[0].avg_worker_utilization == pytest.approx(50.0)
+
+
+def test_queries_are_split_when_they_pass_the_api_ceiling():
+    """500 consultas por chamada é limite da API, não escolha nossa."""
+    cw = _FakeCloudWatch({"glue.driver.workerUtilization": [1.0]})
+    jobs = [GlueJob(name=f"job-{index}") for index in range(60)]  # 60 × 10 = 600
+
+    cloudwatch_collector.enrich_glue_observability(
+        cw, jobs, window=AnalysisWindow.trailing()
+    )
+
+    assert [len(call["MetricDataQueries"]) for call in cw.calls] == [500, 100]
+    assert all(job.avg_worker_utilization == pytest.approx(1.0) for job in jobs)
+
+
+def test_a_paginated_answer_is_accumulated_before_being_reduced():
+    """Reduzir página a página daria a média das médias, não a da janela."""
+    cw = _FakeCloudWatch({"glue.ALL.memory.total.used.percentage": [10.0, 90.0]}, pages=2)
+    jobs = [GlueJob(name="processa")]
+
+    cloudwatch_collector.enrich_glue_observability(
+        cw, jobs, window=AnalysisWindow.trailing()
+    )
+
+    assert len(cw.calls) == 2
+    assert jobs[0].max_memory_used_pct == pytest.approx(90.0)
+
+
+def test_a_failed_block_leaves_the_fields_absent_not_zero():
+    """Zero significaria "medido e vazio"; a métrica ausente não é isso."""
+    jobs = [GlueJob(name="processa")]
+
+    cloudwatch_collector.enrich_glue_observability(
+        _BrokenCloudWatch(), jobs, window=AnalysisWindow.trailing()
+    )
+
+    assert jobs[0].max_memory_used_pct is None
+    assert jobs[0].avg_worker_utilization is None
+    assert jobs[0].bytes_read_window is None
+
+
+def test_a_metric_with_no_datapoints_stays_absent():
+    cw = _FakeCloudWatch({})
+    jobs = [GlueJob(name="processa")]
+
+    cloudwatch_collector.enrich_glue_observability(
+        cw, jobs, window=AnalysisWindow.trailing()
+    )
+
+    assert jobs[0].max_task_skew is None
 
 
 def test_touches_collector_parses_rows():

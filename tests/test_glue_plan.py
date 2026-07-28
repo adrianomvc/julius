@@ -697,23 +697,35 @@ def test_databrew_cost_keeps_node_hours_separate_from_dpu_hours():
     assert job.expected_runs_monthly == 30.0
 
 
+_OBSERVABILITY_VALUES = {
+    "glue.driver.workerUtilization": 0.2,
+    "glue.ALL.memory.total.used.percentage": 0.4,
+    "glue.ALL.disk.used.percentage": 0.3,
+    "glue.driver.skewness.job": 1.5,
+    "glue.driver.ExecutorAllocationManager.executors.numberAllExecutors": 10,
+    "glue.driver.ExecutorAllocationManager.executors.numberMaxNeededExecutors": 4,
+    "glue.driver.aggregate.bytesRead": 8 * 1024**3,
+    "glue.driver.throughput.bytesWritten": 4 * 1024**3,
+    "glue.driver.throughput.filesWritten": 200,
+    "glue.driver.streaming.numRecords": 1000,
+}
+
+
 class _CloudWatch:
-    def get_metric_statistics(self, **kwargs):
-        assert {"Name": "JobRunId", "Value": "ALL"} in kwargs["Dimensions"]
-        statistic = kwargs["Statistics"][0]
-        value = {
-            "glue.driver.workerUtilization": 0.2,
-            "glue.ALL.memory.total.used.percentage": 0.4,
-            "glue.ALL.disk.used.percentage": 0.3,
-            "glue.driver.skewness.job": 1.5,
-            "glue.driver.ExecutorAllocationManager.executors.numberAllExecutors": 10,
-            "glue.driver.ExecutorAllocationManager.executors.numberMaxNeededExecutors": 4,
-            "glue.driver.aggregate.bytesRead": 8 * 1024**3,
-            "glue.driver.throughput.bytesWritten": 4 * 1024**3,
-            "glue.driver.throughput.filesWritten": 200,
-            "glue.driver.streaming.numRecords": 1000,
-        }[kwargs["MetricName"]]
-        return {"Datapoints": [{statistic: value}]}
+    def get_metric_data(self, **kwargs):
+        results = []
+        for query in kwargs["MetricDataQueries"]:
+            metric = query["MetricStat"]["Metric"]
+            # Métrica de observabilidade é agregada em JobRunId=ALL; sem essa
+            # dimensão a resposta viria por execução e a soma da janela mudaria.
+            assert {"Name": "JobRunId", "Value": "ALL"} in metric["Dimensions"]
+            results.append(
+                {
+                    "Id": query["Id"],
+                    "Values": [_OBSERVABILITY_VALUES[metric["MetricName"]]],
+                }
+            )
+        return {"MetricDataResults": results}
 
 
 def test_collects_observability_metrics_needed_for_capacity_decisions():
@@ -740,10 +752,20 @@ def test_collects_observability_metrics_needed_for_capacity_decisions():
 
 
 class _CloudWatchPeaks:
-    def get_metric_statistics(self, **kwargs):
-        statistic = kwargs["Statistics"][0]
-        values = [0.2, 0.8] if statistic == "Maximum" else [0.2, 0.4]
-        return {"Datapoints": [{statistic: value} for value in values]}
+    def get_metric_data(self, **kwargs):
+        return {
+            "MetricDataResults": [
+                {
+                    "Id": query["Id"],
+                    "Values": (
+                        [0.2, 0.8]
+                        if query["MetricStat"]["Stat"] == "Maximum"
+                        else [0.2, 0.4]
+                    ),
+                }
+                for query in kwargs["MetricDataQueries"]
+            ]
+        }
 
 
 def test_observability_preserves_peaks_instead_of_averaging_them():

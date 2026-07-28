@@ -20,6 +20,11 @@ _COLUMNAR = {"PARQUET", "ORC"}
 _ROW_FORMATS = {"CSV", "JSON", "TSV", "TEXT"}
 _WIDE_TABLE_COLUMNS = 50
 _PARTITION_PROJECTION_MIN_PARTITIONS = 1000
+#: Teto de páginas na contagem de partições, no mesmo espírito de
+#: `MAX_LIST_PAGES`: cinco páginas de mil passam de qualquer limiar que dependa
+#: desse número, e param antes de varrer uma tabela inteira.
+MAX_PARTITION_PAGES = 5
+_PARTITION_PAGE_SIZE = 1000
 
 
 def enrich_catalog(items: list[AthenaExecutionEvidence], glue, s3, telemetry) -> None:
@@ -42,10 +47,24 @@ def enrich_catalog(items: list[AthenaExecutionEvidence], glue, s3, telemetry) ->
                     parameters = table.get("Parameters") or {}
                     fmt = storage_format(descriptor, parameters)
                     objects = object_evidence(s3, descriptor.get("Location"))
+                    if not objects["complete"] and objects["count"]:
+                        telemetry.partial(
+                            "Athena S3",
+                            category="bounded_or_incomplete",
+                            detail=f"listagem limitada em {name}",
+                        )
                     projection = str(parameters.get("projection.enabled") or "").lower() == "true"
-                    partition_count = (
-                        0 if projection else count_partitions(glue, parts[-2], parts[-1])
+                    partition_count, partitions_complete = (
+                        (0, True)
+                        if projection
+                        else count_partitions(glue, parts[-2], parts[-1])
                     )
+                    if not partitions_complete:
+                        telemetry.partial(
+                            "Athena Glue Catalog",
+                            category="bounded_or_incomplete",
+                            detail=f"contagem de partições limitada em {name}",
+                        )
                     codecs, explicitly_uncompressed = compression_evidence(
                         descriptor, parameters
                     )
@@ -207,16 +226,32 @@ def compression_evidence(
     return codecs, explicitly_uncompressed
 
 
-def count_partitions(glue, database: str, table: str) -> int:
+def count_partitions(
+    glue, database: str, table: str, *, max_pages: int = MAX_PARTITION_PAGES
+) -> tuple[int, bool]:
+    """Quantas partições a tabela tem, e se a contagem foi até o fim.
+
+    Contar todas as partições de uma tabela de data lake pode custar centenas de
+    chamadas, e isso rodava por tabela lida. O teto não muda o veredito que
+    depende deste número: a recomendação de partition projection começa em
+    `_PARTITION_PROJECTION_MIN_PARTITIONS` (mil) e o teto são cinco páginas de
+    mil — quem trunca já passou do limiar com folga.
+    """
     try:
         paginator = glue.get_paginator("get_partitions")
-        return sum(
-            len(page.get("Partitions", []))
-            for page in paginator.paginate(
-                DatabaseName=database,
-                TableName=table,
-                ExcludeColumnSchema=True,
-            )
+        pages = paginator.paginate(
+            DatabaseName=database,
+            TableName=table,
+            ExcludeColumnSchema=True,
+            PaginationConfig={"PageSize": _PARTITION_PAGE_SIZE},
         )
+        total = 0
+        for index, page in enumerate(pages, start=1):
+            total += len(page.get("Partitions", []))
+            # Cortar depois de somar evita pedir a página seguinte só para
+            # descobrir que ela existe.
+            if index >= max_pages:
+                return total, False
+        return total, True
     except Exception:
-        return 0
+        return 0, True

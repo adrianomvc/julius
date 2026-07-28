@@ -33,6 +33,7 @@ _EMPTY: dict[str, Any] = {
     "total": 0,
     "small_files": False,
     "compressed_count": 0,
+    "complete": False,
 }
 
 
@@ -103,8 +104,21 @@ def list_objects(
     return candidates, listing_complete
 
 
-def object_evidence(s3_client, location: str | None) -> dict[str, Any]:
-    """Agrega tamanhos e extensões de um prefixo; nunca devolve chaves."""
+def object_evidence(
+    s3_client, location: str | None, *, max_pages: int = MAX_LIST_PAGES
+) -> dict[str, Any]:
+    """Agrega tamanhos e extensões de um prefixo; nunca devolve chaves.
+
+    Esta função paginava sem teto, no mesmo arquivo cuja razão de existir é
+    "listagem limitada" — e é chamada uma vez por tabela lida por query. Num
+    prefixo de data lake com milhões de objetos isso são milhares de chamadas
+    para responder uma pergunta que se decide nas primeiras centenas.
+
+    `complete` diz se a listagem terminou. Os dois vereditos que dependem daqui
+    se decidem muito antes do teto — `SMALL_FILE_MIN_COUNT` são 100 objetos, e o
+    teto são cinco páginas de mil — então truncar não muda conclusão; muda
+    quanto se paga para chegar nela.
+    """
     parsed = parse_location(location)
     if s3_client is None or parsed is None:
         return dict(_EMPTY)
@@ -112,9 +126,11 @@ def object_evidence(s3_client, location: str | None) -> dict[str, Any]:
 
     sizes: list[int] = []
     compressed_count = 0
+    complete = True
     try:
         paginator = s3_client.get_paginator("list_objects_v2")
-        for page in paginator.paginate(Bucket=bucket, Prefix=prefix):
+        pages = paginator.paginate(Bucket=bucket, Prefix=prefix)
+        for index, page in enumerate(pages, start=1):
             for obj in page.get("Contents", []):
                 size = int(obj.get("Size") or 0)
                 if size <= 0:
@@ -122,11 +138,18 @@ def object_evidence(s3_client, location: str | None) -> dict[str, Any]:
                 sizes.append(size)
                 key = str(obj.get("Key") or "").lower()
                 compressed_count += key.endswith(COMPRESSED_SUFFIXES)
+            # O corte é aqui, e não no topo do laço: perguntar ao paginador se
+            # há mais é uma chamada a mais. Um prefixo que acaba exatamente no
+            # teto é reportado como incompleto — erra para o lado de "pode haver
+            # mais", que é o lado honesto.
+            if index >= max_pages:
+                complete = False
+                break
     except Exception:
         return dict(_EMPTY)
 
     if not sizes:
-        return dict(_EMPTY)
+        return {**_EMPTY, "complete": complete}
     average = round(sum(sizes) / len(sizes))
     return {
         "count": len(sizes),
@@ -137,4 +160,5 @@ def object_evidence(s3_client, location: str | None) -> dict[str, Any]:
             and average < SMALL_FILE_THRESHOLD_BYTES
         ),
         "compressed_count": compressed_count,
+        "complete": complete,
     }

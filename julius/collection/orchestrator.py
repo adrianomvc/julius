@@ -14,6 +14,8 @@ import boto3
 
 from julius.collection.health import CollectionRecorder, RequiredCollectionError
 from julius.collection.models import Account
+from julius.collection.scope import CatalogScope
+from julius.collection.session import make_client
 from julius.collection.settings import ANALYSIS_WINDOW_DAYS
 from julius.collection.sources import SOURCES, CollectionContext, run
 from julius.collection.window import AnalysisWindow, BillingMonth
@@ -30,6 +32,7 @@ def collect_account(
     athena_output: str | None = None,
     include_cloudtrail: bool = False,
     datawarm_job: str = "",
+    catalog_scope: CatalogScope | None = None,
     now: datetime | None = None,
 ) -> Account:
     """Coleta uma conta. `config` chega de cima e não tem default aqui.
@@ -66,6 +69,7 @@ def collect_account(
         athena_output=athena_output,
         include_cloudtrail=include_cloudtrail,
         datawarm_job=datawarm_job,
+        catalog_scope=catalog_scope or CatalogScope(),
         glue_usage_markers=config.glue_cost.usage_type_markers,
         allocatable_glue_buckets=config.glue_cost.allocatable_buckets,
         glue_cost_version=config.glue_cost.version,
@@ -87,7 +91,7 @@ def _verified_identity(
     """Sem identidade confirmada não é seguro atribuir o scan a uma conta."""
     actual = health.capture(
         "AWS identity",
-        lambda: str(session.client("sts").get_caller_identity()["Account"]),
+        lambda: str(make_client(session, "sts").get_caller_identity()["Account"]),
         "",
         required=True,
         count=lambda value: 1 if value else 0,
