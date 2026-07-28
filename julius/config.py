@@ -35,6 +35,11 @@ from julius.knowledge.redshift_cost import (
     REDSHIFT_USAGE_TYPE_MARKERS,
     UNATTRIBUTED_REDSHIFT_BUCKETS,
 )
+from julius.knowledge.s3_cost import (
+    S3_STORAGE_BUCKETS,
+    S3_USAGE_TYPE_MARKERS,
+    UNATTRIBUTED_S3_BUCKETS,
+)
 from julius.knowledge.thresholds import Thresholds
 
 # Versões usadas nas oportunidades (auditoria/calibração).
@@ -84,12 +89,29 @@ class RedshiftCostTaxonomy:
     version: str = "1.0"
 
 @dataclass(frozen=True)
+class S3CostTaxonomy:
+    """A mesma tradução, para o serviço onde a distinção muda a recomendação.
+
+    Armazenamento e request não caem juntos: apagar objeto reduz armazenamento e
+    não toca em request; compactar arquivo pequeno reduz request e quase não move
+    armazenamento. Só `storage_buckets` pode ser reivindicado por uma
+    recomendação de exclusão, e é por isso que ele é um campo e não um detalhe.
+    """
+
+    usage_type_markers: tuple[tuple[str, str], ...] = S3_USAGE_TYPE_MARKERS
+    storage_buckets: frozenset[str] = S3_STORAGE_BUCKETS
+    unattributed_buckets: frozenset[str] = UNATTRIBUTED_S3_BUCKETS
+    version: str = "1.0"
+
+
+@dataclass(frozen=True)
 class Config:
     pricing: Pricing = field(default_factory=Pricing.for_region)
     thresholds: Thresholds = field(default_factory=Thresholds)
     weights: Weights = field(default_factory=Weights)
     glue_cost: GlueCostTaxonomy = field(default_factory=GlueCostTaxonomy)
     redshift_cost: RedshiftCostTaxonomy = field(default_factory=RedshiftCostTaxonomy)
+    s3_cost: S3CostTaxonomy = field(default_factory=S3CostTaxonomy)
     # Fator de realização padrão (parte da economia efetivamente capturada).
     realization_factor: float = 0.8
     preferred_glue_version: str = "5.1"

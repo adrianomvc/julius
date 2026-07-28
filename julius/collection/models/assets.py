@@ -109,6 +109,10 @@ class Table:
 
     name: str
     written_by: str | None = None       # nome do Glue Job que escreve a tabela
+    #: `StorageDescriptor.Location` do catálogo. É o que liga a tabela ao
+    #: prefixo S3 que ela ocupa — sem isso o inventário de S3 não tem onde
+    #: olhar, e a location já vem na mesma resposta do `GetTables`.
+    location: str = ""
     # `None` = toques não medidos; `0` = medidos e ninguém tocou. Enquanto os
     # dois eram zero, "não olhamos" e "ninguém usa" eram a mesma frase — e a
     # segunda vira dinheiro no relatório. A fonte de toques é opcional, então o
