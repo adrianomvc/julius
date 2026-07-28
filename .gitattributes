@@ -1,0 +1,12 @@
+# O relatório desenhado entra no repositório byte a byte, e `tests/test_design_
+# template.py` crava o sha256 de cada arquivo para que editá-lo aqui falhe em vez
+# de divergir em silêncio do arquivo do designer.
+#
+# Conversão automática de fim de linha muda esses bytes. Numa máquina com
+# `core.autocrlf=true` — o default do Git for Windows — o checkout materializa
+# CRLF, o sha256 muda e o teste falha sem que ninguém tenha editado nada. O Git
+# ainda mostra a árvore limpa, porque normaliza na entrada: o arquivo "não
+# mudou" e mesmo assim os bytes em disco são outros.
+#
+# `-text` desliga a conversão nos dois sentidos para esses arquivos.
+*.dc.html -text
