@@ -49,6 +49,11 @@ def _patch_empty_collectors(monkeypatch):
     monkeypatch.setattr(
         collect_module.jobs, "collect_jobs", lambda *_a, **_k: []
     )
+    # O catálogo agora lista bancos antes de ler tabelas: as duas etapas
+    # precisam ser neutralizadas para a fonte ficar vazia sem ficar quebrada.
+    monkeypatch.setattr(
+        collect_module.jobs, "list_database_names", lambda *_a, **_k: []
+    )
     monkeypatch.setattr(
         collect_module.jobs, "collect_tables", lambda *_a, **_k: []
     )
@@ -303,3 +308,32 @@ def test_a_disabled_source_is_reported_instead_of_disappearing():
     assert entry.error_category == "not_enabled"
     assert entry.impact == "clusters não classificados"
     assert entry.affects_status is False
+
+
+def test_the_slowest_sources_are_shown_after_a_collection():
+    """O tempo por fonte já era medido; sem mostrá-lo, otimizar vira palpite."""
+    from julius.cli.collect import slowest_sources
+
+    health = [
+        CollectionHealth(source="Glue Catalog", duration_ms=42_000, collected=1830),
+        CollectionHealth(source="CloudWatch Glue CPU", duration_ms=17_500, collected=300),
+        CollectionHealth(source="Cost Explorer", duration_ms=900, collected=12),
+        CollectionHealth(source="EventBridge Schedules", duration_ms=0),
+    ]
+
+    linhas = slowest_sources(health, limit=2)
+
+    assert "60.4s" in linhas[0]  # o total soma todas, não só as mostradas
+    assert linhas[1].strip().startswith("42.0s  Glue Catalog")
+    assert "1830 itens" in linhas[1]
+    assert "CloudWatch Glue CPU" in linhas[2]
+    # Fonte sem tempo medido não ocupa uma das vagas.
+    assert len(linhas) == 3
+
+
+def test_a_collection_with_no_measured_time_shows_nothing():
+    from julius.cli.collect import slowest_sources
+
+    assert slowest_sources([CollectionHealth(source="Cost Explorer")]) == []
+
+

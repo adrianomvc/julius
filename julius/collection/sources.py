@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from typing import Any
 
 from julius.collection.collectors import (
@@ -40,6 +41,7 @@ from julius.collection.collectors.glue import (
 )
 from julius.collection.health import CollectionRecorder
 from julius.collection.models import Account, CollectionHealth
+from julius.collection.scope import CatalogScope
 from julius.collection.window import AnalysisWindow, BillingMonth
 
 
@@ -66,13 +68,15 @@ class CollectionContext:
     athena_output: str | None = None
     include_cloudtrail: bool = False
     datawarm_job: str = ""
+    # Qual recorte do Glue Catalog pertence a esta conta. O default vazio
+    # mantém o comportamento antigo — todos os bancos — e diz isso na saúde.
+    catalog_scope: CatalogScope = field(default_factory=CatalogScope)
     # Sinais que uma fonte deixa para a seguinte — o rateio de custo só se
     # considera reconciliado quando o inventário de jobs veio íntegro.
     flags: dict[str, Any] = field(default_factory=dict)
     # Entradas de saúde produzidas dentro de um coletor: o Athena consulta sete
     # dependências e cada uma vira fonte própria no relatório.
     pending_health: list[CollectionHealth] = field(default_factory=list)
-
     def client(self, service: str) -> Any:
         return self.session.client(service)
 
@@ -217,6 +221,63 @@ def _event_log_jobs(ctx: CollectionContext) -> list:
     return [job for job in ctx.account.glue_jobs if job.spark_event_logs_path]
 
 
+def _collect_catalog(ctx: CollectionContext) -> list:
+    """Lista os bancos, aplica o escopo e só então lê tabelas.
+
+    A ordem é o ponto: um `get_tables` por banco é o que custa, e num Data Mesh
+    a maioria dos bancos do catálogo pertence a outras contas.
+    """
+    glue = ctx.client("glue")
+    seen = jobs.list_database_names(glue)
+    chosen = ctx.catalog_scope.select(seen)
+    ctx.pending_health.append(_catalog_scope_health(ctx, seen, chosen))
+    return jobs.collect_tables(glue, chosen)
+
+
+def _catalog_scope_health(
+    ctx: CollectionContext, seen: list[str], chosen: list[str]
+) -> CollectionHealth:
+    """Quantos bancos ficaram de fora, e por qual regra.
+
+    Sem esta entrada a conta simplesmente mostra menos tabelas, e não há como
+    distinguir escopo de permissão faltando — os dois se parecem com "sumiu".
+    """
+    scope = ctx.catalog_scope
+    now = datetime.now(timezone.utc).isoformat()
+    status = "ok"
+    category = ""
+    next_action = ""
+    if not seen:
+        # Catálogo vazio não é problema de escopo; a fonte em si já reporta.
+        pass
+    elif not scope.declared:
+        status = "partial"
+        category = "not_configured"
+        next_action = (
+            "informar --account-name para restringir o catálogo à conta analisada"
+        )
+    elif not chosen:
+        status = "partial"
+        category = "no_data"
+        next_action = (
+            f"nenhum banco casou com {scope.rule}; conferir o nome da conta "
+            "ou informar --glue-databases"
+        )
+    return CollectionHealth(
+        source="Glue Catalog Scope",
+        status=status,
+        started_at=now,
+        completed_at=now,
+        collected=len(chosen),
+        expected=len(seen),
+        coverage=round(len(chosen) / len(seen), 4) if seen else None,
+        error_category=category,
+        impact=scope.rule,
+        next_action=next_action,
+        affects_status=False,
+    )
+
+
 # --------------------------------------------------------------------------
 # As fontes, na ordem em que rodam
 # --------------------------------------------------------------------------
@@ -280,7 +341,7 @@ SOURCES: tuple[Source, ...] = (
     ),
     Source(
         name="Glue Catalog",
-        collect=lambda ctx: jobs.collect_tables(ctx.client("glue")),
+        collect=_collect_catalog,
         into="tables",
         count=len,
         impact="linhagem e oportunidades de tabelas ficam incompletas",
