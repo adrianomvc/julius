@@ -28,7 +28,6 @@ from pathlib import Path
 DESIGN_DIR = Path(__file__).parent / "templates" / "design"
 
 SCREEN = "Relatorio Julius.dc.html"
-PRINT = "Relatorio Julius-print.dc.html"
 
 #: `<sc-for list="{{ lista }}" as="alias" …>` — atributos extras do editor
 #: (`hint-placeholder-count`) são ignorados.

@@ -53,11 +53,6 @@ def render_html(vm: ReportViewModel, *, variant: str = design.SCREEN) -> str:
     return _env().from_string(fonte).render(design_view.build(vm, version=version))
 
 
-def render_print_html(vm: ReportViewModel) -> str:
-    """A variante de impressão: mesma fonte de dados, `details` abertos."""
-    return render_html(vm, variant=design.PRINT)
-
-
 def render_email(vm: ReportViewModel, report_url: str | None = None) -> tuple[str, str]:
     """Renderiza email.html + email.txt.
 

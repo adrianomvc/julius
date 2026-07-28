@@ -126,9 +126,6 @@ def portfolio(
         acc_dir = out / a.account.account_id
         acc_dir.mkdir(parents=True, exist_ok=True)
         (acc_dir / "report.html").write_text(renderer.render_html(a.vm), encoding="utf-8")
-        (acc_dir / "report-print.html").write_text(
-            renderer.render_print_html(a.vm), encoding="utf-8"
-        )
         (acc_dir / "report.json").write_text(
             renderer.render_json(a.vm, a.opportunities), encoding="utf-8"
         )

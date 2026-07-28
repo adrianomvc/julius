@@ -67,12 +67,6 @@ def report(
     if fmt in ("html", "all"):
         (out / "report.html").write_text(renderer.render_html(a.vm), encoding="utf-8")
         written.append("report.html")
-        # A variante de impressão abre os blocos recolhidos: quem exporta em PDF
-        # não pode receber uma página com metade do conteúdo dobrado.
-        (out / "report-print.html").write_text(
-            renderer.render_print_html(a.vm), encoding="utf-8"
-        )
-        written.append("report-print.html")
     if fmt in ("json", "all"):
         (out / "report.json").write_text(
             renderer.render_json(a.vm, a.opportunities), encoding="utf-8"
