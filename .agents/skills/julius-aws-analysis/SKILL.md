@@ -135,11 +135,29 @@ holds for any source marked partial or unavailable in
 ## Procedure
 
 1. Read `AGENTS.md` and `README.md`.
-2. Confirm the repository is Julius and install it with:
+2. Confirm the repository is Julius and install it with the installer, not with
+   a bare `pip install`:
 
    ```bash
-   python -m pip install -e ".[aws]"
+   bash install/install.sh
    ```
+
+   It selects a Python 3.11+ (the `python3` of Ubuntu 22.04 is 3.10 and the
+   project needs `tomllib` and `StrEnum`), creates the virtualenv, installs the
+   package and puts the `julius` launcher on `PATH`.
+
+   **How to invoke Julius, and the only two forms that exist:**
+
+   ```bash
+   julius <command> [options]              # after install/install.sh
+   python -m julius.cli <command> [options] # equivalent, no PATH needed
+   ```
+
+   `julius/cli.py` does **not** exist — the CLI is the package `julius/cli/`,
+   one module per command family. If `julius` is not found, the install did not
+   run or `~/.local/bin` is not on `PATH`: use `python -m julius.cli`, or run
+   the installer again. Never invent a third form, and never call a file inside
+   `julius/` directly.
 
 3. Use only AWS CLI SSO identities explicitly configured for Julius:
 
