@@ -162,3 +162,21 @@ def test_a_recurrent_process_never_becomes_this_signal():
     analise = _analise(_job("diario", runs=30, dpu_seconds=3600 * 600))
 
     assert [s for s in analise.signals if s.rule_id == "PROCESS-NON-RECURRING-COST"] == []
+
+
+def test_a_platform_process_does_not_even_become_a_signal():
+    """A combinação que só passou a existir quando os dois filtros se juntaram.
+
+    A monitoria da plataforma é esporádica e cara: o porteiro de recorrência
+    cria o sinal, e o filtro de processo gerenciado o remove no passo seguinte.
+    Nenhuma das duas mudanças testou isso sozinha, porque sozinha nenhuma delas
+    produzia o caso.
+    """
+    monitoria = _job(
+        "analytics-gluejob-mdp-custom-metrics", runs=2, dpu_seconds=3600 * 600
+    )
+
+    analise = _analise(monitoria)
+
+    assert analise.opportunities == []
+    assert analise.signals == []

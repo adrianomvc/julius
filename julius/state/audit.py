@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from datetime import datetime, timezone
 
 from julius.collection.models import Account
@@ -14,8 +15,21 @@ def new_scan_id(now: datetime | None = None) -> str:
     return "scan-" + now.strftime("%Y%m%d-%H%M%S-%f")
 
 
-def build_manifest(account: Account, config: Config, scan_id: str, source: str) -> list[dict]:
+def build_manifest(
+    account: Account,
+    config: Config,
+    scan_id: str,
+    source: str,
+    managed_processes: Sequence[str] = (),
+) -> list[dict]:
+    """O manifesto da execução.
+
+    `managed_processes` chega pronto de cima: quem sabe o que é processo da
+    plataforma é a camada de conhecimento, e `state` não importa dela — a seta
+    aponta para baixo, e `tests/test_dependency_direction.py` cobra isso.
+    """
     now = datetime.now().astimezone()
+    gerenciados = sorted(managed_processes)
     return [
         {"k": "julius_version", "v": JULIUS_VERSION},
         {"k": "scan_id", "v": scan_id},
@@ -42,5 +56,19 @@ def build_manifest(account: Account, config: Config, scan_id: str, source: str) 
                 f"{config.pricing.glue_flex_dpu_hour:.4f}/DPU-h"
             ),
         },
+        *(
+            [
+                {
+                    "k": "processos da plataforma",
+                    "v": (
+                        f"{len(gerenciados)} fora das recomendações (a conta não "
+                        f"altera a infra deles), no inventário para o rateio: "
+                        + ", ".join(gerenciados)
+                    ),
+                }
+            ]
+            if gerenciados
+            else []
+        ),
         {"k": "gerado", "v": now.strftime("%Y-%m-%d %H:%M %z")},
     ]

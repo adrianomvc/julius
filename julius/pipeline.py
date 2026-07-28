@@ -25,6 +25,7 @@ from julius.findings.promotion import promote
 from julius.findings.signal import Signal
 from julius.governance import compute_candidates
 from julius.graph import ProcessGraph, build_process_graph, enrich_opportunities
+from julius.knowledge.managed_processes import is_managed
 from julius.knowledge.recurrence import (
     consumption_dpu_hours,
     deserves_signal,
@@ -165,6 +166,14 @@ def analyze_account(
             ledger, signals, account.account_id, config, scan_id
         )
         signals = ledger.suppress(signals, account.account_id).open
+    # Processo da plataforma sai daqui, e não da coleta: ele continua no
+    # inventário porque o rateio da fatura Glue é proporcional à DPU-hora de
+    # cada job — tirá-lo do inventário não tira o consumo dele da fatura, só
+    # espalha a parte dele sobre os outros e infla o custo de quem sobrou.
+    opportunities = [
+        item for item in opportunities if not is_managed(item.asset_name)
+    ]
+    signals = [item for item in signals if not is_managed(item.asset_name)]
     enrich_opportunities(account, graph, opportunities)
     # Consolida achados do mesmo ativo numa ação principal (causa raiz).
     opportunities = group_by_asset(opportunities)
@@ -243,7 +252,20 @@ def analyze_account(
         )
     if history is not None:
         _merge_validations(account, history.latest_validations(account.account_id))
-    manifest = build_manifest(account, config, scan_id, source=source)
+    manifest = build_manifest(
+        account,
+        config,
+        scan_id,
+        source=source,
+        # Eles ficaram fora das recomendações mas continuam no inventário; o
+        # manifesto é onde isso é declarado em vez de virar sumiço silencioso.
+        managed_processes=[
+            name
+            for name in [job.name for job in account.glue_jobs]
+            + [machine.name for machine in account.state_machines]
+            if is_managed(name)
+        ],
+    )
     vm = build_vm(account, opportunities, manifest)
     vm.diff_events = [
         {
