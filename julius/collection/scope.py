@@ -6,29 +6,48 @@ produz tabelas sobre as quais esta conta não pode fazer nada: não gera, não
 desliga, não redimensiona. O escopo existe para que a coleta pare antes dessa
 chamada, e não depois.
 
-A convenção do ambiente é que o banco compartilhado termina com o nome da conta
-(`dbcompartilhado_consumer-avi`). A comparação normaliza os dois lados, então
-`-`, `_` e maiúsculas não decidem nada. Um banco compartilhado por outra conta
-termina com o nome *dela* e cai fora pela mesma regra — não é preciso uma
-segunda verificação.
+São **três** os bancos da conta, e eles não seguem a mesma forma:
+
+- `database_db_compartilhado_consumer_<nome da conta>` — o compartilhado, único
+  que carrega o nome da conta;
+- `workspace_db` e `sagemaker_featurestore` — nomes fixos, iguais em toda conta.
+
+Por isso a regra não é "termina com o nome da conta": isso deixaria os dois
+últimos de fora. É uma lista de nomes locais mais o compartilhado da conta.
+
+A comparação normaliza os dois lados, mas **preserva os separadores**. Colapsar
+`-` e `_` a nada tornaria `..._consumer_navi` um casamento válido para a conta
+`avi`, porque a cadeia terminaria em `avi` de qualquer jeito. O separador é o
+que marca onde o nome da conta começa.
 
 Escopo não informado mantém o comportamento antigo (todos os bancos) e diz isso
-na saúde da coleta. Varrer o mesh inteiro é uma escolha legítima em um ambiente
-sem a convenção; o que não pode é acontecer sem ninguém saber.
+na saúde da coleta. Varrer o mesh inteiro é uma escolha legítima num ambiente
+sem essa convenção; o que não pode é acontecer sem ninguém saber.
 """
 
 from __future__ import annotations
 
 import re
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
-_NOT_ALPHANUMERIC = re.compile(r"[^a-z0-9]+")
+_SEPARATORS = re.compile(r"[^a-z0-9]+")
+
+#: Prefixo do banco compartilhado da conta. O nome da conta vem depois dele.
+SHARED_DATABASE_PREFIX = "database_db_compartilhado_consumer_"
+
+#: Bancos da conta com nome fixo — não carregam o nome da conta e por isso
+#: nenhuma regra de sufixo os alcança.
+LOCAL_DATABASES: tuple[str, ...] = ("workspace_db", "sagemaker_featurestore")
 
 
 def normalize(value: str) -> str:
-    """`dbCompartilhado_Consumer-AVI` → `dbcompartilhadoconsumeravi`."""
-    return _NOT_ALPHANUMERIC.sub("", str(value).lower())
+    """`dbCompartilhado_Consumer-AVI` → `dbcompartilhado_consumer_avi`.
+
+    Minúsculas e separador único. O separador **fica**: é ele que impede o banco
+    de uma conta vizinha de passar pelo desta.
+    """
+    return _SEPARATORS.sub("_", str(value).lower()).strip("_")
 
 
 @dataclass(frozen=True)
@@ -36,12 +55,26 @@ class CatalogScope:
     """O recorte do catálogo, resolvido uma vez e repassado para baixo."""
 
     account_name: str = ""
-    #: Lista explícita: quando informada, substitui a regra de sufixo.
+    #: Lista explícita: quando informada, substitui a regra de nome inteira.
     databases: tuple[str, ...] = ()
+    #: Os bancos de nome fixo. Campo, e não constante embutida, para um ambiente
+    #: com outra convenção não precisar de mudança de código.
+    local_databases: tuple[str, ...] = field(default=LOCAL_DATABASES)
 
     @property
     def declared(self) -> bool:
         return bool(self.databases or self.account_name)
+
+    @property
+    def shared_database(self) -> str:
+        """O compartilhado desta conta, com o nome já resolvido."""
+        if not self.account_name:
+            return ""
+        # O cadastro às vezes chama a conta de `consumer-avi` e o banco termina
+        # em `consumer_avi`: repetir o token produziria
+        # `..._consumer_consumer_avi` e não casaria com nada.
+        token = normalize(self.account_name).removeprefix("consumer_")
+        return normalize(SHARED_DATABASE_PREFIX) + "_" + token
 
     @property
     def rule(self) -> str:
@@ -49,7 +82,8 @@ class CatalogScope:
         if self.databases:
             return f"lista explícita: {', '.join(self.databases)}"
         if self.account_name:
-            return f"bancos terminados em '{self.account_name}'"
+            nomes = [self.shared_database, *self.local_databases]
+            return "bancos da conta: " + ", ".join(nomes)
         return "sem escopo declarado: todos os bancos do catálogo"
 
     def select(self, names: Sequence[str]) -> list[str]:
@@ -57,7 +91,8 @@ class CatalogScope:
         if self.databases:
             wanted = {normalize(name) for name in self.databases}
             return [name for name in names if normalize(name) in wanted]
-        if self.account_name:
-            suffix = normalize(self.account_name)
-            return [name for name in names if normalize(name).endswith(suffix)]
-        return list(names)
+        if not self.account_name:
+            return list(names)
+        wanted = {normalize(name) for name in self.local_databases}
+        wanted.add(self.shared_database)
+        return [name for name in names if normalize(name) in wanted]
