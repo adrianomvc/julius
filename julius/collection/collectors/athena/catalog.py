@@ -134,20 +134,6 @@ def enrich_catalog(items: list[AthenaExecutionEvidence], glue, s3, telemetry) ->
         )
 
 
-def missing_partition_predicates(sql: str, keys: list[str]) -> list[str]:
-    if sqlglot is None:
-        return list(keys)
-    try:
-        tree = sqlglot.parse_one(sql, read="athena")
-    except Exception:
-        return list(keys)
-    filtered: set[str] = set()
-    for where in tree.find_all(exp.Where):
-        for column in where.find_all(exp.Column):
-            filtered.add(column.name.lower())
-    return [key for key in keys if key.lower() not in filtered]
-
-
 def has_partition_predicate(sql: str, table_name: str, key: str) -> bool:
     """Confirma o predicado no alias da tabela, inclusive dentro de CTEs."""
     if sqlglot is None:

@@ -36,14 +36,6 @@ class AthenaAnalysis:
     health: list[CollectionHealth] = field(default_factory=list)
 
 
-def complete_utc_window(
-    now: datetime | None = None, days: int = ANALYSIS_WINDOW_DAYS
-) -> tuple[datetime, datetime]:
-    """Compatibilidade: a definição canônica agora é `AnalysisWindow`."""
-    window = AnalysisWindow.trailing(days=days, now=now)
-    return window.start, window.end
-
-
 def collect_analysis(
     athena_client,
     *,
@@ -101,22 +93,6 @@ def collect_analysis(
         coverage=coverage,
         health=telemetry.entries(),
     )
-
-
-def collect_queries(
-    athena_client,
-    *,
-    lookback_days: int = ANALYSIS_WINDOW_DAYS,
-    max_ids: int | None = None,
-    now: datetime | None = None,
-) -> list[AthenaQuery]:
-    """Compatibilidade: inventários antigos esperam apenas a lista de queries."""
-    return collect_analysis(
-        athena_client,
-        lookback_days=lookback_days,
-        max_ids_per_workgroup=max_ids,
-        now=now,
-    ).queries
 
 
 def _collect_executions(

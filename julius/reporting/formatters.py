@@ -59,11 +59,6 @@ def usd(value: float | None) -> str:
     return money(value, "USD")
 
 
-def brl(value: float | None) -> str:
-    """Alias legado; o portfólio canônico agora é expresso em USD."""
-    return money(value, "USD")
-
-
 def difficulty_color(difficulty: int) -> tuple[str, str]:
     if difficulty <= 2:
         return ("#0053b3", "#e6effa")
