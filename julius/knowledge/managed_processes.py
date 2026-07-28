@@ -24,18 +24,25 @@ MANAGED_EXACT_NAMES: frozenset[str] = frozenset(
     }
 )
 
-#: Sufixos: o prefixo varia por conta, a terminação identifica a aplicação.
-MANAGED_NAME_SUFFIXES: tuple[str, ...] = (
-    "analytics-data-warmer-glue",   # aquecimento de dado (Glue)
-    "analytics-data-warm-sfn",      # aquecimento de dado (Step Functions)
-)
+#: Prefixo das aplicações de aquecimento de dado da plataforma — `-warmer-glue`
+#: no Glue, `-warm-sfn` no Step Functions, e o que mais vier com essa origem.
+#:
+#: A âncora no **começo** do nome é o que separa a aplicação da plataforma de um
+#: job da conta que apenas menciona o mesmo texto:
+#: `analytics-data-warmer-glue-x` é da plataforma;
+#: `consumer-avi-analytics-data-warmer-glue` é da conta.
+#:
+#: E é `analytics-data`, não `analytics-`: o prefixo curto é a convenção de
+#: nomenclatura do domínio inteiro, usada também pelos jobs da conta. Ignorar
+#: por ele apagaria justamente onde está a economia.
+MANAGED_NAME_PREFIXES: tuple[str, ...] = ("analytics-data",)
 
 
 def is_managed(
     name: str,
     *,
     exact: frozenset[str] = MANAGED_EXACT_NAMES,
-    suffixes: tuple[str, ...] = MANAGED_NAME_SUFFIXES,
+    prefixes: tuple[str, ...] = MANAGED_NAME_PREFIXES,
 ) -> bool:
     """O processo pertence à plataforma e não à conta que o hospeda?
 
@@ -47,4 +54,4 @@ def is_managed(
         return False
     if normalizado in {item.lower() for item in exact}:
         return True
-    return any(normalizado.endswith(suffix.lower()) for suffix in suffixes)
+    return any(normalizado.startswith(prefix.lower()) for prefix in prefixes)
