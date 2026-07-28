@@ -176,8 +176,24 @@ def _enriched(fn: Callable[[], Any], value: Any) -> Any:
 
 
 def _record_jobs_integrity(
-    ctx: CollectionContext, _result: Any, entry: CollectionHealth
+    ctx: CollectionContext, result: Any, entry: CollectionHealth
 ) -> None:
+    # Um job cujo histórico foi negado entra no inventário com a configuração
+    # que o `GetJobs` trouxe, e sem execuções. Antes esse job derrubava a fonte
+    # obrigatória e a conta inteira ficava sem scan; agora ele degrada a fonte,
+    # e a degradação precisa aparecer — senão os zeros dele passam por medição.
+    sem_historico = [job.name for job in result if not job.run_history_available]
+    if sem_historico:
+        entry.status = "partial"
+        entry.error_category = "permission_denied"
+        entry.impact = (
+            f"{len(sem_historico)} job(s) sem histórico de execução: duração, "
+            "recorrência, taxa de falha e DPU-hora deles não foram medidos"
+        )
+        entry.next_action = (
+            "validar glue:GetJobRuns nesses jobs — política de recurso, "
+            "Lake Formation ou tag de restrição"
+        )
     ctx.flags["jobs_collection_complete"] = entry.status == "ok"
 
 

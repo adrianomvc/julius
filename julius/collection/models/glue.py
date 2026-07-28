@@ -64,6 +64,12 @@ class GlueJob:
     run_ids_in_window: list[str] = field(default_factory=list)
     observed_runs: int = 0
     coverage_days: int = 0
+    #: Falso quando `GetJobRuns` foi negado para **este** job — política de
+    #: recurso, Lake Formation, tag de restrição. A configuração continua válida
+    #: (veio do `GetJobs`); o histórico é que não existe. Sem este campo,
+    #: "ninguém rodou" e "não deu para ler" viram o mesmo zero, e o segundo
+    #: viraria conclusão sobre um job que não foi medido.
+    run_history_available: bool = True
     owner_tag: str | None = None
     script_location: str | None = None
     default_argument_keys: list[str] = field(default_factory=list)

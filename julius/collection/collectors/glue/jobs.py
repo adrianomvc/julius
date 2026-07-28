@@ -40,7 +40,11 @@ def _build_job(glue_client, job: dict, window: AnalysisWindow) -> GlueJob:
     name = job["Name"]
     args = job.get("DefaultArguments", {}) or {}
     command_type = str((job.get("Command", {}) or {}).get("Name") or "glueetl")
-    runs = _job_runs(
+    # O histórico de execução é permissão à parte da listagem, e pode ser negado
+    # em **um** job — política de recurso, Lake Formation, tag de restrição. Sem
+    # este isolamento esse job derruba `collect_jobs`, que é a fonte obrigatória,
+    # e a conta inteira fica sem scan por causa de um recurso.
+    runs, historico_lido = _job_runs_isolados(
         glue_client,
         name,
         window.start,
@@ -121,6 +125,7 @@ def _build_job(glue_client, job: dict, window: AnalysisWindow) -> GlueJob:
         avg_cpu_load=None,  # requer CloudWatch (coletor à parte)
         observed_runs=total,
         coverage_days=window.days,
+        run_history_available=historico_lido,
         window_days=window.days,
         dpu_seconds_window=round(dpu_seconds, 3),
         estimated_dpu_hours_window=round(estimated_dpu_hours, 4),
@@ -208,6 +213,28 @@ def _percentile(values: list[float], quantile: float) -> float:
         return 0.0
     index = max(0, min(len(ordered) - 1, round((len(ordered) - 1) * quantile)))
     return ordered[index]
+
+
+def _job_runs_isolados(
+    glue_client,
+    name: str,
+    cutoff: datetime,
+    *,
+    include_overlapping: bool = False,
+) -> tuple[list[dict], bool]:
+    """As execuções do job, e se elas puderam ser lidas.
+
+    Devolve `(runs, False)` em vez de propagar: a configuração do job veio do
+    `GetJobs` e continua válida, só o histórico é que falta. Zero execução
+    porque ninguém rodou e zero execução porque não deu para ler são coisas
+    diferentes, e o segundo caso precisa chegar ao relatório dizendo isso.
+    """
+    try:
+        return _job_runs(
+            glue_client, name, cutoff, include_overlapping=include_overlapping
+        ), True
+    except Exception:
+        return [], False
 
 
 def _job_runs(
