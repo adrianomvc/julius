@@ -24,6 +24,8 @@ from julius.collection.collectors import (
     datawarm,
     redshift,
     redshift_cost,
+    s3,
+    s3_cost,
     sagemaker,
     schedules,
     stepfunctions,
@@ -230,6 +232,59 @@ def _apply_touches(ctx: CollectionContext, stats: dict) -> None:
 
 def _event_log_jobs(ctx: CollectionContext) -> list:
     return [job for job in ctx.account.glue_jobs if job.spark_event_logs_path]
+
+
+def _s3_scope(ctx: CollectionContext) -> list[tuple[str, str, str]]:
+    """O escopo de S3, derivado do inventário já coletado, e memorizado.
+
+    Três fontes precisam da mesma lista, e ela depende de tabelas, jobs e
+    workgroups — por isso as fontes de S3 rodam depois deles.
+    """
+    if "s3_prefixes" not in ctx.flags:
+        ctx.flags["s3_prefixes"] = s3.known_prefixes(ctx.account)
+    return ctx.flags["s3_prefixes"]
+
+
+def _collect_s3_prefixes(ctx: CollectionContext) -> list:
+    """Um `collect_prefixes` por tipo: o limiar de obsolescência é por tipo.
+
+    Resultado de query vence em um dia, event log em trinta, staging em sete.
+    Uma chamada só com um limiar médio marcaria como velho o que não é e
+    perderia o que é.
+    """
+    thresholds = ctx.config.thresholds
+    por_tipo = {
+        "athena_results": thresholds.s3_athena_results_stale_days,
+        "spark_logs": thresholds.s3_spark_logs_stale_days,
+        "staging": thresholds.s3_staging_stale_days,
+        "table_location": thresholds.s3_spark_logs_stale_days,
+    }
+    client = ctx.client("s3")
+    out: list = []
+    for kind, stale_after in por_tipo.items():
+        conhecidos = [item for item in _s3_scope(ctx) if item[1] == kind]
+        if not conhecidos:
+            continue
+        out.extend(
+            s3.collect_prefixes(
+                client,
+                known=conhecidos,
+                window=ctx.window,
+                stale_after_days=stale_after,
+            )
+        )
+    return out
+
+
+def _flag_partial_s3_listing(
+    ctx: CollectionContext, result: Any, entry: CollectionHealth
+) -> None:
+    """Prefixo listado até o teto não pode passar por prefixo listado inteiro."""
+    if any(not item.listing_complete for item in result):
+        entry.status = "partial"
+        entry.error_category = "bounded_or_incomplete"
+        entry.impact = "objetos antigos contados somente sobre a parte listada"
+        entry.next_action = "revisar os prefixos truncados antes de agir sobre volume"
 
 
 def _collect_catalog(ctx: CollectionContext) -> list:
@@ -473,6 +528,84 @@ SOURCES: tuple[Source, ...] = (
         count=lambda analysis: len(analysis.queries) if analysis else 0,
         impact="linhagem de leitura e oportunidades Athena ficam incompletas",
         next_action="validar permissões read-only do Athena",
+    ),
+    Source(
+        # Depende de tabelas, jobs e workgroups: o escopo de S3 é derivado do
+        # inventário, nunca descoberto com ListBuckets.
+        name="Amazon S3",
+        collect=lambda ctx: s3.collect_buckets(
+            ctx.client("cloudwatch"),
+            ctx.client("s3"),
+            names=s3.bucket_names(_s3_scope(ctx)),
+            window=ctx.window,
+        ),
+        into="s3_buckets",
+        count=len,
+        enabled=lambda ctx: bool(_s3_scope(ctx)),
+        disabled_category="no_data",
+        disabled_impact="tamanho e composição dos buckets não são avaliados",
+        disabled_next_action=(
+            "coletar catálogo, jobs ou workgroups — o escopo de S3 sai deles"
+        ),
+        impact="tamanho e versionamento dos buckets ficam desconhecidos",
+        next_action="validar cloudwatch:GetMetricStatistics e s3:GetBucketVersioning",
+    ),
+    Source(
+        name="S3 Prefixes",
+        collect=_collect_s3_prefixes,
+        into="s3_prefixes",
+        count=len,
+        enabled=lambda ctx: bool(_s3_scope(ctx)),
+        disabled_category="no_data",
+        disabled_impact="resultados, event logs e staging acumulados não são avaliados",
+        disabled_next_action=(
+            "coletar catálogo, jobs ou workgroups — o escopo de S3 sai deles"
+        ),
+        impact="acúmulo em prefixos conhecidos permanece invisível",
+        next_action="validar s3:ListBucket nos prefixos do inventário",
+        after=_flag_partial_s3_listing,
+    ),
+    Source(
+        name="S3 Multipart Uploads",
+        collect=lambda ctx: s3.collect_multipart_uploads(
+            ctx.client("s3"),
+            names=s3.bucket_names(_s3_scope(ctx)),
+            window=ctx.window,
+        ),
+        into="s3_multipart",
+        count=len,
+        enabled=lambda ctx: bool(_s3_scope(ctx)),
+        disabled_category="no_data",
+        disabled_impact="uploads abandonados não são avaliados",
+        disabled_next_action=(
+            "coletar catálogo, jobs ou workgroups — o escopo de S3 sai deles"
+        ),
+        impact=(
+            "uploads iniciados e nunca concluídos continuam cobrando sem aparecer "
+            "em nenhuma listagem de objetos"
+        ),
+        next_action="validar s3:ListMultipartUploads e s3:ListParts",
+    ),
+    Source(
+        # Depende do inventário de buckets para ratear o armazenamento.
+        name="S3 Cost Explorer",
+        collect=lambda ctx: s3_cost.allocate_costs(
+            ctx.account,
+            s3_cost.collect_s3_costs(
+                ctx.client("ce"),
+                window=ctx.window,
+                markers=ctx.config.s3_cost.usage_type_markers,
+                version=ctx.config.s3_cost.version,
+            ),
+            ctx.config.s3_cost.storage_buckets,
+        ),
+        into="s3_cost_coverage",
+        default=lambda: None,
+        count=lambda coverage: 1 if coverage and coverage.buckets else 0,
+        expected=lambda ctx: 1 if ctx.account.s3_buckets else 0,
+        data_through=lambda coverage: coverage.data_through if coverage else "",
+        impact="economia de exclusão fica sem cobrança real para ancorar",
+        next_action="validar ce:GetCostAndUsage com GroupBy USAGE_TYPE",
     ),
     Source(
         name="SageMaker Studio",

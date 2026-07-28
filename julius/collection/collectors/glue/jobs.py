@@ -305,9 +305,11 @@ def collect_tables(glue_client, databases: Sequence[str]) -> list[Table]:
         for page in paginator.paginate(DatabaseName=db_name):
             for raw in page.get("TableList", []):
                 params = raw.get("Parameters", {}) or {}
+                descriptor = raw.get("StorageDescriptor") or {}
                 tables.append(
                     Table(
                         name=f"{db_name}.{raw['Name']}",
+                        location=str(descriptor.get("Location") or ""),
                         written_by=params.get("julius:written_by")
                         or params.get("written_by")
                         or params.get("producer_job"),

@@ -263,3 +263,59 @@ def staging_prefixes(locations: list[tuple[str, str]]) -> list[tuple[str, str, s
         for marker in STAGING_MARKERS
         if location
     ]
+
+
+def known_prefixes(account: Any) -> list[tuple[str, str, str]]:
+    """Os prefixos que o inventário já conhece, como `(location, kind, ativo)`.
+
+    O escopo é derivado, nunca descoberto: cada caminho aqui veio de um recurso
+    que outra fonte já coletou — a location da tabela no catálogo, o
+    `--spark-event-logs-path` do job, a saída de resultados do workgroup. É o
+    que permite inventariar S3 sem `ListBuckets` e sem varrer bucket atrás de
+    prefixo, que custaria dinheiro para descobrir custo.
+    """
+    out: list[tuple[str, str, str]] = []
+    table_locations: list[tuple[str, str]] = []
+    for table in getattr(account, "tables", []) or []:
+        location = str(getattr(table, "location", "") or "")
+        if not location:
+            continue
+        out.append((location, "table_location", table.name))
+        table_locations.append((location, table.name))
+    for job in getattr(account, "glue_jobs", []) or []:
+        path = str(getattr(job, "spark_event_logs_path", "") or "")
+        if path:
+            out.append((path, "spark_logs", job.name))
+    coverage = getattr(account, "athena_coverage", None)
+    for workgroup, location in (
+        getattr(coverage, "workgroup_output_locations", {}) or {}
+    ).items():
+        if location:
+            out.append((str(location), "athena_results", workgroup))
+    out.extend(staging_prefixes(table_locations))
+    # Duas tabelas podem apontar para a mesma location; listar o prefixo duas
+    # vezes cobraria dois requests para a mesma resposta.
+    seen: set[str] = set()
+    unique: list[tuple[str, str, str]] = []
+    for location, kind, asset in out:
+        key = f"{kind}|{location.rstrip('/')}"
+        if key in seen:
+            continue
+        seen.add(key)
+        unique.append((location, kind, asset))
+    return unique
+
+
+def bucket_names(prefixes: list[tuple[str, str, str]]) -> list[str]:
+    """Os buckets que aparecem nos prefixos conhecidos, sem `ListBuckets`.
+
+    Descobrir bucket exigiria `s3:ListAllMyBuckets`, que ampliaria o alcance da
+    credencial que o produto pede. O inventário responde a mesma pergunta para
+    os buckets que importam: aqueles onde a conta efetivamente tem alguma coisa.
+    """
+    names: list[str] = []
+    for location, _kind, _asset in prefixes:
+        parsed = parse_location(location)
+        if parsed and parsed[0] not in names:
+            names.append(parsed[0])
+    return names
