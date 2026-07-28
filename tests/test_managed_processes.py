@@ -34,12 +34,11 @@ _MONITORIA = "analytics-gluejob-mdp-custom-metrics"
     [
         _MONITORIA,
         "ANALYTICS-GLUEJOB-MDP-CUSTOM-METRICS",
-        # O token no fim, no começo e no meio: a posição não decide.
-        "consumer-avi-analytics-data-warmer-glue",
+        # Prefixo `analytics-data`: o que vem depois dele não importa.
         "analytics-data-warmer-glue-processa",
         "analytics-data-warmer-glue-v2",
-        "qualquer-prefixo-analytics-data-warm-sfn",
         "analytics-data-warm-sfn-orquestrador",
+        "ANALYTICS-DATA-WARMER-GLUE",
     ],
 )
 def test_platform_processes_are_recognized(nome):
@@ -51,12 +50,15 @@ def test_platform_processes_are_recognized(nome):
     [
         "agrega_vendas",
         "",
+        # Mencionar o texto no meio do nome não faz o job ser da plataforma: a
+        # âncora é o começo. Este é um job da conta.
+        "consumer-avi-analytics-data-warmer-glue",
         # O prefixo `analytics-` sozinho não é critério: ele é a convenção de
         # nomenclatura do domínio, e os jobs da própria conta também o usam.
-        # Ignorar por prefixo apagaria justamente onde está a economia.
+        # Ignorar por ele apagaria justamente onde está a economia.
         "analytics-vendas-diario",
         "analytics-etl-clientes",
-        # Parecido não é igual: a monitoria é nome exato, não token.
+        # Parecido não é igual: a monitoria é nome exato, não prefixo.
         "analytics-gluejob-mdp-custom-metrics-v2",
     ],
 )
@@ -168,7 +170,7 @@ def test_the_manifest_says_which_processes_were_left_out():
     conta = Account(
         account_id="1",
         glue_jobs=[GlueJob(name=_MONITORIA), GlueJob(name="agrega_vendas")],
-        state_machines=[StateMachine(name="orquestra-analytics-data-warm-sfn")],
+        state_machines=[StateMachine(name="analytics-data-warm-sfn-orquestra")],
     )
 
     manifesto = build_manifest(
@@ -186,7 +188,7 @@ def test_the_manifest_says_which_processes_were_left_out():
 
     linha = next(item for item in manifesto if item["k"] == "processos da plataforma")
     assert _MONITORIA in linha["v"]
-    assert "orquestra-analytics-data-warm-sfn" in linha["v"]
+    assert "analytics-data-warm-sfn-orquestra" in linha["v"]
     assert "agrega_vendas" not in linha["v"]
 
 
