@@ -6,6 +6,10 @@ tabelas sobre as quais esta conta não pode agir. Este arquivo cobra as duas
 coisas: que o filtro exista, e que ele aconteça **antes** do `get_tables` — um
 filtro aplicado depois economiza memória e não economiza tempo, que é o
 problema.
+
+São três os bancos da conta, e eles não têm a mesma forma: o compartilhado
+carrega o nome da conta, `workspace_db` e `sagemaker_featurestore` são fixos.
+Uma regra de sufixo pegaria só o primeiro.
 """
 
 from __future__ import annotations
@@ -21,10 +25,15 @@ from julius.collection.scope import CatalogScope
 from julius.collection.window import AnalysisWindow, BillingMonth
 from julius.config import DEFAULT_CONFIG
 
+_DA_CONTA = "database_db_compartilhado_consumer_avi"
+
+#: Um catálogo como a conta o enxerga: o dela, os fixos, e o mesh inteiro.
 _MESH = [
-    "dbcompartilhado_consumer-avi",
-    "dbcompartilhado_consumer-nova",
-    "dbcompartilhado_consumer-atlas",
+    _DA_CONTA,
+    "workspace_db",
+    "sagemaker_featurestore",
+    "database_db_compartilhado_consumer_nova",
+    "database_db_compartilhado_consumer_atlas",
     "default",
 ]
 
@@ -43,44 +52,63 @@ def _glue():
 # --------------------------------------------------------------------------
 
 
-def test_the_account_suffix_keeps_only_its_own_shared_database():
-    scope = CatalogScope(account_name="consumer-avi")
+def test_the_three_databases_of_the_account_are_kept_and_the_mesh_is_not():
+    escolhidos = CatalogScope(account_name="avi").select(_MESH)
 
-    assert scope.select(_MESH) == ["dbcompartilhado_consumer-avi"]
-
-
-def test_separators_and_case_do_not_decide_anything():
-    """`consumer_avi` no cadastro e `Consumer-AVI` no banco são a mesma conta."""
-    scope = CatalogScope(account_name="consumer_avi")
-
-    assert scope.select(["dbCompartilhado_Consumer-AVI"]) == [
-        "dbCompartilhado_Consumer-AVI"
-    ]
+    assert escolhidos == [_DA_CONTA, "workspace_db", "sagemaker_featurestore"]
 
 
-def test_a_prefix_match_is_not_a_suffix_match():
-    """A conta vem no fim do nome; casar em qualquer posição pegaria vizinhos."""
-    scope = CatalogScope(account_name="avi")
+def test_the_fixed_databases_would_be_lost_by_a_suffix_rule():
+    """`workspace_db` não termina com o nome de conta nenhuma — e é da conta."""
+    escolhidos = CatalogScope(account_name="avi").select(
+        ["workspace_db", "sagemaker_featurestore"]
+    )
 
-    assert scope.select(["avi_dbcompartilhado", "db_avi"]) == ["db_avi"]
+    assert escolhidos == ["workspace_db", "sagemaker_featurestore"]
+
+
+def test_a_neighbours_database_does_not_pass_for_ours():
+    """`consumer_navi` termina em `avi`; o separador é o que impede o engano."""
+    vizinho = "database_db_compartilhado_consumer_navi"
+
+    assert CatalogScope(account_name="avi").select([vizinho, _DA_CONTA]) == [_DA_CONTA]
+
+
+@pytest.mark.parametrize("conta", ["avi", "AVI", "consumer-avi", "CONSUMER_AVI"])
+def test_the_registry_name_matches_however_it_is_written(conta):
+    """O cadastro às vezes chama a conta de `consumer-avi`, às vezes de `avi`."""
+    assert CatalogScope(account_name=conta).select(_MESH)[0] == _DA_CONTA
+
+
+def test_case_and_separators_in_the_database_do_not_decide_anything():
+    escritas = ["DATABASE_DB_COMPARTILHADO_CONSUMER_AVI", "workspace-db"]
+
+    assert CatalogScope(account_name="avi").select(escritas) == escritas
 
 
 def test_an_explicit_list_wins_over_the_naming_rule():
     """A saída de emergência para ambiente sem a convenção de nome."""
-    scope = CatalogScope(
-        account_name="consumer-avi", databases=("default", "dbcompartilhado_consumer-nova")
-    )
+    escopo = CatalogScope(account_name="avi", databases=("default", "workspace_db"))
 
-    assert scope.select(_MESH) == ["dbcompartilhado_consumer-nova", "default"]
+    assert escopo.select(_MESH) == ["workspace_db", "default"]
 
 
 def test_no_scope_declared_keeps_every_database():
     """Comportamento antigo preservado — e declarado como tal em `rule`."""
-    scope = CatalogScope()
+    escopo = CatalogScope()
 
-    assert scope.select(_MESH) == _MESH
-    assert scope.declared is False
-    assert "todos os bancos" in scope.rule
+    assert escopo.select(_MESH) == _MESH
+    assert escopo.declared is False
+    assert "todos os bancos" in escopo.rule
+
+
+def test_the_rule_names_the_three_databases_it_looked_for():
+    """Quando nada casa, a saúde precisa dizer o que foi procurado."""
+    regra = CatalogScope(account_name="avi").rule
+
+    assert _DA_CONTA in regra
+    assert "workspace_db" in regra
+    assert "sagemaker_featurestore" in regra
 
 
 # --------------------------------------------------------------------------
@@ -91,16 +119,13 @@ def test_no_scope_declared_keeps_every_database():
 def test_tables_are_read_only_from_the_databases_in_scope():
     """O Stubber é a prova: um `get_tables` a mais aqui é uma exceção.
 
-    O Stubber falha quando o código faz uma chamada que não foi enfileirada.
-    São enfileirados `get_databases` e **um** `get_tables`, do banco da conta —
-    se o coletor tocasse nos outros três bancos do mesh, este teste quebraria.
+    São enfileirados `get_databases` e **três** `get_tables`, um por banco da
+    conta — se o coletor tocasse nos bancos do mesh, este teste quebraria.
     """
     glue = _glue()
     stub = Stubber(glue)
     stub.add_response(
-        "get_databases",
-        {"DatabaseList": [{"Name": name} for name in _MESH]},
-        {},
+        "get_databases", {"DatabaseList": [{"Name": nome} for nome in _MESH]}, {}
     )
     stub.add_response(
         "get_tables",
@@ -108,22 +133,27 @@ def test_tables_are_read_only_from_the_databases_in_scope():
             "TableList": [
                 {
                     "Name": "vendas",
-                    "Parameters": {"julius:written_by": "agrega_vendas", "Owner": "squad-avi"},
+                    "Parameters": {
+                        "julius:written_by": "agrega_vendas",
+                        "Owner": "squad-avi",
+                    },
                 }
             ]
         },
-        {"DatabaseName": "dbcompartilhado_consumer-avi"},
+        {"DatabaseName": _DA_CONTA},
     )
+    for nome in ("workspace_db", "sagemaker_featurestore"):
+        stub.add_response("get_tables", {"TableList": []}, {"DatabaseName": nome})
     stub.activate()
 
-    names = jobs.list_database_names(glue)
-    chosen = CatalogScope(account_name="consumer-avi").select(names)
-    tables = jobs.collect_tables(glue, chosen)
+    nomes = jobs.list_database_names(glue)
+    escolhidos = CatalogScope(account_name="avi").select(nomes)
+    tabelas = jobs.collect_tables(glue, escolhidos)
 
     stub.assert_no_pending_responses()
-    assert [table.name for table in tables] == ["dbcompartilhado_consumer-avi.vendas"]
-    assert tables[0].written_by == "agrega_vendas"
-    assert tables[0].owner_tag == "squad-avi"
+    assert [tabela.name for tabela in tabelas] == [f"{_DA_CONTA}.vendas"]
+    assert tabelas[0].written_by == "agrega_vendas"
+    assert tabelas[0].owner_tag == "squad-avi"
 
 
 # --------------------------------------------------------------------------
@@ -149,13 +179,15 @@ def _context(scope: CatalogScope, glue) -> collect_module.CollectionContext:
     )
 
 
-def _stubbed_catalog(glue, *, tables_for: list[str]):
+def _stubbed_catalog(glue, *, tables_for: list[str], catalog: list[str] | None = None):
     stub = Stubber(glue)
     stub.add_response(
-        "get_databases", {"DatabaseList": [{"Name": name} for name in _MESH]}, {}
+        "get_databases",
+        {"DatabaseList": [{"Name": nome} for nome in (catalog or _MESH)]},
+        {},
     )
-    for name in tables_for:
-        stub.add_response("get_tables", {"TableList": []}, {"DatabaseName": name})
+    for nome in tables_for:
+        stub.add_response("get_tables", {"TableList": []}, {"DatabaseName": nome})
     stub.activate()
     return stub
 
@@ -163,22 +195,33 @@ def _stubbed_catalog(glue, *, tables_for: list[str]):
 def test_the_scope_publishes_how_many_databases_it_left_out():
     """Menos tabelas por escopo e menos tabelas por permissão se parecem."""
     glue = _glue()
-    _stubbed_catalog(glue, tables_for=["dbcompartilhado_consumer-avi"])
-    ctx = _context(CatalogScope(account_name="consumer-avi"), glue)
+    _stubbed_catalog(
+        glue, tables_for=[_DA_CONTA, "workspace_db", "sagemaker_featurestore"]
+    )
+    ctx = _context(CatalogScope(account_name="avi"), glue)
 
     collect_module._collect_catalog(ctx)
 
     entry = ctx.pending_health[-1]
     assert entry.source == "Glue Catalog Scope"
     assert entry.status == "ok"
-    assert (entry.collected, entry.expected) == (1, 4)
-    assert entry.impact == "bancos terminados em 'consumer-avi'"
+    assert (entry.collected, entry.expected) == (3, 6)
+    assert _DA_CONTA in entry.impact
     assert entry.affects_status is False
 
 
 def test_a_scope_that_matches_nothing_is_partial_and_says_what_it_looked_for():
+    """Só acontece quando o catálogo não tem nenhum dos três.
+
+    Errar o nome da conta sozinho não zera o escopo: `workspace_db` e
+    `sagemaker_featurestore` entram por nome fixo, independentemente dela.
+    """
     glue = _glue()
-    _stubbed_catalog(glue, tables_for=[])
+    _stubbed_catalog(
+        glue,
+        tables_for=[],
+        catalog=["database_db_compartilhado_consumer_nova", "default"],
+    )
     ctx = _context(CatalogScope(account_name="conta-que-nao-existe"), glue)
 
     assert collect_module._collect_catalog(ctx) == []
@@ -186,7 +229,7 @@ def test_a_scope_that_matches_nothing_is_partial_and_says_what_it_looked_for():
     entry = ctx.pending_health[-1]
     assert entry.status == "partial"
     assert entry.error_category == "no_data"
-    assert "conta-que-nao-existe" in entry.next_action
+    assert "conta_que_nao_existe" in entry.next_action
 
 
 def test_scanning_the_whole_mesh_is_allowed_but_never_silent():
@@ -200,12 +243,5 @@ def test_scanning_the_whole_mesh_is_allowed_but_never_silent():
     entry = ctx.pending_health[-1]
     assert entry.status == "partial"
     assert entry.error_category == "not_configured"
-    assert entry.collected == entry.expected == 4
+    assert entry.collected == entry.expected == 6
     assert "--account-name" in entry.next_action
-
-
-@pytest.mark.parametrize("suffix", ["consumer-avi", "CONSUMER_AVI", "consumeravi"])
-def test_the_registry_name_matches_however_it_is_written(suffix):
-    assert CatalogScope(account_name=suffix).select(_MESH) == [
-        "dbcompartilhado_consumer-avi"
-    ]
