@@ -338,7 +338,10 @@ O histórico padrão fica em `data/state/julius.duckdb`; os Parquets ficam em
   validado após a mudança".
 - **Gate de acionabilidade**: sem ativo/evidência/ação/validação/responsável a
   oportunidade vai para *Investigações necessárias* (bucket `investigar_primeiro`).
-- **E-mail = plano de ação; `report.html` = evidência.** Design em `design/`.
+- **E-mail = plano de ação; `report.html` = evidência.** O desenho vigente é
+  `julius/reporting/templates/design/`, com o `sha256` cravado em
+  `tests/test_design_template.py`: ele se mantém trocando o arquivo por uma
+  versão nova do designer, nunca editando a cópia.
 
 ## Dados de entrada
 
