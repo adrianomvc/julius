@@ -6,6 +6,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
+from typing import Any
 
 from julius.collection.artifacts import (
     GlueCodeArtifact,
@@ -24,6 +25,12 @@ from julius.findings.promotion import promote
 from julius.findings.signal import Signal
 from julius.governance import compute_candidates
 from julius.graph import ProcessGraph, build_process_graph, enrich_opportunities
+from julius.knowledge.recurrence import (
+    consumption_dpu_hours,
+    deserves_signal,
+    is_recurrent,
+    runs_per_month,
+)
 from julius.knowledge.rules import collect_signals, run_all
 from julius.knowledge.rules.glue.code import rules as glue_code
 from julius.reporting import ProductKPIs, compute_kpis
@@ -143,6 +150,7 @@ def analyze_account(
     graph = build_process_graph(account)
     opportunities = run_all(account, config, scan_id)
     signals = collect_signals(account, config)
+    opportunities, signals = _drop_non_recurrent(account, config, opportunities, signals)
     if code_artifacts:
         code_opportunities, code_signals = glue_code.detect(
             account, code_artifacts, config, scan_id
@@ -304,6 +312,78 @@ def _allocate_billing(account: Account, config: Config) -> None:
         redshift_cost.allocate_costs(
             account, redshift_coverage, config.redshift_cost.compute_buckets
         )
+
+
+def _drop_non_recurrent(
+    account: Account,
+    config: Config,
+    opportunities: list[Opportunity],
+    signals: list[Signal],
+) -> tuple[list[Opportunity], list[Signal]]:
+    """Achado de ajuste só vale sobre processo que repete.
+
+    Sobre uma execução única não há média nem perfil — há uma amostra. O que
+    sai daqui não é ruído: é recomendação que o produto não consegue sustentar.
+
+    O que é caro e não repete não some: vira sinal, que é hipótese sem economia
+    atribuída e fora do ranking. É o único jeito de suprimir a análise sem
+    suprimir o dinheiro junto.
+    """
+    minimo = config.thresholds.recurring_runs_min
+    processos = [
+        (asset_type, process)
+        for asset_type, inventory in (
+            ("glue_job", account.glue_jobs),
+            ("state_machine", account.state_machines),
+        )
+        for process in inventory
+    ]
+    esporadicos = {
+        (asset_type, process.name): process
+        for asset_type, process in processos
+        if not is_recurrent(process, minimo)
+    }
+    if not esporadicos:
+        return opportunities, signals
+
+    # A chave carrega o tipo do ativo, então achado sobre o serviço
+    # (`glue_service`) ou sobre uma tabela nunca casa aqui — esta regra é sobre
+    # ajuste de processo, e só processo entra no dicionário.
+    mantidos = [
+        item
+        for item in opportunities
+        if (item.asset_type, item.asset_name) not in esporadicos
+    ]
+    caros = [
+        _non_recurrent_signal(asset_type, process, minimo)
+        for (asset_type, _name), process in esporadicos.items()
+        if deserves_signal(process)
+    ]
+    return mantidos, signals + caros
+
+
+def _non_recurrent_signal(asset_type: str, process: Any, minimo: int) -> Signal:
+    execucoes = runs_per_month(process)
+    consumo = consumption_dpu_hours(process)
+    return Signal(
+        kind="config",
+        rule_id="PROCESS-NON-RECURRING-COST",
+        asset_type=asset_type,
+        asset_name=process.name,
+        observation=(
+            f"{execucoes:.1f} execuções/mês (recorrente a partir de {minimo}) "
+            f"consumindo {consumo:.1f} DPU-hora na janela"
+        ),
+        question=(
+            "O processo deveria rodar com mais frequência e está falhando em "
+            "disparar, ou é pontual por natureza? Se for pontual, o consumo "
+            "justifica o que ele entrega? Nenhum ajuste de capacidade é "
+            "afirmável sobre este histórico."
+        ),
+        missing_evidence=[
+            f"execuções recorrentes na janela (observadas {execucoes:.1f}/mês)"
+        ],
+    )
 
 
 def _promote_confirmed(
