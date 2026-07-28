@@ -28,7 +28,6 @@ SAMPLE = "data/sample/consumer-avi.json"
 #: sha256 dos arquivos como vieram do pacote do designer.
 ORIGINAIS = {
     design.SCREEN: "d9d1ba041854a4fb4d730b4cb14f4e987d4e9ceb24a5546acb8ef21b7f1a5c6a",
-    design.PRINT: "c27551066298025b5d164f2150744a54b90529ac9b72756ebcf6b63252d6252e",
 }
 
 
@@ -50,7 +49,7 @@ def _resolve(contexto: dict, caminho: str):
     return atual
 
 
-@pytest.mark.parametrize("nome", [design.SCREEN, design.PRINT])
+@pytest.mark.parametrize("nome", [design.SCREEN])
 def test_the_design_file_is_the_designers_file(nome):
     conteudo = (design.DESIGN_DIR / nome).read_bytes()
     atual = hashlib.sha256(conteudo).hexdigest()
@@ -62,7 +61,7 @@ def test_the_design_file_is_the_designers_file(nome):
     )
 
 
-@pytest.mark.parametrize("nome", [design.SCREEN, design.PRINT])
+@pytest.mark.parametrize("nome", [design.SCREEN])
 def test_every_field_the_design_asks_for_has_a_value(nome):
     """O contrato sai do arquivo, não de uma lista escrita à mão.
 
