@@ -63,11 +63,28 @@ class AthenaTelemetry:
 
     coverage: AthenaCoverage
     failures: dict[str, str] = field(default_factory=dict)
+    #: Fonte que respondeu, mas só até onde o teto de paginação deixou. Não é
+    #: falha — é evidência medida e incompleta, e as duas não podem virar a
+    #: mesma linha na saúde.
+    partials: dict[str, str] = field(default_factory=dict)
     _touched: set[str] = field(default_factory=set)
 
     def used(self, source: str) -> None:
         """Marca que a fonte foi consultada, mesmo que sem incidente."""
         self._touched.add(source)
+
+    def partial(self, source: str, *, category: str, detail: str) -> None:
+        """Evidência parcial: a fonte respondeu, a leitura foi interrompida.
+
+        Só a primeira ocorrência vira `gap`. O truncamento acontece por tabela,
+        e uma conta com quinhentas tabelas grandes produziria quinhentas linhas
+        dizendo a mesma coisa — o relatório precisa do fato, não do inventário.
+        """
+        self.used(source)
+        if source in self.partials:
+            return
+        self.partials[source] = category
+        self.coverage.gaps.append(f"{source}: {detail}")
 
     def failed(self, source: str, exc: Exception, *, detail: str = "") -> None:
         self.used(source)
@@ -94,10 +111,16 @@ class AthenaTelemetry:
                 continue
             impact, next_action = SOURCES[source]
             category = self.failures.get(source, "")
+            # Falha manda sobre parcial: a fonte que quebrou não é a fonte que
+            # respondeu até onde o teto deixou.
+            status = "unavailable" if category else "ok"
+            if not category and source in self.partials:
+                status = "partial"
+                category = self.partials[source]
             out.append(
                 CollectionHealth(
                     source=source,
-                    status="unavailable" if category else "ok",
+                    status=status,
                     started_at=moment,
                     completed_at=moment,
                     error_category=category,

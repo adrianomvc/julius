@@ -38,7 +38,9 @@ class FakeSts:
 class FakeSession:
     region_name = "sa-east-1"
 
-    def client(self, name):
+    # `**_kwargs` porque a coleta passa `config=` — retry adaptativo e timeouts
+    # não são opcionais no caminho real.
+    def client(self, name, **_kwargs):
         return FakeSts() if name == "sts" else object()
 
 
@@ -337,3 +339,39 @@ def test_a_collection_with_no_measured_time_shows_nothing():
     assert slowest_sources([CollectionHealth(source="Cost Explorer")]) == []
 
 
+class _CountingSession:
+    region_name = "sa-east-1"
+
+    def __init__(self):
+        self.built: list[str] = []
+        self.configs: list[object] = []
+
+    def client(self, name, **kwargs):
+        self.built.append(name)
+        self.configs.append(kwargs.get("config"))
+        return object()
+
+
+def test_each_service_client_is_built_once_and_configured():
+    """Montar o cliente lê o modelo do serviço; `glue` aparece em cinco fontes.
+
+    E o `config` não é opcional: sem ele o botocore usa retry `legacy`, que
+    responde a throttling insistindo no ritmo que o causou.
+    """
+    session = _CountingSession()
+    context = collect_module.CollectionContext(
+        session=session,
+        window=AnalysisWindow.trailing(),
+        billing=BillingMonth.current(),
+        account=Account(account_id="123456789012"),
+        config=DEFAULT_CONFIG,
+    )
+
+    first = context.client("glue")
+    again = context.client("glue")
+    context.client("athena")
+
+    assert first is again
+    assert session.built == ["glue", "athena"]
+    assert all(item is not None for item in session.configs)
+    assert session.configs[0].retries["mode"] == "adaptive"

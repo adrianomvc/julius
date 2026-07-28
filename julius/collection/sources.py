@@ -42,6 +42,7 @@ from julius.collection.collectors.glue import (
 from julius.collection.health import CollectionRecorder
 from julius.collection.models import Account, CollectionHealth
 from julius.collection.scope import CatalogScope
+from julius.collection.session import make_client
 from julius.collection.window import AnalysisWindow, BillingMonth
 
 
@@ -77,8 +78,18 @@ class CollectionContext:
     # Entradas de saúde produzidas dentro de um coletor: o Athena consulta sete
     # dependências e cada uma vira fonte própria no relatório.
     pending_health: list[CollectionHealth] = field(default_factory=list)
+    _clients: dict[str, Any] = field(default_factory=dict, repr=False)
+
     def client(self, service: str) -> Any:
-        return self.session.client(service)
+        """Um cliente por serviço, criado uma vez.
+
+        Cada `session.client(...)` lê e monta o modelo do serviço. A fonte do
+        Athena sozinha pedia sete clientes, e `glue` era reconstruído em cinco
+        fontes diferentes — trabalho repetido antes da primeira chamada AWS.
+        """
+        if service not in self._clients:
+            self._clients[service] = make_client(self.session, service)
+        return self._clients[service]
 
 
 @dataclass(frozen=True)
