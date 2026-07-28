@@ -180,3 +180,47 @@ def test_a_platform_process_does_not_even_become_a_signal():
 
     assert analise.opportunities == []
     assert analise.signals == []
+
+
+# --------------------------------------------------------------------------
+# Contar execuções cala o streaming — e o streaming é o mais caro que existe
+# --------------------------------------------------------------------------
+
+
+def _streaming(nome: str, *, dias_ativos: float, **extras) -> GlueJob:
+    """Streaming aparece como **uma** execução longa, não como trinta."""
+    return _job(
+        nome,
+        runs=1,
+        command_type="gluestreaming",
+        active_seconds_window=dias_ativos * 86400,
+        **extras,
+    )
+
+
+def test_a_streaming_job_is_recurrent_even_with_a_single_run():
+    """Pelo critério de contagem, DPU 24x7 seria 'esporádico'."""
+    stream = _streaming("stream", dias_ativos=ANALYSIS_WINDOW_DAYS)
+
+    assert runs_per_month(stream) == pytest.approx(1.01, abs=0.02)
+    assert is_recurrent(stream, _MINIMO) is True
+
+
+def test_a_streaming_job_keeps_its_findings():
+    """A regressão que a contagem sozinha teria causado, em dinheiro."""
+    analise = _analise(
+        _streaming("stream", dias_ativos=ANALYSIS_WINDOW_DAYS, dpu_seconds=3600 * 1440)
+    )
+
+    assert [o for o in analise.opportunities if o.asset_name == "stream"]
+    assert [s for s in analise.signals if s.rule_id == "PROCESS-NON-RECURRING-COST"] == []
+
+
+def test_a_streaming_job_with_an_incident_is_still_continuous():
+    """Caiu alguns dias: é processo contínuo com incidente, não job esporádico."""
+    assert is_recurrent(_streaming("stream", dias_ativos=20), _MINIMO) is True
+
+
+def test_a_long_run_that_covers_little_of_the_window_is_not_continuous():
+    """Uma execução de dois dias num mês não é operação contínua."""
+    assert is_recurrent(_streaming("pontual", dias_ativos=2), _MINIMO) is False

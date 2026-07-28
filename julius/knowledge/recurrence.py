@@ -28,6 +28,12 @@ from julius.collection.settings import DAYS_PER_MONTH
 #: disso, apagar o processo inteiro não paga a atenção de quem leria o achado.
 NON_RECURRING_DPU_HOURS_MIN: float = 50.0
 
+#: Fração da janela em que o processo precisa ter ficado ativo para contar como
+#: contínuo. Metade é folgado de propósito: um streaming que caiu por alguns
+#: dias continua sendo um processo contínuo com um incidente, não um job
+#: esporádico.
+CONTINUOUS_WINDOW_FRACTION: float = 0.5
+
 
 def runs_per_month(process: Any) -> float:
     """Execuções por mês do processo, normalizadas pela janela observada.
@@ -47,9 +53,27 @@ def runs_per_month(process: Any) -> float:
     return execucoes * DAYS_PER_MONTH / janela
 
 
+def is_continuous(process: Any) -> bool:
+    """O processo ficou ativo durante boa parte da janela?
+
+    Contar execuções cala o job de streaming: ele roda ininterrupto e aparece
+    como **uma** execução na janela, não trinta. Pelo critério de contagem, o
+    processo mais caro que uma conta pode ter — DPU 24 por 7 — seria classificado
+    como esporádico e teria os achados suprimidos.
+
+    E o motivo pelo qual esporádico não se ajusta some aqui: não falta
+    observação sobre um job que rodou o mês inteiro, sobra.
+    """
+    janela = float(getattr(process, "window_days", 0) or 0)
+    ativo = float(getattr(process, "active_seconds_window", 0) or 0)
+    if janela <= 0 or ativo <= 0:
+        return False
+    return ativo >= janela * 86400 * CONTINUOUS_WINDOW_FRACTION
+
+
 def is_recurrent(process: Any, minimum_per_month: int) -> bool:
-    """O processo repete o bastante para um ajuste ser afirmável?"""
-    return runs_per_month(process) >= minimum_per_month
+    """O processo repete — ou dura — o bastante para um ajuste ser afirmável?"""
+    return runs_per_month(process) >= minimum_per_month or is_continuous(process)
 
 
 def consumption_dpu_hours(process: Any) -> float:
