@@ -168,6 +168,23 @@ def test_request_cost_scales_per_thousand():
     assert pricing.s3_request_cost("get", 1000) is None
 
 
+def test_retrieval_cost_combines_volume_and_requests():
+    from dataclasses import replace
+
+    pricing = replace(
+        Pricing.for_region(DEFAULT_REGION),
+        s3_retrieval_per_gb={"glacier_ir": 0.03},
+        s3_retrieval_request_per_1000={"glacier_ir": 0.01},
+    )
+
+    assert pricing.s3_retrieval_cost(
+        "glacier_ir", bytes_read=10 * 1024**3, requests=2_000
+    ) == pytest.approx(0.32)
+    assert pricing.s3_retrieval_cost(
+        "standard_ia", bytes_read=10 * 1024**3, requests=2_000
+    ) is None
+
+
 def test_the_s3_mapping_covers_every_class_the_rule_can_recommend():
     """Entrada faltando no mapa vira tarifa ausente depois do refresh."""
     from julius.knowledge.pricing.refresh import load_mapping

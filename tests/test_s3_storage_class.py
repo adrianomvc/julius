@@ -22,7 +22,9 @@ import pytest
 from julius.collection.models import (
     Account,
     AthenaQuery,
+    S3Bucket,
     S3BucketConfig,
+    S3CostCoverage,
     S3Prefix,
     Table,
 )
@@ -156,8 +158,8 @@ def test_the_read_date_can_come_from_the_athena_history_alone():
 # ---------------------------------------------------------------------------
 
 
-def test_the_saving_is_the_difference_between_classes_minus_the_transition():
-    """Mover para Glacier não economiza o preço do Glacier: a diferença."""
+def test_the_transition_is_one_time_not_subtracted_from_every_month():
+    """A transição reduz o primeiro mês, não a economia recorrente inteira."""
     conta = _conta(lido_em="2026-01-01T00:00:00+00:00")  # ~210 dias
 
     achado = storage_class.detect(conta, _config(), "scan")[0]
@@ -165,10 +167,15 @@ def test_the_saving_is_the_difference_between_classes_minus_the_transition():
     delta = _PRECOS["standard"] - _PRECOS["glacier_ir"]
     bruto = delta * 500
     transicao = 0.01 * 5000 / 1000
-    assert achado.estimation.estimated_saving == pytest.approx(
-        round(bruto - transicao, 2), abs=0.01
+    assert achado.estimation.estimated_saving == pytest.approx(round(bruto, 2))
+    assert achado.estimation.one_time_cost == pytest.approx(transicao)
+    assert achado.estimation.first_month_net_saving == pytest.approx(
+        round(bruto - transicao, 2)
     )
-    assert any("custo de transição" in item for item in achado.estimation.assumptions)
+    assert achado.estimation.break_even_months == pytest.approx(
+        round(transicao / bruto, 3)
+    )
+    assert any("custo pontual" in item for item in achado.estimation.assumptions)
 
 
 def test_a_small_file_prefix_is_never_recommended():
@@ -323,8 +330,202 @@ def test_only_the_hot_bytes_are_counted_in_a_mixed_prefix():
     achado = storage_class.detect(conta, _config(), "scan")[0]
 
     delta = _PRECOS["standard"] - _PRECOS["glacier_ir"]
-    esperado = delta * 300 - 0.01 * 3000 / 1000
+    esperado = delta * 300
     assert achado.estimation.estimated_saving == pytest.approx(round(esperado, 2), abs=0.01)
+
+
+def test_prefix_contract_access_evidence_is_consumed_before_catalog_fallback():
+    conta = _conta(
+        prefixos=[
+            _prefixo(
+                last_read_at="2026-01-01T00:00:00+00:00",
+                access_source="server_access_logs",
+                access_quality="best_effort",
+                read_coverage_days=210,
+                read_requests_window=0,
+                bytes_read_window=0,
+            )
+        ]
+    )
+
+    achado = storage_class.detect(conta, _config(), "scan")[0]
+
+    assert "server_access_logs" in " ".join(achado.evidence)
+    assert achado.estimation.method == "s3_storage_class_transition_v2"
+
+
+def test_old_object_access_date_without_cold_window_coverage_is_only_a_signal():
+    conta = _conta(
+        prefixos=[
+            _prefixo(
+                last_read_at="2026-01-01T00:00:00+00:00",
+                access_source="server_access_logs",
+                access_quality="best_effort",
+                read_coverage_days=30,
+            )
+        ]
+    )
+
+    assert storage_class.detect(conta, _config(), "scan") == []
+    assert len(storage_class.signals(conta, _config())) == 1
+
+
+def test_observed_zero_reads_needs_complete_coverage():
+    completo = _prefixo(
+        access_source="server_access_logs",
+        access_quality="best_effort",
+        read_coverage_days=120,
+        read_requests_window=0,
+        bytes_read_window=0,
+    )
+    parcial = _prefixo(
+        prefix="parcial/",
+        source_asset="db.parcial",
+        access_source="server_access_logs",
+        access_quality="partial",
+        read_coverage_days=120,
+        read_requests_window=0,
+        bytes_read_window=0,
+    )
+    conta = _conta(prefixos=[completo, parcial])
+
+    assert len(storage_class.detect(conta, _config(), "scan")) == 1
+    assert len(storage_class.signals(conta, _config())) == 1
+
+
+def test_expiration_before_break_even_suppresses_double_counting():
+    costly = _config()
+    costly = replace(
+        costly,
+        pricing=replace(
+            costly.pricing,
+            s3_request_per_1000={
+                **costly.pricing.s3_request_per_1000,
+                "lifecycle_transition": 1000.0,
+            },
+        ),
+    )
+    conta = _conta(
+        lido_em="2026-01-01T00:00:00+00:00",
+        prefixos=[_prefixo(oldest_object_age_days=100)],
+        configs=[
+            S3BucketConfig(
+                bucket="lake",
+                lifecycle_rules=[
+                    {"ID": "apaga", "Expiration": {"Days": 120}}
+                ],
+            )
+        ],
+    )
+
+    assert storage_class.detect(conta, costly, "scan") == []
+
+
+def test_overlapping_prefixes_are_not_counted_twice():
+    conta = _conta(
+        lido_em="2026-01-01T00:00:00+00:00",
+        prefixos=[
+            _prefixo(prefix="vendas/"),
+            _prefixo(prefix="vendas/ano=2025/", source_asset="db.vendas_2025"),
+        ],
+    )
+
+    achados = storage_class.detect(conta, _config(), "scan")
+
+    assert [item.asset_name for item in achados] == [
+        "s3://lake/vendas/ano=2025/"
+    ]
+
+
+def test_lifecycle_filter_only_suppresses_the_prefix_it_reaches():
+    conta = _conta(
+        lido_em="2026-01-01T00:00:00+00:00",
+        prefixos=[
+            _prefixo(
+                prefix="vendas/", last_read_at="2026-01-01T00:00:00+00:00"
+            ),
+            _prefixo(
+                prefix="estoque/", last_read_at="2026-01-01T00:00:00+00:00"
+            ),
+        ],
+        configs=[
+            S3BucketConfig(
+                bucket="lake",
+                lifecycle_rules=[
+                    {
+                        "ID": "vendas-frio",
+                        "Filter": {"Prefix": "vendas/"},
+                        "Transitions": [{"Days": 90}],
+                    }
+                ],
+            )
+        ],
+    )
+
+    achados = storage_class.detect(conta, _config(), "scan")
+
+    assert [item.asset_name for item in achados] == ["s3://lake/estoque/"]
+
+
+def test_glacier_flexible_requires_human_recovery_sla_confirmation():
+    conta = _conta(lido_em="2025-01-01T00:00:00+00:00")
+
+    achado = storage_class.detect(conta, _config(), "scan")[0]
+
+    assert achado.blocked is True
+    assert any("SLA" in item for item in achado.missing_evidence)
+
+
+def test_size_distribution_drives_target_billable_bytes():
+    physical = 500 * _GB
+    objects = 5_000_000
+    conta = _conta(
+        lido_em="2026-01-01T00:00:00+00:00",
+        prefixos=[
+            _prefixo(
+                object_count=objects,
+                object_count_by_class={"STANDARD": objects},
+                bytes_by_class_size={
+                    "STANDARD": {
+                        "1-128kb": float(4_000_000 * 1024),
+                        "1-64mb": float(physical - 4_000_000 * 1024),
+                    }
+                },
+                object_count_by_class_size={
+                    "STANDARD": {
+                        "1-128kb": 4_000_000,
+                        "1-64mb": 1_000_000,
+                    }
+                },
+            )
+        ],
+    )
+
+    achado = storage_class.detect(conta, _config(), "scan")[0]
+
+    assert achado.estimation.projected_bytes > physical
+
+
+def test_standard_baseline_is_anchored_in_reconciled_billing():
+    conta = _conta(
+        lido_em="2026-01-01T00:00:00+00:00",
+        s3_buckets=[
+            S3Bucket(
+                name="lake",
+                bytes_by_class={"StandardStorage": float(1000 * _GB)},
+            )
+        ],
+        s3_cost_coverage=S3CostCoverage(
+            buckets={"storage_standard": 100.0},
+            cost_quality="reconciled",
+        ),
+    )
+
+    achado = storage_class.detect(conta, _config(), "scan")[0]
+
+    assert achado.estimation.baseline_cost == 50.0
+    assert achado.estimation.baseline_quality == "allocated"
+    assert achado.estimation.saving_quality == "allocated_partial"
 
 
 def test_a_prefix_too_small_to_be_worth_the_conversation_is_skipped():

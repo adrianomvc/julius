@@ -83,6 +83,16 @@ class Pricing:
     # Popular com `julius pricing refresh --region <regiao>`.
     s3_storage_gb_month: dict[str, float] = field(default_factory=dict)
     s3_request_per_1000: dict[str, float] = field(default_factory=dict)
+    s3_retrieval_per_gb: dict[str, float] = field(default_factory=dict)
+    s3_retrieval_request_per_1000: dict[str, float] = field(default_factory=dict)
+    s3_minimum_billable_bytes: dict[str, int] = field(
+        default_factory=lambda: {
+            "standard_ia": 128 * 1024,
+            "glacier_ir": 128 * 1024,
+            # Glacier Flexible adiciona 40 KB de metadata faturável por objeto.
+            "glacier_flexible": 40 * 1024,
+        }
+    )
 
     @classmethod
     def for_region(cls, region: str = DEFAULT_REGION) -> Pricing:
@@ -102,6 +112,17 @@ class Pricing:
                 nome.removeprefix("request_").removesuffix("_per_1000"): float(valor)
                 for nome, valor in s3.items()
                 if nome.startswith("request_")
+            },
+            s3_retrieval_per_gb={
+                nome.removeprefix("retrieval_").removesuffix("_per_gb"): float(valor)
+                for nome, valor in s3.items()
+                if nome.startswith("retrieval_") and nome.endswith("_per_gb")
+            },
+            s3_retrieval_request_per_1000={
+                nome.removeprefix("retrieval_request_").removesuffix("_per_1000"): float(valor)
+                for nome, valor in s3.items()
+                if nome.startswith("retrieval_request_")
+                and nome.endswith("_per_1000")
             },
             # A região é a da tabela, não a pedida: se um dia divergirem, o
             # relatório carimba o que foi realmente usado.
@@ -165,6 +186,19 @@ class Pricing:
         if tarifa is None:
             return None
         return round(tarifa * requests / 1000.0, 8)
+
+    def s3_retrieval_cost(
+        self, target_class: str, *, bytes_read: int, requests: int
+    ) -> float | None:
+        """Custo de recuperação observado; `None` se falta alguma tarifa."""
+        per_gb = self.s3_retrieval_per_gb.get(target_class)
+        per_request = self.s3_retrieval_request_per_1000.get(target_class)
+        if per_gb is None or per_request is None:
+            return None
+        return round(
+            per_gb * bytes_read / (1024**3) + per_request * requests / 1000.0,
+            8,
+        )
 
     @property
     def provenance(self) -> str:

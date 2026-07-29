@@ -28,7 +28,7 @@ from julius.collection.collectors.s3_evidence import (
     parse_location,
 )
 from julius.collection.models import S3Bucket, S3MultipartUpload, S3Prefix
-from julius.collection.models.s3 import age_bucket
+from julius.collection.models.s3 import age_bucket, size_bucket
 from julius.collection.window import AnalysisWindow
 
 #: Sufixos que denunciam staging de execução Spark/Hadoop, não dado.
@@ -132,8 +132,13 @@ def _agregar(
         return entry
     entry.object_count = len(objects)
     entry.total_bytes = sum(int(item.get("Size") or 0) for item in objects)
+    entry.nonzero_object_count = sum(
+        1 for item in objects if int(item.get("Size") or 0) > 0
+    )
     entry.average_object_bytes = (
-        round(entry.total_bytes / entry.object_count) if entry.object_count else None
+        round(entry.total_bytes / entry.nonzero_object_count)
+        if entry.nonzero_object_count
+        else None
     )
 
     idades = [idade for item in objects if (idade := _age_days(item)) is not None]
@@ -151,6 +156,11 @@ def _agregar(
     por_classe: dict[str, float] = {}
     contagem_classe: dict[str, int] = {}
     por_idade: dict[str, float] = {}
+    contagem_idade: dict[str, int] = {}
+    por_tamanho: dict[str, float] = {}
+    contagem_tamanho: dict[str, int] = {}
+    classe_tamanho: dict[str, dict[str, float]] = {}
+    contagem_classe_tamanho: dict[str, dict[str, int]] = {}
     for item in objects:
         tamanho = int(item.get("Size") or 0)
         # `StorageClass` vem junto no `ListObjectsV2` e era descartado; ausente
@@ -158,12 +168,31 @@ def _agregar(
         classe = str(item.get("StorageClass") or "STANDARD")
         por_classe[classe] = por_classe.get(classe, 0.0) + tamanho
         contagem_classe[classe] = contagem_classe.get(classe, 0) + 1
+        faixa_tamanho = size_bucket(tamanho)
+        por_tamanho[faixa_tamanho] = por_tamanho.get(faixa_tamanho, 0.0) + tamanho
+        contagem_tamanho[faixa_tamanho] = (
+            contagem_tamanho.get(faixa_tamanho, 0) + 1
+        )
+        classe_tamanho.setdefault(classe, {})[faixa_tamanho] = (
+            classe_tamanho.setdefault(classe, {}).get(faixa_tamanho, 0.0)
+            + tamanho
+        )
+        contagem_classe_tamanho.setdefault(classe, {})[faixa_tamanho] = (
+            contagem_classe_tamanho.setdefault(classe, {}).get(faixa_tamanho, 0)
+            + 1
+        )
         if (idade := _age_days(item)) is not None:
             faixa = age_bucket(idade)
             por_idade[faixa] = por_idade.get(faixa, 0.0) + tamanho
+            contagem_idade[faixa] = contagem_idade.get(faixa, 0) + 1
     entry.bytes_by_class = por_classe
     entry.object_count_by_class = contagem_classe
     entry.bytes_by_age = por_idade
+    entry.object_count_by_age = contagem_idade
+    entry.bytes_by_size = por_tamanho
+    entry.object_count_by_size = contagem_tamanho
+    entry.bytes_by_class_size = classe_tamanho
+    entry.object_count_by_class_size = contagem_classe_tamanho
     return entry
 
 
