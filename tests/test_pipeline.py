@@ -10,6 +10,7 @@ import pytest
 from julius.collection.normalizers import load_account
 from julius.config import DEFAULT_CONFIG
 from julius.knowledge.rules import run_all
+from julius.knowledge.rules.sagemaker import rules as sagemaker_rules
 from julius.pipeline import analyze
 from julius.reporting import renderer
 
@@ -43,15 +44,17 @@ def test_detectors_cover_expected_rules():
         "SFN-STANDARD-TO-EXPRESS",
         "SFN-POLLING-LOOP",
         "SM-APP-IDLE",
-        "SM-ENDPOINT-UNUSED",
     }
     assert expected <= rule_ids
 
 
 def test_stepfunctions_and_sagemaker(analysis):
     ids = {o.rule_id for o in analysis.opportunities}
-    # Após agrupamento, ao menos SageMaker (assets distintos) permanece visível.
-    assert {"SM-APP-IDLE", "SM-ENDPOINT-UNUSED"} <= ids
+    # Após agrupamento, o app com 90 dias permanece oportunidade. Endpoint de
+    # baixo tráfego, mas não zero, segue como sinal contextual.
+    assert "SM-APP-IDLE" in ids
+    assert "SM-ENDPOINT-ZERO-TRAFFIC" not in ids
+    assert "SM-ENDPOINT-MODE-FIT" in {s.rule_id for s in analysis.signals}
     sm_app = next(o for o in analysis.opportunities if o.rule_id == "SM-APP-IDLE")
     assert sm_app.estimated_gain.monthly_expected > 0
     assert sm_app.asset_type == "sagemaker_app"
@@ -267,8 +270,16 @@ def test_an_endpoint_without_cloudwatch_is_not_declared_unused():
     assert not run_all(account, DEFAULT_CONFIG, "scan")
 
     account.sagemaker_endpoints[0].invocations_per_month = 4
+    assert not run_all(account, DEFAULT_CONFIG, "scan")
+    assert "SM-ENDPOINT-MODE-FIT" in {
+        signal.rule_id
+        for signal in sagemaker_rules.signals(account, DEFAULT_CONFIG)
+    }
+
+    account.sagemaker_endpoints[0].invocations_per_month = 0
+    account.sagemaker_endpoints[0].coverage_days = 90
     found = run_all(account, DEFAULT_CONFIG, "scan")
-    assert "SM-ENDPOINT-UNUSED" in {o.rule_id for o in found}
+    assert "SM-ENDPOINT-ZERO-TRAFFIC" in {o.rule_id for o in found}
 
 
 def test_flex_is_no_longer_dead_and_waits_for_the_sla_answer():

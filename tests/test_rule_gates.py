@@ -49,6 +49,14 @@ SEM_ESCRITOR_CONHECIDOS = {
     # Depende de inspecionar a fonte; hoje mantém GLUE-BOOKMARK-OFF bloqueada
     # com motivo explícito, que é o comportamento correto enquanto falta.
     "incremental_source_evidence",
+    # Evidência importada de uma medição externa controlada. O coletor
+    # read-only não executa testes de Glue nem inventa bytes redundantes; sem
+    # esses campos as regras permanecem bloqueadas e com ganho indisponível ou
+    # apenas potencial.
+    "redundant_read_bytes_window",
+    "rightsize_tested_workers",
+    "rightsize_test_runs",
+    "rightsize_output_validated",
     # Usados só em texto e num filtro; coletá-los é trabalho registrado e
     # adiado, não esquecido.
     "storage_bytes",

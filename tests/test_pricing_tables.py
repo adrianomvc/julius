@@ -101,8 +101,8 @@ def test_the_default_config_uses_a_table_not_literals():
     assert pricing.region == DEFAULT_REGION
     assert pricing.sources
     assert pricing.sagemaker_instances, "preço de instância também vem da tabela"
-    # A instância desconhecida cai no default declarado na tabela.
-    assert pricing.sagemaker_hourly("ml.inexistente") == pricing.sagemaker_default_hourly
+    # Tipo desconhecido não recebe mais um preço genérico inventado.
+    assert pricing.sagemaker_hourly("ml.inexistente") is None
 
 
 def test_pricing_provenance_reaches_the_estimation_assumptions():

@@ -63,12 +63,21 @@ def collect(
             "total gasto aparece na saúde da coleta."
         ),
     ),
+    sagemaker_full_metrics: bool = typer.Option(
+        False,
+        "--sagemaker-full-metrics",
+        help=(
+            "Coleta métricas CloudWatch detalhadas de todos os jobs SageMaker; "
+            "por padrão detalha os 100 de maior custo potencial."
+        ),
+    ),
     output: str = typer.Option("data/collected/account.json", "--output", "-o"),
 ) -> None:
     """Coleta em sa-east-1 com o perfil SSO selecionado e grava o dataset."""
     from julius.collection.health.recorder import RequiredCollectionError
     from julius.collection.normalizers.dump import account_to_dataset
     from julius.collection.orchestrator import collect_account
+    from julius.collection.sagemaker_history import carry_consistent_scans
     from julius.collection.scope import CatalogScope
     from julius.collection.targets import resolve_account_name
 
@@ -96,11 +105,13 @@ def collect(
             datawarm_job=datawarm_job,
             catalog_scope=scope,
             s3_full_listing=s3_full_listing,
+            sagemaker_full_metrics=sagemaker_full_metrics,
         )
     except RequiredCollectionError as exc:
         raise typer.BadParameter(str(exc)) from exc
 
     out = Path(output)
+    carry_consistent_scans(account, out)
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(
         json.dumps(account_to_dataset(account), ensure_ascii=False, indent=2, default=str),

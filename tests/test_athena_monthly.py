@@ -13,7 +13,10 @@ from julius.collection.collectors.athena.evidence import (
     fingerprints,
     recurrence,
 )
-from julius.collection.collectors.athena.executions import result_reuse_eligible
+from julius.collection.collectors.athena.executions import (
+    result_reuse_eligibility,
+    result_reuse_eligible,
+)
 from julius.collection.collectors.athena.monthly import collect_analysis
 from julius.collection.models import Account, AthenaQuery
 from julius.collection.normalizers.dump import account_to_dataset
@@ -109,6 +112,25 @@ def test_result_reuse_gate_rejects_nondeterministic_queries():
     assert not result_reuse_eligible(
         "SELECT customer_id FROM db.sales", "DML", "federated"
     )
+
+
+def test_result_reuse_gate_explains_managed_results_and_multiple_catalogs():
+    eligible, reasons = result_reuse_eligibility(
+        "SELECT * FROM db.sales",
+        "DML",
+        "on_demand",
+        managed_results=True,
+    )
+    assert eligible is False
+    assert any("managed query results" in reason for reason in reasons)
+
+    eligible, reasons = result_reuse_eligibility(
+        "SELECT * FROM catalog_a.db.a JOIN catalog_b.db.b USING (id)",
+        "DML",
+        "on_demand",
+    )
+    assert eligible is False
+    assert "consulta usa mais de um catálogo" in reasons
 
 
 def test_money_preserves_small_recovery_values():
@@ -595,6 +617,7 @@ def test_requested_rules_are_grouped_by_pattern_and_actor():
             "measured",
             "modeled_evidence",
             "modeled_rule",
+            "unavailable",
         }
         assert opportunity.estimation.estimated_saving >= 0
         if opportunity.estimation.saving_quality == "modeled_rule":

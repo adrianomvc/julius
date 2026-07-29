@@ -31,9 +31,12 @@ from julius.config import Config
 from julius.findings.build import RuleContext, build
 from julius.findings.evidence import Evidence
 from julius.findings.finding import Finding
-from julius.findings.opportunity import Estimation, Opportunity
+from julius.findings.opportunity import Opportunity
 from julius.findings.recommendation import Recommendation
-from julius.knowledge.s3_cost import S3_REQUEST_BUCKETS
+from julius.knowledge.rules.s3.request_cost import (
+    request_estimation,
+    request_evidence,
+)
 
 RULE_ID = "S3-SMALL-FILES"
 
@@ -49,9 +52,8 @@ _DOC_COMPACTION = (
 
 def detect(account: Account, config: Config, scan_id: str) -> list[Opportunity]:
     ja_cobertas = _tabelas_cobertas_pelo_athena(account)
-    custo_por_objeto = _request_cost_per_object(account)
     return [
-        _achado(account, prefixo, config, scan_id, custo_por_objeto)
+        _achado(account, prefixo, config, scan_id)
         for prefixo in getattr(account, "s3_prefixes", None) or ()
         if _e_tabela_com_arquivo_pequeno(prefixo, config)
         and _nome_da_tabela(prefixo) not in ja_cobertas
@@ -96,83 +98,21 @@ def _tabelas_cobertas_pelo_athena(account: Account) -> frozenset[str]:
     )
 
 
-def _request_cost_per_object(account: Account) -> float | None:
-    """USD de request na janela por objeto listado, ou `None`.
-
-    O rateio é proporcional à contagem de objetos, porque é ela que determina
-    quantas chamadas uma leitura faz. Sem cobrança de request classificada não
-    há tarifa implícita, e o achado sai sem cifra em vez de com uma inventada.
-    """
-    coverage = getattr(account, "s3_cost_coverage", None)
-    if coverage is None:
-        return None
-    custo = coverage.cost_for(S3_REQUEST_BUCKETS)
-    objetos = sum(
-        prefixo.object_count or 0
-        for prefixo in getattr(account, "s3_prefixes", None) or ()
-    )
-    if custo <= 0 or objetos <= 0:
-        return None
-    return custo / objetos
-
-
-def _estimation(
-    prefixo: S3Prefix, config: Config, custo_por_objeto: float | None
-) -> Estimation:
-    atual = prefixo.object_count or 0
-    total = prefixo.total_bytes or 0
-    alvo = max(1, -(-total // config.thresholds.s3_compaction_target_bytes))
-    evitaveis = max(0, atual - alvo)
-
-    if custo_por_objeto is None:
-        return Estimation(
-            method="s3_small_files_v1",
-            baseline_cost=0.0,
-            projected_cost=0.0,
-            estimated_saving=0.0,
-            assumptions=[
-                "cobrança de request do S3 não classificada na janela",
-                f"{atual} objetos poderiam virar ~{alvo} após compactação",
-                "economia não quantificada sem cobrança rateada",
-            ],
-            saving_quality="unavailable",
-            is_strategic=True,
-        )
-
-    baseline = custo_por_objeto * atual
-    projetado = custo_por_objeto * alvo
-    return Estimation(
-        method="s3_small_files_v1",
-        baseline_cost=round(baseline, 2),
-        projected_cost=round(projetado, 2),
-        estimated_saving=round(baseline - projetado, 2),
-        assumptions=[
-            f"{atual} objetos compactados para ~{alvo} de "
-            f"{config.thresholds.s3_compaction_target_bytes / _MB:.0f} MiB",
-            "custo de request rateado por contagem de objetos, da fatura real",
-            "reduz request; o armazenamento permanece e não entra na conta",
-            f"{evitaveis} chamadas a menos por varredura completa da tabela",
-        ],
-        baseline_quality="allocated",
-        # Quanto se recupera depende de quantas leituras acontecem sobre estes
-        # objetos, e isso o inventário não mede. O ganho fica estratégico até
-        # alguém comparar o antes e o depois.
-        saving_quality="modeled_evidence",
-        is_strategic=True,
-    )
-
-
 def _achado(
     account: Account,
     prefixo: S3Prefix,
     config: Config,
     scan_id: str,
-    custo_por_objeto: float | None,
 ) -> Opportunity:
     media_mb = (prefixo.average_object_bytes or 0) / _MB
     alvo_mb = config.thresholds.s3_compaction_target_bytes / _MB
     parcial = not prefixo.listing_complete
-    est = _estimation(prefixo, config, custo_por_objeto)
+    est = request_estimation(
+        account,
+        [prefixo],
+        config,
+        method="s3_small_files_requests_v2",
+    )
     tabela = getattr(prefixo, "source_asset", "") or prefixo.location
 
     opportunity = build(
@@ -221,17 +161,30 @@ def _achado(
                     if prefixo.listing_complete
                     else "listagem truncada: evidência parcial"
                 ),
+                *request_evidence(account, [prefixo]),
             ],
             sources=["S3 ListObjectsV2", "Glue GetTables", "Cost Explorer"],
             observed_runs=1,
             coverage_days=config.thresholds.min_coverage_days,
-            has_optional_metrics=custo_por_objeto is not None,
+            has_optional_metrics=est.saving_quality != "unavailable",
             owner_tag=prefixo.owner_tag,
         ),
         est,
         RuleContext(account=account.account_id, config=config, scan_id=scan_id),
     )
-    faltando = ["leituras desta tabela na janela: define quanto o request cai"]
+    faltando = []
+    if prefixo.get_requests_window is None:
+        faltando.append(
+            "GETs desta tabela na janela por Server Access Logs"
+        )
+    if est.saving_quality == "unavailable":
+        faltando.append(
+            "custo e UsageQuantity compatíveis de Requests-Tier2"
+        )
+    elif prefixo.access_quality == "best_effort":
+        faltando.append(
+            "Server Access Logs têm entrega best-effort; validar a redução na janela seguinte"
+        )
     if parcial:
         faltando.append("listagem completa do prefixo: a contagem medida é piso")
     opportunity.missing_evidence = faltando

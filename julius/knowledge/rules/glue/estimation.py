@@ -57,7 +57,15 @@ def _baseline(job: GlueJob, pricing) -> tuple[float, str, str]:
 def autoscaling_saving(job: GlueJob, config: Config) -> Estimation:
     """Auto Scaling remove workers ociosos: saving ∝ (1 − util/alvo)."""
     pricing = config.pricing
-    util = job.avg_cpu_load if job.avg_cpu_load is not None else config.thresholds.low_cpu
+    util = (
+        job.avg_worker_utilization
+        if job.avg_worker_utilization is not None
+        else (
+            job.avg_cpu_load
+            if job.avg_cpu_load is not None
+            else config.thresholds.low_cpu
+        )
+    )
     ratio = max(0.0, min(0.6, 1 - util / config.thresholds.utilization_target))
     baseline, source, quality = _baseline(job, pricing)
     saving = baseline * ratio
@@ -140,25 +148,56 @@ def flex_saving(job: GlueJob, config: Config) -> Estimation:
     )
 
 
-def bookmark_saving(job: GlueJob, config: Config, reprocess: float = 0.25) -> Estimation:
-    """Job bookmarks evitam reprocessar dados já processados (processamento incremental)."""
+def bookmark_saving(job: GlueJob, config: Config) -> Estimation:
+    """Valoriza somente bytes redundantes medidos; não assume percentual fixo."""
     pricing = config.pricing
     baseline, source, quality = _baseline(job, pricing)
-    saving = baseline * reprocess
+    total = job.bytes_read_window
+    redundant = job.redundant_read_bytes_window
+    measured = (
+        job.incremental_source_evidence
+        and total is not None
+        and total > 0
+        and redundant is not None
+        and redundant >= 0
+    )
+    if not measured:
+        return Estimation(
+            method="glue_bookmark_measured_reprocessing_v2",
+            baseline_cost=round(baseline, 2),
+            projected_cost=round(baseline, 2),
+            estimated_saving=0.0,
+            assumptions=[
+                "fonte incremental e bytes redundantes ainda não comprovados",
+                "nenhum percentual genérico de reprocessamento foi aplicado",
+                source,
+            ],
+            pricing_region=pricing.region,
+            estimation_version=pricing.version,
+            baseline_quality=quality,
+            saving_quality="unavailable",
+        )
+    redundant_bytes = float(redundant or 0.0)
+    total_bytes = float(total or 0.0)
+    ratio = min(1.0, max(0.0, redundant_bytes / total_bytes))
+    saving = baseline * ratio
     return Estimation(
-        method="glue_bookmark_v1",
+        method="glue_bookmark_measured_reprocessing_v2",
         baseline_cost=round(baseline, 2),
         projected_cost=round(baseline - saving, 2),
         estimated_saving=round(saving, 2),
+        estimated_saving_low=round(saving, 2),
+        estimated_saving_high=round(saving, 2),
         assumptions=[
-            "job recorrente sem job bookmarks (reprocessa dados antigos)",
-            f"processamento incremental evita ~{int(reprocess * 100)}% do trabalho",
-            "fonte cresce de forma incremental",
+            f"{redundant:.0f} de {total:.0f} bytes lidos foram redundantes",
+            f"fração redundante medida={ratio:.1%}",
+            "fonte incremental comprovada",
             source,
         ],
         pricing_region=pricing.region,
         estimation_version=pricing.version,
         baseline_quality=quality,
+        saving_quality="measured",
     )
 
 
@@ -330,13 +369,32 @@ def failure_waste_saving(job: GlueJob, config: Config) -> Estimation:
 def worker_reduction_saving(job: GlueJob, config: Config) -> Estimation:
     """Redução de workers proporcional à utilização observada."""
     pricing = config.pricing
-    util = job.avg_cpu_load if job.avg_cpu_load is not None else config.thresholds.low_cpu
+    util = (
+        job.avg_worker_utilization
+        if job.avg_worker_utilization is not None
+        else (
+            job.avg_cpu_load
+            if job.avg_cpu_load is not None
+            else config.thresholds.low_cpu
+        )
+    )
     current_workers = max(0, job.number_of_workers or 0)
-    recommended = max(
+    modeled_recommended = max(
         config.thresholds.session_min_dpu,
         math.ceil(current_workers * util / config.thresholds.utilization_target),
     )
-    recommended = min(recommended, current_workers)
+    modeled_recommended = min(modeled_recommended, current_workers)
+    benchmark_validated = bool(
+        job.rightsize_tested_workers is not None
+        and job.rightsize_test_runs >= 3
+        and job.rightsize_output_validated
+        and 2 <= job.rightsize_tested_workers < current_workers
+    )
+    recommended = (
+        int(job.rightsize_tested_workers)
+        if benchmark_validated and job.rightsize_tested_workers is not None
+        else modeled_recommended
+    )
     baseline, source, quality = _baseline(job, pricing)
     ratio = (current_workers - recommended) / current_workers if current_workers else 0
     saving = baseline * ratio
@@ -345,15 +403,26 @@ def worker_reduction_saving(job: GlueJob, config: Config) -> Estimation:
         baseline_cost=round(baseline, 2),
         projected_cost=round(baseline - saving, 2),
         estimated_saving=round(saving, 2),
+        estimated_saving_low=round(saving, 2) if benchmark_validated else 0.0,
+        estimated_saving_high=round(saving, 2),
         assumptions=[
             "mesmo volume processado",
             f"workers {current_workers} → {recommended} (utilização {util:.0%})",
             "redução só é acionável com memória, disco e spill observados",
+            (
+                f"benchmark validado em {job.rightsize_test_runs} runs"
+                if benchmark_validated
+                else "ganho potencial até concluir três runs por candidato"
+            ),
             source,
         ],
         pricing_region=pricing.region,
         estimation_version=pricing.version,
         baseline_quality=quality,
+        saving_quality=(
+            "modeled_evidence" if benchmark_validated else "potential"
+        ),
+        is_strategic=not benchmark_validated,
     )
 
 

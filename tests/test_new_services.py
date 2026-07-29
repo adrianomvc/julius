@@ -315,7 +315,7 @@ def test_a_configured_idle_shutdown_is_not_an_idle_finding():
                 status="InService",
                 idle_hours_per_day=14.0,
                 idle_shutdown_min=60,
-                coverage_days=30,
+                coverage_days=90,
             )
         ],
     )

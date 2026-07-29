@@ -35,6 +35,7 @@ def collect_account(
     datawarm_job: str = "",
     catalog_scope: CatalogScope | None = None,
     s3_full_listing: bool = False,
+    sagemaker_full_metrics: bool = False,
     now: datetime | None = None,
 ) -> Account:
     """Coleta uma conta. `config` chega de cima e não tem default aqui.
@@ -73,12 +74,16 @@ def collect_account(
         datawarm_job=datawarm_job,
         catalog_scope=catalog_scope or CatalogScope(),
         s3_full_listing=s3_full_listing,
+        sagemaker_full_metrics=sagemaker_full_metrics,
         glue_usage_markers=config.glue_cost.usage_type_markers,
         allocatable_glue_buckets=config.glue_cost.allocatable_buckets,
         glue_cost_version=config.glue_cost.version,
         redshift_usage_markers=config.redshift_cost.usage_type_markers,
         redshift_compute_buckets=config.redshift_cost.compute_buckets,
         redshift_cost_version=config.redshift_cost.version,
+        sagemaker_usage_markers=config.sagemaker_cost.usage_type_markers,
+        allocatable_sagemaker_buckets=config.sagemaker_cost.allocatable_buckets,
+        sagemaker_cost_version=config.sagemaker_cost.version,
     )
 
     for source in SOURCES:

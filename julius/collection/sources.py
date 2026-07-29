@@ -29,6 +29,8 @@ from julius.collection.collectors import (
     s3_config,
     s3_cost,
     sagemaker,
+    sagemaker_cost,
+    sagemaker_extended,
     schedules,
     stepfunctions,
     touches,
@@ -69,6 +71,9 @@ class CollectionContext:
     redshift_usage_markers: Sequence[tuple[str, str]] = ()
     redshift_compute_buckets: frozenset[str] = frozenset()
     redshift_cost_version: str = ""
+    sagemaker_usage_markers: Sequence[tuple[str, str]] = ()
+    allocatable_sagemaker_buckets: frozenset[str] = frozenset()
+    sagemaker_cost_version: str = ""
     touches_table: str = ""
     athena_workgroup: str = "julius"
     athena_output: str | None = None
@@ -82,6 +87,9 @@ class CollectionContext:
     # responde "pelo menos X GB", e é o operador que decide pagar pela resposta
     # exata. Ver `S3 Prefixes` em `SOURCES`.
     s3_full_listing: bool = False
+    # Inventário de jobs é sempre completo; esta opção remove o limite de 100
+    # jobs com métricas CloudWatch detalhadas.
+    sagemaker_full_metrics: bool = False
     # Sinais que uma fonte deixa para a seguinte — o rateio de custo só se
     # considera reconciliado quando o inventário de jobs veio íntegro.
     flags: dict[str, Any] = field(default_factory=dict)
@@ -811,6 +819,34 @@ SOURCES: tuple[Source, ...] = (
         ),
     ),
     Source(
+        name="SageMaker Spaces",
+        collect=lambda ctx: sagemaker_extended.collect_spaces(
+            ctx.client("sagemaker"),
+            apps=ctx.account.sagemaker_apps,
+            window=ctx.window,
+            gaps=ctx.gaps,
+        ),
+        into="sagemaker_spaces",
+        count=len,
+        impact="Spaces sem apps e storage EBS persistente não são inventariados",
+        next_action="validar ListSpaces e DescribeSpace",
+    ),
+    Source(
+        name="SageMaker Domains",
+        collect=lambda ctx: sagemaker_extended.collect_domains(
+            ctx.client("sagemaker"),
+            ctx.client("cloudwatch"),
+            spaces=ctx.account.sagemaker_spaces,
+            apps=ctx.account.sagemaker_apps,
+            window=ctx.window,
+            gaps=ctx.gaps,
+        ),
+        into="sagemaker_domains",
+        count=len,
+        impact="Domains e storage EFS sem atividade não são avaliados",
+        next_action="validar ListDomains, DescribeDomain e métricas AWS/EFS",
+    ),
+    Source(
         name="SageMaker Endpoints",
         collect=lambda ctx: sagemaker.collect_endpoints(
             ctx.client("sagemaker"),
@@ -825,6 +861,131 @@ SOURCES: tuple[Source, ...] = (
         next_action=(
             "validar sagemaker:ListEndpoints, DescribeEndpoint e "
             "application-autoscaling:DescribeScalableTargets"
+        ),
+    ),
+    Source(
+        name="SageMaker Notebooks",
+        collect=lambda ctx: sagemaker_extended.collect_notebooks(
+            ctx.client("sagemaker"),
+            window=ctx.window,
+            gaps=ctx.gaps,
+        ),
+        into="sagemaker_notebooks",
+        count=len,
+        impact="notebooks clássicos ligados não aparecem nem como sinal contextual",
+        next_action="validar sagemaker:ListNotebookInstances/DescribeNotebookInstance",
+    ),
+    Source(
+        name="SageMaker Jobs",
+        collect=lambda ctx: sagemaker_extended.collect_jobs(
+            ctx.client("sagemaker"),
+            ctx.client("cloudwatch"),
+            window=ctx.window,
+            pricing=ctx.config.pricing,
+            detailed_limit=100,
+            full_metrics=ctx.sagemaker_full_metrics,
+            history_days=90,
+            low_utilization_threshold=ctx.config.thresholds.sm_low_utilization,
+            gaps=ctx.gaps,
+        ),
+        into="sagemaker_jobs",
+        count=len,
+        impact=(
+            "custos falhos, Spot, warm pools e dimensionamento de training, "
+            "processing e transform ficam sem evidência"
+        ),
+        next_action=(
+            "validar List/DescribeTrainingJobs, ProcessingJobs e TransformJobs "
+            "e CloudWatch GetMetricData"
+        ),
+    ),
+    Source(
+        name="SageMaker Feature Store",
+        collect=lambda ctx: sagemaker_extended.collect_feature_groups(
+            ctx.client("sagemaker"),
+            ctx.client("cloudwatch"),
+            window=ctx.window,
+            gaps=ctx.gaps,
+        ),
+        into="sagemaker_feature_groups",
+        count=len,
+        impact="throughput provisionado e saúde do Feature Store não são avaliados",
+        next_action="validar List/DescribeFeatureGroup e métricas Feature Store",
+    ),
+    Source(
+        name="SageMaker Pipelines",
+        collect=lambda ctx: sagemaker_extended.collect_pipelines(
+            ctx.client("sagemaker"),
+            window=ctx.window,
+            gaps=ctx.gaps,
+        ),
+        into="sagemaker_pipelines",
+        count=len,
+        impact="falhas e reprocessamentos não são agrupados por pipeline",
+        next_action="validar List/DescribePipeline e histórico de execuções/passos",
+    ),
+    Source(
+        name="SageMaker Model Monitor",
+        collect=lambda ctx: sagemaker_extended.collect_monitoring_schedules(
+            ctx.client("sagemaker"),
+            window=ctx.window,
+            gaps=ctx.gaps,
+        ),
+        into="sagemaker_monitoring_schedules",
+        count=len,
+        impact="falhas dos schedules existentes de Model Monitor não são sinalizadas",
+        next_action="validar List/DescribeMonitoringSchedule",
+    ),
+    Source(
+        name="SageMaker Inference Recommender",
+        collect=lambda ctx: sagemaker_extended.collect_inference_recommendations(
+            ctx.client("sagemaker"),
+            window=ctx.window,
+            gaps=ctx.gaps,
+        ),
+        into="sagemaker_inference_recommendations",
+        count=len,
+        impact="não há alvo AWS validado para comparar custo e desempenho do endpoint",
+        next_action="validar List/DescribeInferenceRecommendationsJob",
+    ),
+    Source(
+        name="SageMaker Cost Explorer",
+        collect=lambda ctx: sagemaker_cost.collect_and_allocate_costs(
+            ctx.account,
+            ctx.client("ce"),
+            window=ctx.window,
+            markers=ctx.sagemaker_usage_markers,
+            version=ctx.sagemaker_cost_version,
+            allocatable=ctx.allocatable_sagemaker_buckets,
+        ),
+        into="sagemaker_cost_coverage",
+        default=lambda: None,
+        count=lambda coverage: 1 if coverage and coverage.buckets else 0,
+        expected=lambda ctx: 1
+        if (
+            ctx.account.sagemaker_apps
+            or ctx.account.sagemaker_endpoints
+            or ctx.account.sagemaker_jobs
+            or ctx.account.sagemaker_feature_groups
+            or ctx.account.sagemaker_spaces
+            or ctx.account.sagemaker_domains
+        )
+        else 0,
+        data_through=lambda coverage: coverage.data_through if coverage else "",
+        impact="economias SageMaker ficam sem teto da cobrança real",
+        next_action="validar ce:GetCostAndUsage agrupado por USAGE_TYPE",
+    ),
+    Source(
+        name="SageMaker Savings Plans",
+        collect=lambda ctx: sagemaker_cost.collect_savings_plan_signal(
+            ctx.client("ce"), window=ctx.window
+        ),
+        into="sagemaker_savings_plans",
+        default=lambda: None,
+        count=lambda signal: 1 if signal and signal.quality != "unavailable" else 0,
+        impact="FinOps fica sem cobertura, utilização e recomendação de compromisso",
+        next_action=(
+            "validar GetSavingsPlansCoverage, Utilization e PurchaseRecommendation"
         ),
     ),
     Source(

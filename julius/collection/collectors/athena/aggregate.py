@@ -37,6 +37,16 @@ def aggregate_queries(items, coverage):
         avoidable = reuse_avoidable(group)
         partition_keys = sorted({key for item in group for key in item.partition_keys})
         missing = sorted({key for item in group for key in item.missing_partition_filters})
+        filter_columns = sorted(
+            {key for item in group for key in item.filter_columns}
+        )
+        reuse_reasons = sorted(
+            {
+                reason
+                for item in group
+                for reason in item.reuse_ineligible_reasons
+            }
+        )
         formats = sorted({fmt for item in group for fmt in item.storage_formats})
         wide_tables = sorted({name for item in group for name in item.wide_tables})
         unpartitioned = sorted(
@@ -77,7 +87,9 @@ def aggregate_queries(items, coverage):
                 has_partition_filter=not missing,
                 table_is_partitioned=bool(partition_keys),
                 selects_star=any(i.selects_star for i in group),
-                result_reuse_enabled=any(i.reused for i in group),
+                result_reuse_enabled=any(
+                    i.reuse_configured or i.reused for i in group
+                ),
                 observed_runs=len(group),
                 coverage_days=30,
                 reads_tables=sorted({table for item in group for table in item.reads_tables}),
@@ -100,13 +112,27 @@ def aggregate_queries(items, coverage):
                 failed_runs=sum(i.state == "FAILED" for i in group),
                 cancelled_runs=sum(i.state == "CANCELLED" for i in group),
                 reused_runs=sum(i.reused for i in group),
+                reuse_configured_runs=sum(i.reuse_configured for i in group),
+                reuse_max_age_minutes=max(
+                    (
+                        i.reuse_max_age_minutes
+                        for i in group
+                        if i.reuse_max_age_minutes is not None
+                    ),
+                    default=None,
+                ),
                 reuse_eligible_runs=avoidable["runs"],
                 reuse_avoidable_billed_bytes=avoidable["bytes"],
                 reuse_avoidable_cost=avoidable["cost"],
+                reuse_ineligible_reasons=reuse_reasons,
                 billed_bytes=billed,
                 avg_billed_bytes=round(billed / len(group)),
                 partition_keys=partition_keys,
                 missing_partition_filters=missing,
+                filter_columns=filter_columns,
+                partition_candidate_keys=(
+                    filter_columns if unpartitioned else []
+                ),
                 storage_formats=formats,
                 small_files_confirmed=any(i.small_files_confirmed for i in group),
                 small_file_count=max((i.small_file_count for i in group), default=0),

@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import math
+from datetime import datetime, timezone
+
 from julius.collection.models import Account, GlueJob
 from julius.config import UNATTRIBUTED_GLUE_BUCKETS, Config
 from julius.findings.build import RuleContext, build
@@ -11,6 +14,10 @@ from julius.findings.opportunity import Estimation, Opportunity
 from julius.findings.recommendation import Recommendation
 from julius.findings.signal import Signal
 from julius.knowledge.rules.glue import estimation as glue_est
+from julius.knowledge.rules.s3.request_cost import (
+    request_estimation,
+    request_evidence,
+)
 
 _DOC_AUTOSCALING = "https://docs.aws.amazon.com/glue/latest/dg/auto-scaling.html"
 _DOC_WORKERS = "https://docs.aws.amazon.com/glue/latest/dg/monitor-spark-ui.html"
@@ -65,6 +72,82 @@ def detect(account: Account, config: Config, scan_id: str) -> list[Opportunity]:
         )
         low_cpu = utilization is not None and utilization < config.thresholds.low_cpu
         capacity_evidence = _capacity_evidence(job, config)
+
+        if _inactive_days(job) >= 365:
+            out.append(
+                _investigation(
+                    account,
+                    job,
+                    config,
+                    scan_id,
+                    "GLUE-JOB-ABANDONED",
+                    "Glue Job sem execução há pelo menos um ano",
+                    (
+                        "Validar owner, sazonalidade e contingência antes de "
+                        "arquivar ou remover a definição"
+                    ),
+                    [
+                        f"última execução={job.last_run_at or 'nunca executado'}",
+                        f"criado em={job.created_at or 'não coletado'}",
+                        "histórico de execução disponível",
+                    ],
+                    doc_link=_DOC_JOB_PROPERTIES,
+                    category="governance",
+                )
+            )
+
+        if (
+            (job.files_written_window or 0)
+            >= config.thresholds.glue_small_files_min_count
+            and job.average_output_file_bytes is not None
+            and job.average_output_file_bytes
+            <= config.thresholds.glue_small_file_max_bytes
+        ):
+            output_tables = {
+                name.strip().lower() for name in job.writes_tables
+            }
+            output_prefixes = [
+                prefix
+                for prefix in account.s3_prefixes
+                if prefix.source_asset.strip().lower() in output_tables
+            ]
+            estimation = request_estimation(
+                account,
+                output_prefixes,
+                config,
+                method="glue_small_files_output_requests_v2",
+            )
+            opportunity = _investigation(
+                account,
+                job,
+                config,
+                scan_id,
+                "GLUE-SMALL-FILES-OUTPUT",
+                "Saída Spark medida em muitos arquivos pequenos",
+                (
+                    "Validar consumidores e compactar/reparticionar a escrita "
+                    "sem alterar a semântica da saída"
+                ),
+                [
+                    f"arquivos escritos={job.files_written_window:.0f}",
+                    (
+                        "tamanho médio="
+                        f"{job.average_output_file_bytes / 1024**2:.2f} MiB"
+                    ),
+                    *request_evidence(account, output_prefixes),
+                ],
+                doc_link=_DOC_MONITORING,
+                estimation=estimation,
+                has_optional_metrics=(
+                    estimation.saving_quality != "unavailable"
+                ),
+            )
+            if estimation.saving_quality == "unavailable":
+                opportunity.missing_evidence = [
+                    "tabela/prefixo de saída ligado ao job",
+                    "GETs por prefixo e UsageQuantity de Requests-Tier2",
+                ]
+            out.append(opportunity)
 
         # Capacidade: Auto Scaling (sem autoscaling) OU redução de workers (demais casos).
         autoscaling_eligible = (
@@ -628,6 +711,75 @@ def signals(account: Account, config: Config) -> list[Signal]:
     target = config.preferred_glue_version
     th = config.thresholds
     for job in account.glue_jobs:
+        inactive_days = _inactive_days(job)
+        if 90 <= inactive_days < 365:
+            out.append(
+                Signal(
+                    kind="config",
+                    rule_id="GLUE-JOB-INACTIVE-90D",
+                    asset_type="glue_job",
+                    asset_name=job.name,
+                    observation=(
+                        f"Job sem execução há aproximadamente {inactive_days} dias."
+                    ),
+                    question=(
+                        "O job é sazonal, contingencial ou pode ser arquivado após "
+                        "validar dependências e owner?"
+                    ),
+                    missing_evidence=[
+                        "calendário sazonal ou plano de contingência",
+                        "dependências e aprovação do owner",
+                    ],
+                    doc_links=[_DOC_JOB_PROPERTIES],
+                )
+            )
+        if (
+            job.runs_in_window > 0
+            and job.glue_version_num >= 4.0
+            and job.observability_enabled is False
+        ):
+            out.append(
+                Signal(
+                    kind="config",
+                    rule_id="GLUE-OBSERVABILITY-OFF",
+                    asset_type="glue_job",
+                    asset_name=job.name,
+                    observation="Job executou sem Glue Observability habilitado.",
+                    question=(
+                        "A ausência das métricas impede diagnosticar capacidade, "
+                        "skew, memória, disco ou falhas?"
+                    ),
+                    missing_evidence=["impacto e retenção aceitável das métricas"],
+                    doc_links=[_DOC_MONITORING],
+                )
+            )
+        if (
+            job.runs_in_window > 0
+            and job.glue_version_num < 5.0
+            and job.continuous_logging_enabled is False
+        ):
+            out.append(
+                Signal(
+                    kind="config",
+                    rule_id="GLUE-CONTINUOUS-LOGGING-OFF",
+                    asset_type="glue_job",
+                    asset_name=job.name,
+                    observation=(
+                        f"Glue {job.glue_version} executou sem continuous logging."
+                    ),
+                    question=(
+                        "Logs em tempo real reduziriam o tempo de diagnóstico sem "
+                        "violar retenção ou custo de CloudWatch?"
+                    ),
+                    missing_evidence=[
+                        "política de retenção e custo de CloudWatch Logs"
+                    ],
+                    doc_links=[
+                        "https://docs.aws.amazon.com/glue/latest/dg/"
+                        "monitor-continuous-logging-enable.html"
+                    ],
+                )
+            )
         if (
             job.command_type == "glueetl"
             and 2.0 <= job.glue_version_num < _version_number(target)
@@ -712,6 +864,29 @@ def _version_number(value: str) -> float:
         return 99.0
 
 
+def _inactive_days(job: GlueJob) -> int:
+    if not job.run_history_available:
+        return 0
+    raw = job.last_run_at or job.created_at
+    if not raw:
+        return 0
+    try:
+        instant = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    except ValueError:
+        return 0
+    instant = instant.replace(tzinfo=instant.tzinfo or timezone.utc)
+    reference = datetime.now(timezone.utc)
+    if job.window_end:
+        try:
+            reference = datetime.fromisoformat(
+                job.window_end.replace("Z", "+00:00")
+            )
+            reference = reference.replace(tzinfo=reference.tzinfo or timezone.utc)
+        except ValueError:
+            pass
+    return max(0, (reference - instant).days)
+
+
 def _flex(account: Account, job: GlueJob, config: Config, scan_id: str) -> Opportunity:
     est = glue_est.flex_saving(job, config)
     discount = 1 - config.pricing.glue_flex_dpu_hour / max(config.pricing.glue_dpu_hour, 0.000001)
@@ -777,9 +952,13 @@ def _bookmark(
     incremental_evidence: bool,
 ) -> Opportunity:
     est = glue_est.bookmark_saving(job, config)
-    if not incremental_evidence:
-        _zero_unproven(est, "incrementalidade da fonte não comprovada")
-    return build(
+    measured_reprocessing = (
+        incremental_evidence
+        and job.bytes_read_window is not None
+        and job.bytes_read_window > 0
+        and job.redundant_read_bytes_window is not None
+    )
+    opportunity = build(
         Finding(
             asset_type="glue_job",
             asset_name=job.name,
@@ -795,7 +974,7 @@ def _bookmark(
             how_to_validate="Comparar bytes lidos e DPU-h por execução após ativar bookmarks.",
             risks=["exige ajuste no script", "reprocessamento inicial"],
             docs=[_DOC_BOOKMARK],
-            blocked=not incremental_evidence,
+            blocked=not measured_reprocessing,
         ),
         Evidence(
             items=[
@@ -804,12 +983,19 @@ def _bookmark(
                 "fonte incremental comprovada"
                 if incremental_evidence
                 else "incrementalidade da fonte não comprovada",
+                (
+                    f"bytes redundantes={job.redundant_read_bytes_window:.0f} "
+                    f"de {job.bytes_read_window:.0f}"
+                    if measured_reprocessing
+                    else "bytes redundantes não medidos"
+                ),
             ],
             sources=["Glue GetJob", "GetJobRuns"],
             observed_runs=job.observed_runs,
             coverage_days=job.coverage_days,
             has_optional_metrics=(
-                job.observed_runs >= config.thresholds.min_runs and incremental_evidence
+                job.observed_runs >= config.thresholds.min_runs
+                and measured_reprocessing
             ),
             owner_tag=job.owner_tag,
         ),
@@ -820,6 +1006,15 @@ def _bookmark(
             scan_id=scan_id,
         ),
     )
+    if not measured_reprocessing:
+        opportunity.missing_evidence = [
+            "volume novo e volume já processado por execução"
+        ]
+        if not incremental_evidence:
+            opportunity.missing_evidence.append(
+                "confirmação de que a fonte cresce de forma incremental"
+            )
+    return opportunity
 
 
 def _autoscaling(
@@ -886,9 +1081,16 @@ def _overprovisioned(
     capacity_evidence: bool,
 ) -> Opportunity:
     est = glue_est.worker_reduction_saving(job, config)
+    candidates = _worker_candidates(job, config)
+    candidate_text = ", ".join(str(value) for value in candidates)
+    benchmark_validated = bool(
+        job.rightsize_tested_workers is not None
+        and job.rightsize_test_runs >= 3
+        and job.rightsize_output_validated
+    )
     if not capacity_evidence:
         _zero_unproven(est)
-    return build(
+    opportunity = build(
         Finding(
             asset_type="glue_job",
             asset_name=job.name,
@@ -903,20 +1105,34 @@ def _overprovisioned(
         Recommendation(
             difficulty=2,
             action="Reduzir o número de workers após teste controlado",
-            how_to_apply="Reduzir number_of_workers com teste controlado em 3 execuções.",
-            how_to_validate="Comparar duração e DPU-h por execução em 3 execuções pós-mudança.",
+            how_to_apply=(
+                f"Usar a configuração atual como baseline/rollback e testar, "
+                f"em ordem decrescente, {candidate_text} workers; executar três "
+                "runs medidos por candidato com a mesma entrada e argumentos."
+            ),
+            how_to_validate=(
+                "Comparar DPUSeconds, duração p95, memória, disco, spill, erros "
+                "e equivalência da saída em cada candidato."
+            ),
             risks=["gargalo de I/O", "skew de partição"],
             docs=[_DOC_WORKERS],
-            blocked=not capacity_evidence,
+            blocked=not (capacity_evidence and benchmark_validated),
         ),
         Evidence(
             items=[
                 f"utilização média {_utilization(job):.0%}",
                 f"workers={job.number_of_workers} ({job.worker_type})",
+                f"candidatos adaptativos 2–10={candidate_text}",
                 (
                     f"spill observado={job.shuffle_spill_bytes or 0:.0f} bytes"
                     if job.has_spill_evidence
                     else "spill não coletado"
+                ),
+                (
+                    f"benchmark={job.rightsize_test_runs} runs com "
+                    f"{job.rightsize_tested_workers} workers e saída validada"
+                    if benchmark_validated
+                    else "benchmark controlado ainda não concluído"
                 ),
             ],
             sources=["Glue GetJobRuns", "CloudWatch"],
@@ -932,6 +1148,12 @@ def _overprovisioned(
             scan_id=scan_id,
         ),
     )
+    if not benchmark_validated:
+        opportunity.missing_evidence = [
+            "três runs por candidato com a mesma entrada e argumentos",
+            "equivalência da saída e SLA de duração",
+        ]
+    return opportunity
 
 
 def _utilization(job: GlueJob) -> float:
@@ -939,6 +1161,28 @@ def _utilization(job: GlueJob) -> float:
         job.avg_worker_utilization if job.avg_worker_utilization is not None else job.avg_cpu_load
     )
     return float(value or 0.0)
+
+
+def _worker_candidates(job: GlueJob, config: Config) -> list[int]:
+    current = max(0, int(job.number_of_workers or 0))
+    if current < 2:
+        return [current] if current else []
+    utilization = _utilization(job)
+    target = max(
+        2,
+        min(
+            10,
+            current,
+            math.ceil(
+                current
+                * utilization
+                / max(config.thresholds.utilization_target, 0.01)
+            ),
+        ),
+    )
+    upper = min(10, current)
+    midpoint = math.ceil((upper + target) / 2)
+    return sorted({upper, midpoint, target}, reverse=True)
 
 
 def _capacity_evidence(job: GlueJob, config: Config) -> bool:
@@ -976,16 +1220,19 @@ def _investigation(
     baseline_cost: float = 0.0,
     doc_link: str = _DOC_WORKERS,
     category: str = "cost_optimization",
+    estimation: Estimation | None = None,
+    has_optional_metrics: bool = True,
 ) -> Opportunity:
-    estimation = Estimation(
-        method=rule_id.lower().replace("-", "_") + "_v1",
-        baseline_cost=round(baseline_cost, 2),
-        projected_cost=round(baseline_cost, 2),
-        estimated_saving=0.0,
-        assumptions=["economia não quantificada sem teste controlado"],
-        pricing_region=config.pricing.region,
-        estimation_version=config.pricing.version,
-    )
+    if estimation is None:
+        estimation = Estimation(
+            method=rule_id.lower().replace("-", "_") + "_v1",
+            baseline_cost=round(baseline_cost, 2),
+            projected_cost=round(baseline_cost, 2),
+            estimated_saving=0.0,
+            assumptions=["economia não quantificada sem teste controlado"],
+            pricing_region=config.pricing.region,
+            estimation_version=config.pricing.version,
+        )
     return build(
         Finding(
             asset_type="glue_job",
@@ -1010,7 +1257,7 @@ def _investigation(
             sources=["CloudWatch Glue Observability", "Glue GetJobRuns"],
             observed_runs=job.observed_runs,
             coverage_days=job.coverage_days,
-            has_optional_metrics=True,
+            has_optional_metrics=has_optional_metrics,
             owner_tag=job.owner_tag,
         ),
         estimation,

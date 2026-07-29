@@ -134,7 +134,7 @@ def _confidence(
         evidence.has_optional_metrics,
         config,
     )
-    if estimation.saving_quality == "modeled_rule":
+    if estimation.saving_quality in {"modeled_rule", "potential"}:
         return min(confidence, 0.50), "Baixa"
     if estimation.saving_quality == "modeled_evidence":
         capped = min(confidence, 0.70)

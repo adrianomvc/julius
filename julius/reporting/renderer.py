@@ -112,6 +112,7 @@ def render_json(vm: ReportViewModel, opportunities: list[Opportunity]) -> str:
         # técnico. Nada do que saía lá pode sumir: o JSON passa a ser o registro
         # completo do scan — é dele que a auditoria e o Devin leem.
         "glue_cost": vm.glue_cost,
+        "s3_cost": vm.s3_cost,
         "producer_candidates": [asdict(pc) for pc in vm.producers],
         "integrity": {
             "inventory": vm.inventory_integrity,

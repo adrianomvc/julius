@@ -100,9 +100,19 @@ REGISTRY: tuple[RuleFamily, ...] = (
     ),
     RuleFamily(
         service="sagemaker",
-        name="apps_and_endpoints",
+        name="compute_inference_and_feature_store",
         detect=sagemaker_rules.detect,
-        requires=("sagemaker_apps", "sagemaker_endpoints"),
+        requires=(
+            "sagemaker_apps",
+            "sagemaker_spaces",
+            "sagemaker_domains",
+            "sagemaker_endpoints",
+            "sagemaker_notebooks",
+            "sagemaker_jobs",
+            "sagemaker_feature_groups",
+            "sagemaker_pipelines",
+            "sagemaker_monitoring_schedules",
+        ),
         signals=sagemaker_rules.signals,
     ),
     RuleFamily(

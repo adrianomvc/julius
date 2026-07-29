@@ -95,6 +95,63 @@ def partition_pruning_saving(
     )
 
 
+def observed_partition_saving(
+    query: AthenaQuery,
+    config: Config,
+    *,
+    scanned_ratio: float | None,
+    profile: str,
+) -> Estimation:
+    """Usa uma consulta comparável filtrada; sem par não inventa seletividade."""
+    pricing = config.pricing
+    baseline, source, baseline_quality = _baseline(query, pricing)
+    if scanned_ratio is None:
+        return Estimation(
+            method=f"athena_{profile}_observed_selectivity_v2",
+            baseline_cost=round(baseline, 2),
+            projected_cost=round(baseline, 2),
+            estimated_saving=0.0,
+            assumptions=[
+                "seletividade de partição não observada em consulta comparável",
+                "nenhum percentual fixo de recuperação foi aplicado",
+                source,
+            ],
+            pricing_region=pricing.region,
+            estimation_version=ATHENA_RECOVERY_VERSION,
+            baseline_quality=baseline_quality,
+            saving_quality="unavailable",
+            baseline_bytes=query.billed_bytes or query.monthly_bytes_scanned,
+            projected_bytes=query.billed_bytes or query.monthly_bytes_scanned,
+            is_strategic=True,
+        )
+    ratio = max(0.0, min(1.0, scanned_ratio))
+    saving = baseline * (1.0 - ratio)
+    baseline_bytes = query.billed_bytes or query.monthly_bytes_scanned
+    projected_bytes = round(baseline_bytes * ratio)
+    return Estimation(
+        method=f"athena_{profile}_observed_selectivity_v2",
+        baseline_cost=round(baseline, 2),
+        projected_cost=round(baseline - saving, 2),
+        estimated_saving=round(saving, 2),
+        estimated_saving_low=0.0,
+        estimated_saving_high=round(saving, 2),
+        assumptions=[
+            f"consulta comparável com filtro leu {ratio:.1%} dos bytes",
+            "mesmo conjunto de tabelas e janela de cobrança",
+            "ganho potencial até validar igualdade funcional",
+            source,
+        ],
+        pricing_region=pricing.region,
+        estimation_version=ATHENA_RECOVERY_VERSION,
+        baseline_quality=baseline_quality,
+        saving_quality="modeled_evidence",
+        baseline_bytes=baseline_bytes,
+        projected_bytes=projected_bytes,
+        avoidable_bytes=max(0, baseline_bytes - projected_bytes),
+        is_strategic=True,
+    )
+
+
 def projection_saving(
     query: AthenaQuery,
     config: Config,

@@ -40,6 +40,11 @@ from julius.knowledge.s3_cost import (
     S3_USAGE_TYPE_MARKERS,
     UNATTRIBUTED_S3_BUCKETS,
 )
+from julius.knowledge.sagemaker_cost import (
+    ALLOCATABLE_SAGEMAKER_BUCKETS,
+    SAGEMAKER_USAGE_TYPE_MARKERS,
+    UNATTRIBUTED_SAGEMAKER_BUCKETS,
+)
 from julius.knowledge.thresholds import Thresholds
 
 # Versões usadas nas oportunidades (auditoria/calibração).
@@ -88,6 +93,17 @@ class RedshiftCostTaxonomy:
     unattributed_buckets: frozenset[str] = UNATTRIBUTED_REDSHIFT_BUCKETS
     version: str = "1.0"
 
+
+@dataclass(frozen=True)
+class SageMakerCostTaxonomy:
+    """Classificação de `USAGE_TYPE` para rateio por componente SageMaker."""
+
+    usage_type_markers: tuple[tuple[str, str], ...] = SAGEMAKER_USAGE_TYPE_MARKERS
+    allocatable_buckets: frozenset[str] = ALLOCATABLE_SAGEMAKER_BUCKETS
+    unattributed_buckets: frozenset[str] = UNATTRIBUTED_SAGEMAKER_BUCKETS
+    version: str = "1.0"
+
+
 @dataclass(frozen=True)
 class S3CostTaxonomy:
     """A mesma tradução, para o serviço onde a distinção muda a recomendação.
@@ -111,6 +127,7 @@ class Config:
     weights: Weights = field(default_factory=Weights)
     glue_cost: GlueCostTaxonomy = field(default_factory=GlueCostTaxonomy)
     redshift_cost: RedshiftCostTaxonomy = field(default_factory=RedshiftCostTaxonomy)
+    sagemaker_cost: SageMakerCostTaxonomy = field(default_factory=SageMakerCostTaxonomy)
     s3_cost: S3CostTaxonomy = field(default_factory=S3CostTaxonomy)
     # Fator de realização padrão (parte da economia efetivamente capturada).
     realization_factor: float = 0.8
@@ -143,6 +160,7 @@ __all__ = [
     "Config",
     "Pricing",
     "RecoveryBand",
+    "SageMakerCostTaxonomy",
     "Thresholds",
     "Weights",
     "is_gpu_instance",

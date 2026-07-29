@@ -125,7 +125,8 @@ def test_small_files_rule_uses_measured_output_telemetry():
         opportunity.missing_evidence
     )
     assert opportunity.estimation is not None
-    assert opportunity.estimation.estimated_saving > 0
+    assert opportunity.estimation.estimated_saving == 0
+    assert opportunity.estimation.saving_quality == "unavailable"
 
 
 def test_static_pattern_without_runtime_evidence_becomes_signal_not_opportunity():

@@ -20,6 +20,7 @@ from julius.collection.models import (
     Account,
     AthenaQuery,
     S3CostCoverage,
+    S3CostLine,
     S3Prefix,
 )
 from julius.config import DEFAULT_CONFIG
@@ -38,6 +39,8 @@ def _prefixo(**overrides) -> S3Prefix:
         "object_count": 8000,
         "total_bytes": 40 * _GB,
         "average_object_bytes": 5 * _MB,
+        "get_requests_window": 8000,
+        "access_quality": "best_effort",
     }
     return S3Prefix(**{**base, **overrides})
 
@@ -51,6 +54,15 @@ def _conta(*, prefixos=None, com_cobranca: bool = True, **overrides) -> Account:
                 net_cost=120.0,
                 cost_quality="allocated",
                 buckets={"storage_standard": 100.0, "requests_read": 20.0},
+                lines=[
+                    S3CostLine(
+                        usage_type="Requests-Tier2",
+                        bucket="requests_read",
+                        cost=20.0,
+                        usage_quantity=8000,
+                        usage_unit="Requests",
+                    )
+                ],
             )
             if com_cobranca
             else None
@@ -186,7 +198,7 @@ def test_the_baseline_is_the_request_share_not_the_storage():
     """Reivindicar armazenamento prometeria o que a compactação não entrega."""
     achado = small_files.detect(_conta(), DEFAULT_CONFIG, "scan")[0]
 
-    # 20.0 de requests_read rateados sobre 8000 objetos = 0.0025/objeto.
+    # 20.0 / 8000 requests faturados × 8000 GETs observados.
     assert achado.estimation.baseline_cost == pytest.approx(20.0, abs=0.01)
     assert any("request" in item for item in achado.estimation.assumptions)
     assert any(
@@ -202,12 +214,12 @@ def test_the_projection_uses_the_object_count_after_compaction():
     assert achado.estimation.projected_cost < achado.estimation.baseline_cost
 
 
-def test_the_gain_is_strategic_because_nobody_measured_the_reads():
-    """Quanto o request cai depende de quantas leituras acontecem."""
+def test_the_gain_is_strategic_because_access_logs_are_best_effort():
+    """A conta existe, mas a entrega de access logs não é garantia contábil."""
     achado = small_files.detect(_conta(), DEFAULT_CONFIG, "scan")[0]
 
     assert achado.estimation.is_strategic is True
-    assert any("leituras desta tabela" in item for item in achado.missing_evidence)
+    assert any("best-effort" in item for item in achado.missing_evidence)
 
 
 def test_without_classified_request_billing_there_is_no_figure():

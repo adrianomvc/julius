@@ -90,6 +90,7 @@ _BASELINE = {
     "allocated": EvidenceQuality.ALLOCATED,
     "allocated_partial": EvidenceQuality.ALLOCATED_PARTIAL,
     "modeled": EvidenceQuality.MODELED,
+    "unavailable": EvidenceQuality.MODELED_RULE,
 }
 _SAVING = {
     "realized": EvidenceQuality.REALIZED,
@@ -100,7 +101,17 @@ _SAVING = {
     # pior nota da escala, indistinguível de uma faixa de regra. Enquanto a
     # faixa era fixa em ±35% o erro não aparecia em lugar nenhum.
     "modeled": EvidenceQuality.MODELED,
+    # Recomendação produzida pelo serviço AWS ainda exige benchmark, portanto
+    # permanece modelada, não medida.
+    "aws_recommendation": EvidenceQuality.MODELED,
+    # Custo observado uma única vez é evidência medida, embora não represente
+    # economia mensal recorrente.
+    "one_time_observed": EvidenceQuality.MEASURED,
     "modeled_rule": EvidenceQuality.MODELED_RULE,
+    # Faixa de ganho apenas potencial, ainda bloqueada por benchmark humano.
+    # Não entra no portfólio financeiro (`is_strategic=True`) e conserva a
+    # qualidade mais baixa que ainda admite mostrar um teto informativo.
+    "potential": EvidenceQuality.MODELED_RULE,
     # Sem contrafactual, a economia não é número — o achado é investigação.
     "unavailable": EvidenceQuality.MODELED_RULE,
 }

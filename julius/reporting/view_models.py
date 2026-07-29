@@ -37,6 +37,8 @@ class OpportunityVM:
     category_fg: str
     category_bg: str
     monthly_fmt: str
+    potential_fmt: str
+    gain_class: str
     baseline_fmt: str
     baseline_quality_label: str
     saving_quality: str
@@ -216,6 +218,20 @@ def _opp_vm(o: Opportunity, currency: str) -> OpportunityVM:
             if not g.is_strategic
             else "Estratégico"
         ),
+        potential_fmt=(
+            fmt.money(estimation.estimated_saving, currency)
+            if estimation
+            and estimation.estimated_saving > 0
+            and not saving_unavailable
+            else "—"
+        ),
+        gain_class=(
+            "indisponível"
+            if saving_unavailable
+            else "potencial bloqueado"
+            if g.is_strategic
+            else "ganho comprovado/modelado"
+        ),
         baseline_fmt=(
             fmt.money(estimation.baseline_cost, currency)
             if estimation and estimation.baseline_cost > 0
@@ -377,6 +393,7 @@ class ReportViewModel:
     athena_actors: list[dict] = field(default_factory=list)
     athena_gaps: list[str] = field(default_factory=list)
     glue_cost: dict = field(default_factory=dict)
+    s3_cost: dict = field(default_factory=dict)
 
 
 def _recommendation(do_now: list[Opportunity], currency: str) -> str:
@@ -568,6 +585,64 @@ def _glue_cost_view(account: Account) -> dict:
     }
 
 
+def _s3_cost_view(account: Account) -> dict:
+    coverage = account.s3_cost_coverage
+    if coverage is None:
+        return {}
+    groups = [
+        {
+            "kind": kind,
+            "cost": coverage.cost_for({bucket}),
+            "cost_fmt": fmt.usd(coverage.cost_for({bucket})),
+            "quantity": coverage.quantity_for({bucket}),
+            "quantity_fmt": (
+                f"{coverage.quantity_for({bucket}):,.0f} requests"
+                if coverage.quantity_for({bucket}) is not None
+                else "—"
+            ),
+            "cost_per_thousand_fmt": (
+                fmt.usd((coverage.unit_cost_for({bucket}) or 0.0) * 1000)
+                if coverage.unit_cost_for({bucket}) is not None
+                else "—"
+            ),
+        }
+        for kind, bucket in (
+            ("GET/read", "requests_read"),
+            ("PUT/write", "requests_write"),
+            ("outras", "requests_other"),
+        )
+    ]
+    return {
+        "window": f"{coverage.period_start} → {coverage.data_through}",
+        "cost_quality": coverage.cost_quality,
+        "cost_metric": coverage.cost_metric or "—",
+        "cost_fmt": fmt.usd(coverage.net_cost),
+        "request_groups": groups,
+        "request_cost_fmt": fmt.usd(
+            coverage.cost_for(
+                {"requests_read", "requests_write", "requests_other"}
+            )
+        ),
+        "lines": [
+            {
+                "usage_type": line.usage_type,
+                "bucket": line.bucket,
+                "cost": line.cost,
+                "cost_fmt": fmt.usd(line.cost),
+                "usage_quantity": line.usage_quantity,
+                "usage_unit": line.usage_unit,
+                "usage_fmt": (
+                    f"{line.usage_quantity:,.2f} {line.usage_unit}".strip()
+                    if line.usage_quantity is not None
+                    else "—"
+                ),
+            }
+            for line in coverage.lines
+        ],
+        "gaps": list(coverage.gaps),
+    }
+
+
 def _pareto_bar(pareto: Pareto, currency: str) -> list[dict]:
     total = pareto.monthly_total or 1.0
     segments: list[dict] = []
@@ -687,7 +762,10 @@ def _athena_views(account: Account) -> tuple[dict, list[dict], list[dict], list[
             ) or "ocasional",
             "failures": q.failed_runs + q.cancelled_runs,
             "reuse": q.reused_runs,
+            "reuse_configured": q.reuse_configured_runs,
+            "reuse_max_age_minutes": q.reuse_max_age_minutes,
             "reuse_eligible": q.reuse_eligible_runs,
+            "reuse_ineligible_reasons": list(q.reuse_ineligible_reasons),
             "reuse_avoidable_cost_fmt": fmt.money(
                 q.reuse_avoidable_cost, q.currency
             ),
@@ -700,6 +778,8 @@ def _athena_views(account: Account) -> tuple[dict, list[dict], list[dict], list[
             ),
             "codecs": list(q.compression_codecs),
             "projection_candidates": list(q.partition_projection_candidates),
+            "filter_columns": list(q.filter_columns),
+            "partition_candidate_keys": list(q.partition_candidate_keys),
         }
         for q in account.athena_queries[:20]
     ]
@@ -880,6 +960,7 @@ def build(
         athena_actors=athena_actors,
         athena_gaps=athena_gaps,
         glue_cost=_glue_cost_view(account),
+        s3_cost=_s3_cost_view(account),
     )
 
 
