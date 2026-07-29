@@ -62,6 +62,13 @@ class StateMachine:
     owner_tag: str | None = None
     glue_jobs: list[str] = field(default_factory=list)
     schedule_names: list[str] = field(default_factory=list)
+    # Falso quando `DescribeStateMachine` foi negado: a máquina existe, mas a
+    # definição não foi lida — não há como saber se há loop de polling nem quais
+    # jobs Glue ela chama. Antes uma máquina negada derrubava a listagem toda.
+    definition_available: bool = True
+    # Falso quando `ListExecutions` foi negado: `executions_per_month` e
+    # `avg_duration_sec` são zero por falta de leitura, não por falta de uso.
+    execution_history_available: bool = True
 
 
 @dataclass
@@ -118,6 +125,13 @@ class Table:
     # segunda vira dinheiro no relatório. A fonte de toques é opcional, então o
     # caso não medido é o comum, não a exceção.
     touches_90d: int | None = None       # acessos na janela (tabela oficial de toques)
+    #: Quando a tabela foi lida pela última vez, em ISO-8601. Vem do histórico
+    #: de queries Athena ou da tabela oficial de toques — nunca do S3, que não
+    #: expõe último acesso por objeto. Vazio = não medido, e nesse caso a única
+    #: data conhecida dos arquivos é a da última **escrita**, que não diz se o
+    #: dado é usado. É essa diferença que separa uma recomendação de classe de
+    #: armazenamento com economia de uma que sai como pergunta.
+    last_read_at: str = ""
     consuming_accounts: int | None = None
     consuming_communities: int | None = None
     storage_bytes: int = 0

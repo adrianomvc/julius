@@ -109,3 +109,98 @@ def test_pricing_provenance_reaches_the_estimation_assumptions():
     """Quem lê uma estimativa modelada consegue ver de onde veio a tarifa."""
     assert "sa-east-1" in DEFAULT_CONFIG.pricing.provenance
     assert DEFAULT_CONFIG.pricing.currency == "USD"
+
+
+# --------------------------------------------------------------------------
+# S3: a tarifa que compara duas opções, e por isso não tem default
+# --------------------------------------------------------------------------
+
+
+def test_a_missing_s3_table_says_so_instead_of_guessing():
+    """Sem tarifa de S3, a comparação entre classes não pode acontecer.
+
+    As outras tarifas têm fallback porque modelam um custo que já existia. Esta
+    decide se vale mover petabytes para Glacier, e um default chutado não daria
+    uma estimativa imprecisa — daria uma recomendação inventada com cifra ao
+    lado. O vazio é o que faz a regra sair como sinal.
+    """
+    pricing = Pricing.for_region(DEFAULT_REGION)
+
+    if pricing.has_s3_storage_rates:
+        pytest.skip("a tabela já foi populada por `julius pricing refresh`")
+
+    assert pricing.s3_storage_gb_month == {}
+    assert pricing.s3_storage_delta("glacier_flexible") is None
+    assert pricing.s3_request_cost("list", 1_000_000) is None
+
+
+def test_the_saving_per_gb_is_the_difference_not_the_target_price():
+    """Mover para Glacier não economiza o preço do Glacier: economiza a diferença.
+
+    Trocar um pelo outro superestimaria a economia em ~4x no caso Standard →
+    Glacier, e o erro sairia como número exato no relatório.
+    """
+    from dataclasses import replace
+
+    pricing = replace(
+        Pricing.for_region(DEFAULT_REGION),
+        s3_storage_gb_month={"standard": 0.0405, "glacier_flexible": 0.0045},
+    )
+
+    assert pricing.has_s3_storage_rates is True
+    assert pricing.s3_storage_delta("glacier_flexible") == pytest.approx(0.036)
+    # Classe que a tabela não conhece continua sendo `None`, não zero: zero se
+    # leria como "não compensa".
+    assert pricing.s3_storage_delta("deep_archive") is None
+
+
+def test_request_cost_scales_per_thousand():
+    from dataclasses import replace
+
+    pricing = replace(
+        Pricing.for_region(DEFAULT_REGION),
+        s3_request_per_1000={"list": 0.007, "lifecycle_transition": 0.01},
+    )
+
+    # Um data lake de 10 milhões de objetos são 10 mil chamadas de LIST.
+    assert pricing.s3_request_cost("list", 10_000) == pytest.approx(0.07)
+    assert pricing.s3_request_cost("lifecycle_transition", 10_000_000) == pytest.approx(100.0)
+    assert pricing.s3_request_cost("get", 1000) is None
+
+
+def test_the_s3_mapping_covers_every_class_the_rule_can_recommend():
+    """Entrada faltando no mapa vira tarifa ausente depois do refresh."""
+    from julius.knowledge.pricing.refresh import load_mapping
+
+    s3 = load_mapping().get("s3", {})
+
+    esperadas = {
+        "storage_standard",
+        "storage_standard_ia",
+        "storage_onezone_ia",
+        "storage_glacier_ir",
+        "storage_glacier_flexible",
+        "storage_deep_archive",
+        "request_list_per_1000",
+        "request_get_per_1000",
+        "request_lifecycle_transition_per_1000",
+    }
+    assert esperadas <= set(s3)
+    assert all(entry.get("service") == "AmazonS3" for entry in s3.values())
+
+
+def test_a_new_mapping_section_is_not_silently_dropped_when_writing():
+    """O renderer listava as seções à mão, e a nova resolveria sem ser escrita."""
+    from datetime import date
+
+    from julius.knowledge.pricing.refresh import Resolution, render_table
+
+    texto = render_table(
+        "sa-east-1",
+        [Resolution("s3", "storage_standard", "AmazonS3", value=0.0405)],
+        today=date(2026, 7, 29),
+        sagemaker_default=0.18,
+    )
+
+    assert "[s3]" in texto
+    assert "storage_standard = 0.0405" in texto

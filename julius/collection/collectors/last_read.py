@@ -1,0 +1,104 @@
+"""Quando cada tabela — e cada prefixo S3 — foi lida pela última vez.
+
+**O S3 não tem last access time nativo por objeto.** `LastModified` é a data da
+última escrita, e um arquivo gravado uma vez e lido todo dia tem `LastModified`
+de um ano atrás. Recomendar Glacier a partir dele trocaria a classe de dado
+quente e faria o time dono pagar retrieval para reverter.
+
+As fontes que medem leitura de verdade exigem configuração prévia no bucket
+(`collectors/s3_config.py`). Este módulo cobre o caso em que nenhuma delas está
+ligada, usando o que o Julius **já** coleta e que não pede permissão nova:
+
+- o histórico de execuções do Athena, que diz quais tabelas cada query leu e
+  quando rodou pela última vez (`AthenaQuery.reads_tables` + `last_execution_at`);
+- a tabela oficial de toques, quando `--touches-table` está configurada.
+
+O vínculo com o S3 é a `location` da tabela no catálogo — a mesma que já define
+o escopo da coleta de S3. Não é evidência por objeto: é evidência de que **o
+prefixo inteiro** foi lido, o que é suficiente para *não* recomendar transição,
+e insuficiente para afirmar que nada ali é lido. Por isso o resultado limita a
+confiança da regra em vez de fabricar uma certeza.
+"""
+
+from __future__ import annotations
+
+from typing import Any
+
+
+def apply_last_read(account: Any) -> int:
+    """Preenche `Table.last_read_at` a partir do histórico de queries.
+
+    Devolve quantas tabelas ficaram com data. Só avança a data: a tabela de
+    toques, quando existe, já escreveu a dela, e ela é a fonte melhor.
+    """
+    if not getattr(account, "tables", None):
+        return 0
+    ultima = _ultima_leitura_por_tabela(account)
+    if not ultima:
+        return sum(1 for table in account.tables if table.last_read_at)
+    medidas = 0
+    for table in account.tables:
+        candidata = ultima.get(_normalizado(table.name), "")
+        if candidata > table.last_read_at:
+            table.last_read_at = candidata
+        if table.last_read_at:
+            medidas += 1
+    return medidas
+
+
+def _ultima_leitura_por_tabela(account: Any) -> dict[str, str]:
+    ultima: dict[str, str] = {}
+    for query in getattr(account, "athena_queries", None) or ():
+        quando = str(getattr(query, "last_execution_at", "") or "")
+        if not quando:
+            continue
+        for nome in getattr(query, "reads_tables", None) or ():
+            chave = _normalizado(nome)
+            if quando > ultima.get(chave, ""):
+                ultima[chave] = quando
+    return ultima
+
+
+def _normalizado(nome: Any) -> str:
+    """`db.tabela` em minúsculas — o catálogo Glue não diferencia caixa."""
+    return str(nome or "").strip().lower()
+
+
+def last_read_by_prefix(account: Any) -> dict[str, str]:
+    """Última leitura conhecida de cada prefixo S3, via `location` da tabela.
+
+    A chave é a `location` normalizada sem a barra final, para casar com
+    `S3Prefix.location`. Prefixo que não é location de tabela nenhuma fica de
+    fora — e ficar de fora significa "não medido", nunca "não lido".
+    """
+    out: dict[str, str] = {}
+    for table in getattr(account, "tables", None) or ():
+        quando = str(getattr(table, "last_read_at", "") or "")
+        local = str(getattr(table, "location", "") or "").rstrip("/")
+        if not quando or not local:
+            continue
+        if quando > out.get(local, ""):
+            out[local] = quando
+    return out
+
+
+def last_read_for(prefix: Any, por_prefixo: dict[str, str]) -> str:
+    """A última leitura que se conhece deste prefixo, ou vazio.
+
+    Casa por caminho contido, não por igualdade: a location da tabela é
+    `s3://lake/vendas/`, e o prefixo coletado pode ser uma partição dentro dela.
+    Ler a tabela é ler a partição.
+    """
+    local = str(getattr(prefix, "location", "") or "").rstrip("/")
+    if not local:
+        return ""
+    if local in por_prefixo:
+        return por_prefixo[local]
+    return max(
+        (
+            quando
+            for raiz, quando in por_prefixo.items()
+            if local.startswith(raiz + "/")
+        ),
+        default="",
+    )

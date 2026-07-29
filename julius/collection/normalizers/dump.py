@@ -2,6 +2,12 @@
 
 Permite que a coleta ao vivo (boto3) grave um dataset inspecionável, que flui
 pelo mesmo pipeline offline.
+
+**Toda coleção do `Account` precisa aparecer aqui.** Uma que falte não dá erro:
+o loader repõe o default, o inventário chega vazio do outro lado e o relatório
+não tem como distinguir "não foi coletado" de "não existe na conta" — foi o que
+aconteceu com S3 e Redshift, coletados e descartados entre `collect` e `report`.
+`tests/test_dump_roundtrip.py` cobra a cobertura contra o próprio `Account`.
 """
 
 from __future__ import annotations
@@ -65,6 +71,15 @@ def account_to_dataset(account: Account) -> dict:
         "state_machines": [_clean(asdict(s)) for s in account.state_machines],
         "sagemaker_apps": [_clean(asdict(a)) for a in account.sagemaker_apps],
         "sagemaker_endpoints": [_clean(asdict(e)) for e in account.sagemaker_endpoints],
+        "redshift_clusters": [_clean(asdict(c)) for c in account.redshift_clusters],
+        "redshift_cost_coverage": _clean(asdict(account.redshift_cost_coverage))
+        if account.redshift_cost_coverage else None,
+        "s3_buckets": [_clean(asdict(b)) for b in account.s3_buckets],
+        "s3_prefixes": [_clean(asdict(p)) for p in account.s3_prefixes],
+        "s3_multipart": [_clean(asdict(m)) for m in account.s3_multipart],
+        "s3_bucket_configs": [_clean(asdict(c)) for c in account.s3_bucket_configs],
+        "s3_cost_coverage": _clean(asdict(account.s3_cost_coverage))
+        if account.s3_cost_coverage else None,
         "tables": [_clean(asdict(t)) for t in account.tables],
         "schedules": [_clean(asdict(s)) for s in account.schedules],
         "actor_events": [_clean(asdict(e)) for e in account.actor_events],

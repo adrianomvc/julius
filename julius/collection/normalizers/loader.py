@@ -28,6 +28,7 @@ from julius.collection.models import (
     RedshiftCluster,
     RedshiftCostCoverage,
     S3Bucket,
+    S3BucketConfig,
     S3CostCoverage,
     S3MultipartUpload,
     S3Prefix,
@@ -164,6 +165,9 @@ def load_account(path: str | Path) -> Account:
     account.s3_prefixes = [_pick(x, S3Prefix) for x in raw.get("s3_prefixes", [])]
     account.s3_multipart = [
         _pick(m, S3MultipartUpload) for m in raw.get("s3_multipart", [])
+    ]
+    account.s3_bucket_configs = [
+        _pick(c, S3BucketConfig) for c in raw.get("s3_bucket_configs", [])
     ]
     if raw.get("s3_cost_coverage"):
         account.s3_cost_coverage = _pick(raw["s3_cost_coverage"], S3CostCoverage)

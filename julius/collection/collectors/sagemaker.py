@@ -18,6 +18,7 @@ bem configurado como se não tivesse proteção nenhuma. Agora não coletado é
 
 from __future__ import annotations
 
+from julius.collection.collectors.paginate import safe_pages
 from julius.collection.models import SageMakerApp, SageMakerEndpoint
 from julius.collection.window import AnalysisWindow
 
@@ -27,10 +28,14 @@ _IDLE_CPU_THRESHOLD = 0.05
 
 
 def collect_apps(
-    sagemaker_client, cloudwatch_client=None, *, window: AnalysisWindow
+    sagemaker_client,
+    cloudwatch_client=None,
+    *,
+    window: AnalysisWindow,
+    gaps: list[str] | None = None,
 ) -> list[SageMakerApp]:
     apps: list[SageMakerApp] = []
-    for raw in _paginate(sagemaker_client, "list_apps", "Apps"):
+    for raw in _paginate(sagemaker_client, "list_apps", "Apps", gaps):
         name = str(raw.get("AppName") or "")
         if not name or str(raw.get("Status") or "") == "Deleted":
             continue
@@ -126,9 +131,10 @@ def collect_endpoints(
     autoscaling_client=None,
     *,
     window: AnalysisWindow,
+    gaps: list[str] | None = None,
 ) -> list[SageMakerEndpoint]:
     endpoints: list[SageMakerEndpoint] = []
-    for raw in _paginate(sagemaker_client, "list_endpoints", "Endpoints"):
+    for raw in _paginate(sagemaker_client, "list_endpoints", "Endpoints", gaps):
         name = str(raw.get("EndpointName") or "")
         if not name:
             continue
@@ -256,19 +262,13 @@ def _metric_points(
     ]
 
 
-def _paginate(client, operation: str, key: str) -> list[dict]:
-    try:
-        paginator = client.get_paginator(operation)
-        pages = paginator.paginate()
-    except Exception:
-        try:
-            pages = [getattr(client, operation)()]
-        except Exception:
-            return []
-    out: list[dict] = []
-    for page in pages:
-        out.extend(page.get(key, []))
-    return out
+def _paginate(
+    client, operation: str, key: str, gaps: list[str] | None = None
+) -> list[dict]:
+    resultado = safe_pages(client, operation, key)
+    if gaps is not None and not resultado.complete:
+        gaps.append(f"{operation}: {resultado.error_category or 'incompleto'}")
+    return resultado.items
 
 
 def _tag(raw: dict, key: str) -> str | None:

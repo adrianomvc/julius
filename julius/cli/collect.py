@@ -48,6 +48,16 @@ def collect(
         "--glue-databases",
         help="Bancos do catálogo, separados por vírgula. Substitui a regra de nome.",
     ),
+    s3_full_listing: bool = typer.Option(
+        False,
+        "--s3-full-listing",
+        help=(
+            "Lista cada prefixo S3 até o fim, em paralelo, em vez de parar no "
+            "teto de páginas. Necessário para recomendar classe de "
+            "armazenamento sobre volume medido; cobra requests de LIST, e o "
+            "total gasto aparece na saúde da coleta."
+        ),
+    ),
     output: str = typer.Option("data/collected/account.json", "--output", "-o"),
 ) -> None:
     """Coleta em sa-east-1 com o perfil SSO selecionado e grava o dataset."""
@@ -77,6 +87,7 @@ def collect(
             include_cloudtrail=cloudtrail,
             datawarm_job=datawarm_job,
             catalog_scope=scope,
+            s3_full_listing=s3_full_listing,
         )
     except RequiredCollectionError as exc:
         raise typer.BadParameter(str(exc)) from exc

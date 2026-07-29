@@ -25,7 +25,7 @@ from julius.findings.promotion import promote
 from julius.findings.signal import Signal
 from julius.governance import compute_candidates
 from julius.graph import ProcessGraph, build_process_graph, enrich_opportunities
-from julius.knowledge.managed_processes import is_managed
+from julius.knowledge.managed_processes import is_managed, managed_asset_names
 from julius.knowledge.recurrence import (
     consumption_dpu_hours,
     deserves_signal,
@@ -170,10 +170,23 @@ def analyze_account(
     # inventário porque o rateio da fatura Glue é proporcional à DPU-hora de
     # cada job — tirá-lo do inventário não tira o consumo dele da fatura, só
     # espalha a parte dele sobre os outros e infla o custo de quem sobrou.
+    #
+    # O filtro alcança o que **deriva** desses processos, não só o nome deles: o
+    # prefixo S3 do event log, a tabela que escrevem, o schedule que os dispara.
+    # Casando só o nome, a aplicação da plataforma saía do ranking e voltava
+    # como recomendação sobre um artefato dela.
+    gerenciados = managed_asset_names(account)
     opportunities = [
-        item for item in opportunities if not is_managed(item.asset_name)
+        item
+        for item in opportunities
+        if not _is_managed_finding(item.asset_name, gerenciados)
+        and not is_managed(item.source_process or "")
     ]
-    signals = [item for item in signals if not is_managed(item.asset_name)]
+    signals = [
+        item
+        for item in signals
+        if not _is_managed_finding(item.asset_name, gerenciados)
+    ]
     enrich_opportunities(account, graph, opportunities)
     # Consolida achados do mesmo ativo numa ação principal (causa raiz).
     opportunities = group_by_asset(opportunities)
@@ -259,12 +272,9 @@ def analyze_account(
         source=source,
         # Eles ficaram fora das recomendações mas continuam no inventário; o
         # manifesto é onde isso é declarado em vez de virar sumiço silencioso.
-        managed_processes=[
-            name
-            for name in [job.name for job in account.glue_jobs]
-            + [machine.name for machine in account.state_machines]
-            if is_managed(name)
-        ],
+        # Declara os ativos derivados junto: quem lê o manifesto precisa poder
+        # explicar por que um prefixo S3 específico não aparece no relatório.
+        managed_processes=sorted(gerenciados),
     )
     vm = build_vm(account, opportunities, manifest)
     vm.diff_events = [
@@ -382,6 +392,27 @@ def _drop_non_recurrent(
         if deserves_signal(process)
     ]
     return mantidos, signals + caros
+
+
+def _is_managed_finding(asset_name: str, gerenciados: frozenset[str]) -> bool:
+    """O achado é sobre um processo da plataforma, ou sobre algo dele?
+
+    O casamento por prefixo existe porque um caminho S3 se subdivide: o event log
+    do job é `s3://bucket/logs/<job>/`, e o achado costuma apontar para um
+    subprefixo dele. Comparar só por igualdade deixaria passar exatamente o caso
+    que motivou esta função.
+    """
+    nome = str(asset_name or "").strip()
+    if not nome:
+        return False
+    if is_managed(nome) or nome in gerenciados:
+        return True
+    if not nome.startswith("s3://"):
+        return False
+    return any(
+        alvo.startswith("s3://") and nome.startswith(alvo.rstrip("/") + "/")
+        for alvo in gerenciados
+    )
 
 
 def _non_recurrent_signal(asset_type: str, process: Any, minimo: int) -> Signal:

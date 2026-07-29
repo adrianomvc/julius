@@ -77,5 +77,35 @@ class Thresholds:
     s3_multipart_stale_days: int = 7
     # Objetos sob o prefixo abaixo dos quais o achado não compensa a ação.
     s3_min_stale_objects: int = 100
+    # Arquivo pequeno numa tabela: cada leitura faz LIST e GET por objeto, então
+    # o custo está em request, não em armazenamento. Precisa casar com
+    # `s3_evidence.SMALL_FILE_THRESHOLD_BYTES`, que decide o mesmo no caminho do
+    # Athena — `test_the_two_small_file_thresholds_agree` cobra isso.
+    s3_small_file_max_bytes: int = 64 * 1024**2
+    s3_small_files_min_count: int = 100
+    # Alvo de compactação. 128 MiB é o tamanho de bloco que Parquet e Athena
+    # assumem; acima disso o ganho de leitura satura.
+    s3_compaction_target_bytes: int = 128 * 1024**2
+    # Dias sem leitura a partir dos quais o dado vira candidato a classe fria.
+    # Casado com a janela padrão de análise: abaixo dela a ausência de leitura
+    # é falta de observação, não evidência de que o dado esfriou.
+    s3_cold_after_days: int = 90
+    # Volume mínimo para a transição valer a conversa. Abaixo disso a economia
+    # não paga o tempo de quem executa, e o achado só disputa o ranking.
+    s3_min_cold_bytes: int = 100 * 1024**3
+    # **Cobrança mínima por objeto** em Standard-IA, One Zone-IA e Glacier
+    # Instant Retrieval: a AWS fatura 128 KB mesmo para um arquivo de 1 KB.
+    # Um prefixo de arquivo pequeno fica MAIS CARO ao ser movido, e é por isso
+    # que este número é um piso de tamanho médio, não uma preferência.
+    s3_min_object_bytes_for_ia: int = 128 * 1024
+    # Mínimo de retenção cobrado por classe, em dias: mover um objeto mais novo
+    # que isso faz a AWS cobrar o período inteiro assim mesmo.
+    s3_min_retention_days: tuple[tuple[str, int], ...] = (
+        ("standard_ia", 30),
+        ("onezone_ia", 30),
+        ("glacier_ir", 90),
+        ("glacier_flexible", 90),
+        ("deep_archive", 180),
+    )
     # SageMaker: endpoint "sem uso" com até este nº de invocações/mês.
     sm_endpoint_unused_invocations: int = 50

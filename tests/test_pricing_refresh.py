@@ -65,6 +65,21 @@ GLUE = [
     _product("GLUE2", {"group": "ETL Job run", "operation": "jobrunflex"}, [0.29]),
 ]
 
+#: Armazenamento S3 chega em faixas decrescentes por volume (primeiros 50 TB,
+#: próximos 450 TB, acima de 500 TB). `pick = "min"` pega a mais barata — que só
+#: vale para quem passa de 500 TB — e é justamente por isso que ela é a escolha
+#: certa aqui: subestima o preço do Standard, subestima a diferença entre
+#: classes e portanto subestima a economia. Errar prometendo menos é o lado
+#: seguro de uma recomendação que pede para mover petabytes.
+S3 = [
+    _product(
+        "S3STD",
+        {"productFamily": "Storage", "volumeType": "Standard"},
+        [0.0405, 0.0389, 0.0374],
+        unit="GB-Mo",
+    ),
+]
+
 
 def test_products_are_flattened_from_the_nested_price_list():
     client = FakePricing({"AWSGlue": GLUE})
@@ -206,6 +221,117 @@ def test_refresh_preserves_instance_prices_it_does_not_fetch():
     table = tomllib.loads(text)
     assert table["sagemaker"]["instances"]["ml.m5.large"] == pytest.approx(0.12)
     assert table["sagemaker"]["default_hourly"] == pytest.approx(0.18)
+
+
+# --------------------------------------------------------------------------
+# Atualizar uma parte do mapa sem perder o resto
+# --------------------------------------------------------------------------
+
+_MAPA_DUAS_SECOES = (
+    '[glue.dpu_hour]\nservice = "AWSGlue"\n'
+    'match = { group = "ETL Job run", operation = "jobrun" }\npick = "only"\n'
+    '\n[s3.storage_standard]\nservice = "AmazonS3"\n'
+    'match = { productFamily = "Storage", volumeType = "Standard" }\npick = "min"\n'
+)
+
+
+def _tabela_existente(tmp_path):
+    tables = tmp_path / "tables"
+    tables.mkdir()
+    (tables / "sa-east-1.toml").write_text(
+        'region = "sa-east-1"\ncurrency = "USD"\nversion = "antiga"\n'
+        "verified = true\n"
+        "\n[glue]\ndpu_hour = 0.44\nflex_dpu_hour = 0.29\n"
+        "\n[athena]\nper_tb = 5.0\n"
+        "\n[sagemaker]\ndefault_hourly = 0.18\n",
+        encoding="utf-8",
+    )
+    mapping_file = tmp_path / "mapping.toml"
+    mapping_file.write_text(_MAPA_DUAS_SECOES, encoding="utf-8")
+    return tables, mapping_file
+
+
+def test_refreshing_one_section_does_not_erase_the_others(tmp_path):
+    """`--only s3` não pode apagar Glue e Athena, conferidos antes.
+
+    O renderizador escreve o que o mapa resolveu. Sem carregar o resto da tabela
+    atual, uma execução que sequer consultou a Athena a apagaria — e o
+    `verified = true` continuaria lá, agora sobre uma tabela mutilada.
+    """
+    tables, mapping_file = _tabela_existente(tmp_path)
+
+    written, resolutions = refresh_region(
+        FakePricing({"AmazonS3": S3}),
+        "sa-east-1",
+        today=TODAY,
+        tables=tables,
+        mapping_path=mapping_file,
+        sections=("s3",),
+    )
+
+    assert written is not None
+    table = tomllib.loads(written.read_text(encoding="utf-8"))
+    assert table["s3"]["storage_standard"] == pytest.approx(0.0374)
+    # O que não foi buscado continua lá.
+    assert table["athena"]["per_tb"] == pytest.approx(5.0)
+    assert table["glue"]["flex_dpu_hour"] == pytest.approx(0.29)
+    # E só a seção pedida foi consultada.
+    assert [item.section for item in resolutions] == ["s3"]
+
+
+def test_an_unverified_new_section_does_not_block_the_rest(tmp_path):
+    """Foi o que aconteceu ao acrescentar S3: nove palpites travavam tudo.
+
+    A atomicidade protege o `verified`; ela não deveria transformar mapeamento
+    novo em bloqueio para o que já funcionava.
+    """
+    tables, mapping_file = _tabela_existente(tmp_path)
+
+    written, _ = refresh_region(
+        FakePricing({"AWSGlue": GLUE}),  # sem produtos de S3: a seção falharia
+        "sa-east-1",
+        today=TODAY,
+        tables=tables,
+        mapping_path=mapping_file,
+        sections=("glue",),
+    )
+
+    assert written is not None
+    assert tomllib.loads(written.read_text(encoding="utf-8"))["glue"]["dpu_hour"]
+
+
+def test_an_unknown_section_fails_loudly_instead_of_refreshing_nothing(tmp_path):
+    tables, mapping_file = _tabela_existente(tmp_path)
+
+    with pytest.raises(ValueError, match="inexistentes"):
+        refresh_region(
+            FakePricing({}),
+            "sa-east-1",
+            today=TODAY,
+            tables=tables,
+            mapping_path=mapping_file,
+            sections=("s4",),
+        )
+
+
+def test_dry_run_reports_without_touching_the_table(tmp_path):
+    """O laço de conferência: ver o que casa antes de escrever."""
+    tables, mapping_file = _tabela_existente(tmp_path)
+    antes = (tables / "sa-east-1.toml").read_text(encoding="utf-8")
+
+    written, resolutions = refresh_region(
+        FakePricing({"AmazonS3": S3}),
+        "sa-east-1",
+        today=TODAY,
+        tables=tables,
+        mapping_path=mapping_file,
+        sections=("s3",),
+        dry_run=True,
+    )
+
+    assert written is None
+    assert all(item.ok for item in resolutions)
+    assert (tables / "sa-east-1.toml").read_text(encoding="utf-8") == antes
 
 
 def test_the_shipped_mapping_is_loadable_and_names_real_services():

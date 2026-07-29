@@ -55,3 +55,54 @@ def is_managed(
     if normalizado in {item.lower() for item in exact}:
         return True
     return any(normalizado.startswith(prefix.lower()) for prefix in prefixes)
+
+
+def _nome(valor) -> str:
+    return str(valor or "").strip()
+
+
+def managed_asset_names(account) -> frozenset[str]:
+    """Todo ativo que pertence a um processo da plataforma, não só o processo.
+
+    `is_managed` casa o **nome do processo**. Mas o achado que chega no relatório
+    quase nunca se chama assim: é o prefixo S3 do event log daquele job, a tabela
+    que ele escreve, o schedule que dispara a máquina de estado dele. Nenhum
+    desses nomes casa com `analytics-data`, e todos passavam pelo filtro — a
+    aplicação da plataforma saía do ranking pela porta da frente e voltava pela
+    janela, como recomendação sobre um artefato dela.
+
+    Vale a mesma regra do módulo: isto **não** tira nada do inventário. O rateio
+    da fatura continua contando o consumo deles; o que não sai é recomendação.
+    """
+    processos = {
+        _nome(item.name)
+        for grupo in ("glue_jobs", "state_machines", "glue_crawlers", "databrew_jobs")
+        for item in getattr(account, grupo, None) or ()
+        if is_managed(_nome(item.name))
+    }
+    if not processos:
+        return frozenset()
+
+    derivados: set[str] = set(processos)
+    for job in getattr(account, "glue_jobs", None) or ():
+        if _nome(job.name) not in processos:
+            continue
+        for atributo in ("spark_event_logs_path", "script_location"):
+            if caminho := _nome(getattr(job, atributo, "")):
+                derivados.add(caminho)
+    for prefixo in getattr(account, "s3_prefixes", None) or ():
+        if _nome(getattr(prefixo, "source_asset", "")) in processos:
+            derivados.add(prefixo.location)
+    for tabela in getattr(account, "tables", None) or ():
+        if _nome(getattr(tabela, "written_by", "")) in processos:
+            derivados.add(_nome(tabela.name))
+            if local := _nome(getattr(tabela, "location", "")):
+                derivados.add(local)
+    for agenda in getattr(account, "schedules", None) or ():
+        if _nome(getattr(agenda, "target_name", "")) in processos:
+            derivados.add(_nome(agenda.name))
+    for gatilho in getattr(account, "glue_triggers", None) or ():
+        acionados = getattr(gatilho, "job_names", None) or ()
+        if any(_nome(alvo) in processos for alvo in acionados):
+            derivados.add(_nome(gatilho.name))
+    return frozenset(nome for nome in derivados if nome)

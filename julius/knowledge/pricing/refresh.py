@@ -93,6 +93,32 @@ def resolve(
     return out
 
 
+def carried_sections(
+    region: str, refreshed: set[str], *, tables: Path = TABLES
+) -> dict[str, dict[str, float]]:
+    """Seções da tabela atual que este refresh não vai buscar.
+
+    Sem isto, `--only s3` escreveria uma tabela contendo apenas S3 e apagaria
+    Glue, Athena e Step Functions — tarifas conferidas antes, perdidas por uma
+    execução que nem as consultou.
+    """
+    path = tables / f"{region}.toml"
+    if not path.is_file():
+        return {}
+    tabela = tomllib.loads(path.read_text(encoding="utf-8"))
+    return {
+        nome: {
+            chave: float(valor)
+            for chave, valor in conteudo.items()
+            if isinstance(valor, (int, float))
+        }
+        for nome, conteudo in tabela.items()
+        # `sagemaker` tem tratamento próprio (instâncias aninhadas) e escalares
+        # de topo não são seção.
+        if isinstance(conteudo, dict) and nome not in refreshed and nome != "sagemaker"
+    }
+
+
 def render_table(
     region: str,
     resolutions: list[Resolution],
@@ -100,9 +126,12 @@ def render_table(
     today: date,
     sagemaker: dict[str, float] | None = None,
     sagemaker_default: float,
+    carry: dict[str, dict[str, float]] | None = None,
 ) -> str:
     """Escreve o TOML da região, já marcado como conferido."""
-    by_section: dict[str, dict[str, float]] = {}
+    by_section: dict[str, dict[str, float]] = {
+        nome: dict(valores) for nome, valores in (carry or {}).items()
+    }
     for item in resolutions:
         if item.value is not None:
             by_section.setdefault(item.section, {})[item.key] = item.value
@@ -122,8 +151,10 @@ def render_table(
         'using-price-list-query-api.html",',
         "]",
     ]
-    for section in ("glue", "athena", "stepfunctions"):
-        values = by_section.get(section)
+    # As seções saem do que o mapa resolveu, não de uma lista escrita aqui: uma
+    # lista fixa faria a seção nova do `mapping.toml` resolver, casar e ser
+    # descartada na hora de escrever — sem erro, sem aviso, sem tarifa.
+    for section, values in sorted(by_section.items()):
         if not values:
             continue
         lines.extend(["", f"[{section}]"])
@@ -146,14 +177,34 @@ def refresh_region(
     tables: Path = TABLES,
     mapping_path: Path = MAPPING,
     previous: Callable[[str], Any] | None = None,
+    sections: tuple[str, ...] = (),
+    dry_run: bool = False,
 ) -> tuple[Path | None, list[Resolution]]:
     """Consulta, resolve e escreve. Devolve `(caminho ou None, resoluções)`.
 
     O caminho vem `None` quando alguma tarifa não resolveu — e nesse caso o
-    arquivo existente não é tocado.
+    arquivo existente não é tocado. A regra é deliberada: uma tabela parcial
+    marcada como `verified = true` seria pior que a não conferida de hoje.
+
+    `sections` restringe o refresh a parte do mapa. Existe porque a atomicidade
+    acima, sem ele, transforma um mapeamento novo e ainda não conferido num
+    bloqueio para tudo que já funcionava: acrescentar nove entradas de S3
+    impediria de atualizar Glue e Athena até que as nove casassem. As seções de
+    fora são preservadas como estão, não apagadas.
+
+    `dry_run` resolve e relata sem escrever — é o laço de conferência que o
+    `inspect` sozinho não fecha.
     """
     today = today or date.today()
     mapping = load_mapping(mapping_path)
+    if sections:
+        desconhecidas = sorted(set(sections) - set(mapping))
+        if desconhecidas:
+            raise ValueError(
+                f"seções inexistentes no mapa: {', '.join(desconhecidas)}; "
+                f"disponíveis: {', '.join(sorted(mapping))}"
+            )
+        mapping = {nome: entradas for nome, entradas in mapping.items() if nome in sections}
     services = {
         str(spec.get("service", ""))
         for entries in mapping.values()
@@ -173,6 +224,8 @@ def refresh_region(
         return None, problems + resolutions
     if not all(item.ok for item in resolutions):
         return None, resolutions
+    if dry_run:
+        return None, resolutions
 
     # Preço de instância SageMaker não passa pelo mapa: é longo demais para
     # conferência manual e o modelo já tem um default. Preserva o que a tabela
@@ -184,6 +237,7 @@ def refresh_region(
         today=today,
         sagemaker=getattr(keep, "sagemaker_instances", None),
         sagemaker_default=float(getattr(keep, "sagemaker_default_hourly", 0.18)),
+        carry=carried_sections(region, set(mapping), tables=tables),
     )
     target = tables / f"{region}.toml"
     target.write_text(text, encoding="utf-8")

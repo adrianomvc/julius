@@ -18,6 +18,8 @@ from __future__ import annotations
 import json
 from datetime import datetime, timezone
 
+from julius.collection.collectors.paginate import safe_call, safe_pages
+from julius.collection.health.recorder import error_category
 from julius.collection.models import StateMachine
 from julius.collection.window import AnalysisWindow
 
@@ -30,45 +32,62 @@ def collect_state_machines(
     client,
     *,
     window: AnalysisWindow,
+    gaps: list[str] | None = None,
 ) -> list[StateMachine]:
+    """Máquinas de estado, isoladas uma a uma.
+
+    `DescribeStateMachine` e `ListExecutions` são chamados por máquina, e sob
+    política de recurso é comum uma delas ser negada. Antes essa negação subia
+    do laço e a fonte inteira ficava vazia — o relatório passava a afirmar que a
+    conta não usa Step Functions. Agora a máquina negada entra com o que o
+    `ListStateMachines` trouxe e diz o que não foi lido.
+    """
     cutoff = window.start
     months = max(1.0, window.days / 30.0)
     machines: list[StateMachine] = []
 
-    paginator = client.get_paginator("list_state_machines")
-    for page in paginator.paginate():
-        for summary in page.get("stateMachines", []):
-            arn = summary["stateMachineArn"]
-            detail = client.describe_state_machine(stateMachineArn=arn)
-            definition = _json(detail.get("definition", "{}"))
-            executions = _executions(client, arn, cutoff)
-            durations = [
-                (item["stopDate"] - item["startDate"]).total_seconds()
-                for item in executions
-                if item.get("stopDate") and item.get("startDate")
-            ]
-            loop_states = _polling_loop_states(definition)
-            transitions, extra = _sample_transitions(
-                client, executions, loop_states
+    listagem = safe_pages(client, "list_state_machines", "stateMachines")
+    if gaps is not None and not listagem.complete:
+        gaps.append(f"list_state_machines: {listagem.error_category or 'incompleto'}")
+
+    for summary in listagem.items:
+        arn = summary["stateMachineArn"]
+        detail, falha_detalhe = safe_call(
+            client, "describe_state_machine", stateMachineArn=arn
+        )
+        if falha_detalhe and gaps is not None:
+            gaps.append(f"describe_state_machine: {falha_detalhe}")
+        definition = _json(detail.get("definition", "{}"))
+        executions, falha_execucoes = _executions(client, arn, cutoff)
+        if falha_execucoes and gaps is not None:
+            gaps.append(f"list_executions: {falha_execucoes}")
+        durations = [
+            (item["stopDate"] - item["startDate"]).total_seconds()
+            for item in executions
+            if item.get("stopDate") and item.get("startDate")
+        ]
+        loop_states = _polling_loop_states(definition)
+        transitions, extra = _sample_transitions(client, executions, loop_states)
+        machines.append(
+            StateMachine(
+                name=summary["name"],
+                type=detail.get("type", "STANDARD"),
+                executions_per_month=round(len(executions) / months),
+                avg_duration_sec=round(sum(durations) / len(durations), 1)
+                if durations
+                else 0.0,
+                avg_state_transitions=transitions,
+                poll_extra_transitions=extra,
+                max_retry_attempts=_max_retry_attempts(definition),
+                observed_runs=len(executions),
+                coverage_days=window.days,
+                sampled_executions=min(len(executions), _MAX_SAMPLED_EXECUTIONS),
+                glue_jobs=sorted(_glue_jobs(definition)),
+                has_polling_loop=bool(loop_states),
+                definition_available=not falha_detalhe,
+                execution_history_available=not falha_execucoes,
             )
-            machines.append(
-                StateMachine(
-                    name=summary["name"],
-                    type=detail.get("type", "STANDARD"),
-                    executions_per_month=round(len(executions) / months),
-                    avg_duration_sec=round(sum(durations) / len(durations), 1)
-                    if durations
-                    else 0.0,
-                    avg_state_transitions=transitions,
-                    poll_extra_transitions=extra,
-                    max_retry_attempts=_max_retry_attempts(definition),
-                    observed_runs=len(executions),
-                    coverage_days=window.days,
-                    sampled_executions=min(len(executions), _MAX_SAMPLED_EXECUTIONS),
-                    glue_jobs=sorted(_glue_jobs(definition)),
-                    has_polling_loop=bool(loop_states),
-                )
-            )
+        )
     return machines
 
 
@@ -132,16 +151,26 @@ def _max_retry_attempts(definition: dict) -> int:
     return attempts
 
 
-def _executions(client, arn: str, cutoff: datetime) -> list[dict]:
+def _executions(client, arn: str, cutoff: datetime) -> tuple[list[dict], str]:
+    """Execuções dentro da janela, e a categoria do erro se houver.
+
+    Não usa `safe_pages` porque a saída antecipada é o que limita o custo: a API
+    devolve o histórico do mais recente para o mais antigo, e parar na primeira
+    execução anterior à janela evita paginar anos de histórico. Aqui o `try`
+    envolve a iteração — que é onde a chamada HTTP acontece.
+    """
     executions: list[dict] = []
-    paginator = client.get_paginator("list_executions")
-    for page in paginator.paginate(stateMachineArn=arn):
-        for item in page.get("executions", []):
-            started = item.get("startDate")
-            if started and started.replace(tzinfo=started.tzinfo or timezone.utc) < cutoff:
-                return executions
-            executions.append(item)
-    return executions
+    try:
+        pages = client.get_paginator("list_executions").paginate(stateMachineArn=arn)
+        for page in pages:
+            for item in page.get("executions", []):
+                started = item.get("startDate")
+                if started and started.replace(tzinfo=started.tzinfo or timezone.utc) < cutoff:
+                    return executions, ""
+                executions.append(item)
+    except Exception as exc:
+        return executions, error_category(exc)
+    return executions, ""
 
 
 def _json(value: str) -> dict:

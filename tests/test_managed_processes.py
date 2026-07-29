@@ -162,6 +162,125 @@ def test_the_same_defects_do_produce_findings_for_the_accounts_own_job():
 
 
 # --------------------------------------------------------------------------
+# O que deriva deles também não vira recomendação
+# --------------------------------------------------------------------------
+
+_WARMER = "analytics-data-warmer-glue-processa"
+
+
+def _conta_com_artefatos_da_plataforma() -> Account:
+    """Uma conta onde a plataforma deixou rastro em quatro lugares diferentes."""
+    from julius.collection.models import S3Prefix, Schedule, Table
+
+    return Account(
+        account_id="123456789012",
+        glue_jobs=[
+            GlueJob(name=_WARMER, spark_event_logs_path="s3://lake/spark-logs/warmer/"),
+            GlueJob(name="agrega_vendas", spark_event_logs_path="s3://lake/spark-logs/vendas/"),
+        ],
+        state_machines=[StateMachine(name="analytics-data-warm-sfn-orquestra")],
+        tables=[
+            Table(name="db.aquecida", written_by=_WARMER, location="s3://lake/aquecida/"),
+            Table(name="db.vendas", written_by="agrega_vendas", location="s3://lake/vendas/"),
+        ],
+        s3_prefixes=[
+            S3Prefix(bucket="lake", prefix="spark-logs/warmer/", source_asset=_WARMER),
+            S3Prefix(bucket="lake", prefix="spark-logs/vendas/", source_asset="agrega_vendas"),
+        ],
+        schedules=[
+            Schedule(name="dispara-warm", target_name="analytics-data-warm-sfn-orquestra"),
+            Schedule(name="dispara-vendas", target_name="processa_vendas"),
+        ],
+    )
+
+
+def test_the_platform_artifacts_are_recognized_not_just_the_process():
+    """O prefixo S3, a tabela e o schedule não se chamam `analytics-data`.
+
+    É por isso que casar só o nome do processo deixava passar: nenhum desses
+    nomes casa com o prefixo, e todos são artefatos da mesma aplicação.
+    """
+    from julius.knowledge.managed_processes import managed_asset_names
+
+    gerenciados = managed_asset_names(_conta_com_artefatos_da_plataforma())
+
+    assert _WARMER in gerenciados
+    assert "s3://lake/spark-logs/warmer/" in gerenciados
+    assert "db.aquecida" in gerenciados
+    assert "s3://lake/aquecida/" in gerenciados
+    assert "dispara-warm" in gerenciados
+
+    # E o contraste: os artefatos da conta continuam de fora do conjunto.
+    assert "agrega_vendas" not in gerenciados
+    assert "s3://lake/spark-logs/vendas/" not in gerenciados
+    assert "db.vendas" not in gerenciados
+    assert "dispara-vendas" not in gerenciados
+
+
+def test_an_account_without_platform_processes_derives_nothing():
+    from julius.knowledge.managed_processes import managed_asset_names
+
+    conta = Account(
+        account_id="1",
+        glue_jobs=[GlueJob(name="agrega_vendas", spark_event_logs_path="s3://lake/x/")],
+    )
+
+    assert managed_asset_names(conta) == frozenset()
+
+
+@pytest.mark.parametrize(
+    "asset_name",
+    [
+        "s3://lake/spark-logs/warmer/",
+        # Um subprefixo do event log: o achado costuma apontar para dentro dele.
+        "s3://lake/spark-logs/warmer/2026/07/",
+        "db.aquecida",
+        "dispara-warm",
+    ],
+)
+def test_a_finding_about_a_platform_artifact_is_dropped(asset_name):
+    from julius.knowledge.managed_processes import managed_asset_names
+    from julius.pipeline import _is_managed_finding
+
+    gerenciados = managed_asset_names(_conta_com_artefatos_da_plataforma())
+
+    assert _is_managed_finding(asset_name, gerenciados) is True
+
+
+@pytest.mark.parametrize(
+    "asset_name",
+    [
+        "s3://lake/spark-logs/vendas/",
+        "db.vendas",
+        "dispara-vendas",
+        # Prefixo que só *começa* parecido não é o mesmo caminho: `warmer-2` é
+        # outro diretório, e sem a barra o startswith casaria os dois.
+        "s3://lake/spark-logs/warmer-2/",
+    ],
+)
+def test_a_finding_about_the_accounts_own_artifact_survives(asset_name):
+    from julius.knowledge.managed_processes import managed_asset_names
+    from julius.pipeline import _is_managed_finding
+
+    gerenciados = managed_asset_names(_conta_com_artefatos_da_plataforma())
+
+    assert _is_managed_finding(asset_name, gerenciados) is False
+
+
+def test_the_artifacts_still_count_for_the_bill():
+    """Mesma invariante do processo: sai da recomendação, fica no inventário."""
+    conta = _conta_com_artefatos_da_plataforma()
+
+    from julius.pipeline import analyze_account
+
+    analyze_account(conta, DEFAULT_CONFIG, scan_id="scan-teste")
+
+    assert [job.name for job in conta.glue_jobs] == [_WARMER, "agrega_vendas"]
+    assert len(conta.s3_prefixes) == 2
+    assert len(conta.tables) == 2
+
+
+# --------------------------------------------------------------------------
 # A exclusão é declarada, não silenciosa
 # --------------------------------------------------------------------------
 
@@ -189,6 +308,28 @@ def test_the_manifest_says_which_processes_were_left_out():
     linha = next(item for item in manifesto if item["k"] == "processos da plataforma")
     assert _MONITORIA in linha["v"]
     assert "analytics-data-warm-sfn-orquestra" in linha["v"]
+    assert "agrega_vendas" not in linha["v"]
+
+
+def test_the_pipeline_declares_the_derived_artifacts_too(tmp_path):
+    """Quem lê o manifesto precisa explicar por que um prefixo S3 não aparece.
+
+    Antes o manifesto listava só jobs e state machines, então o prefixo do event
+    log da aplicação da plataforma saía do relatório sem nenhum registro de que
+    tinha saído — e parecia que a coleta não o tinha visto.
+    """
+    from julius.pipeline import analyze_account
+
+    analise = analyze_account(
+        _conta_com_artefatos_da_plataforma(), DEFAULT_CONFIG, scan_id="scan-teste"
+    )
+
+    linha = next(
+        item for item in analise.vm.manifest if item["k"] == "processos da plataforma"
+    )
+    assert _WARMER in linha["v"]
+    assert "s3://lake/spark-logs/warmer/" in linha["v"]
+    assert "db.aquecida" in linha["v"]
     assert "agrega_vendas" not in linha["v"]
 
 

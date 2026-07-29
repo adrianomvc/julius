@@ -37,8 +37,10 @@ from julius.collection.models.glue import (
 )
 from julius.collection.models.health import CollectionHealth
 from julius.collection.models.s3 import (
+    LAST_ACCESS_SOURCES,
     PREFIX_KINDS,
     S3Bucket,
+    S3BucketConfig,
     S3CostCoverage,
     S3MultipartUpload,
     S3Prefix,
@@ -71,7 +73,9 @@ __all__ = [
     "S3MultipartUpload",
     "S3CostCoverage",
     "S3Bucket",
+    "S3BucketConfig",
     "PREFIX_KINDS",
+    "LAST_ACCESS_SOURCES",
     "StateMachine",
     "Table",
     "monthly_factor",

@@ -114,6 +114,18 @@
         "service": "s3"
       },
       {
+        "name": "small_files",
+        "reason": "inventário vazio: s3_prefixes",
+        "requires": "s3_prefixes",
+        "service": "s3"
+      },
+      {
+        "name": "storage_class",
+        "reason": "inventário vazio: s3_prefixes",
+        "requires": "s3_prefixes",
+        "service": "s3"
+      },
+      {
         "name": "data_products",
         "reason": "inventário vazio: tables",
         "requires": "tables",

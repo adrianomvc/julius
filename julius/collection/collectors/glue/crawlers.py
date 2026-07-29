@@ -5,22 +5,25 @@ from __future__ import annotations
 import json
 from datetime import datetime, timezone
 
+from julius.collection.collectors.paginate import safe_pages
 from julius.collection.models import GlueCrawler
 from julius.collection.schedule_frequency import expected_runs_per_month
 from julius.collection.window import AnalysisWindow
 
 
-def collect_crawlers(glue_client, *, window: AnalysisWindow) -> list[GlueCrawler]:
-    raw_crawlers: list[dict] = []
-    paginator = glue_client.get_paginator("get_crawlers")
-    for page in paginator.paginate():
-        raw_crawlers.extend(page.get("Crawlers", []))
+def collect_crawlers(
+    glue_client, *, window: AnalysisWindow, gaps: list[str] | None = None
+) -> list[GlueCrawler]:
+    listagem = safe_pages(glue_client, "get_crawlers", "Crawlers")
+    if gaps is not None and not listagem.complete:
+        gaps.append(f"get_crawlers: {listagem.error_category or 'incompleto'}")
+    raw_crawlers = listagem.items
 
-    metrics = _metrics_by_name(glue_client)
+    metrics = _metrics_by_name(glue_client, gaps)
     out: list[GlueCrawler] = []
     for raw in raw_crawlers:
         name = str(raw.get("Name") or "")
-        histories = _histories(glue_client, name, window)
+        histories = _histories(glue_client, name, window, gaps)
         history_changes = _catalog_changes(histories)
         schedule = raw.get("Schedule", {}) or {}
         last = raw.get("LastCrawl", {}) or {}
@@ -72,41 +75,32 @@ def collect_crawlers(glue_client, *, window: AnalysisWindow) -> list[GlueCrawler
     return out
 
 
-def _metrics_by_name(glue_client) -> dict[str, dict]:
-    try:
-        paginator = glue_client.get_paginator("get_crawler_metrics")
-        pages = paginator.paginate()
-    except Exception:
-        try:
-            pages = [glue_client.get_crawler_metrics()]
-        except Exception:
-            return {}
+def _metrics_by_name(glue_client, gaps: list[str] | None = None) -> dict[str, dict]:
+    resultado = safe_pages(glue_client, "get_crawler_metrics", "CrawlerMetricsList")
+    if gaps is not None and not resultado.complete:
+        gaps.append(f"get_crawler_metrics: {resultado.error_category or 'incompleto'}")
     return {
         str(item.get("CrawlerName")): item
-        for page in pages
-        for item in page.get("CrawlerMetricsList", [])
+        for item in resultado.items
         if item.get("CrawlerName")
     }
 
 
-def _histories(glue_client, name: str, window: AnalysisWindow) -> list[dict]:
-    try:
-        paginator = glue_client.get_paginator("list_crawls")
-        pages = paginator.paginate(CrawlerName=name)
-    except Exception:
-        try:
-            pages = [glue_client.list_crawls(CrawlerName=name)]
-        except Exception:
-            return []
+def _histories(
+    glue_client, name: str, window: AnalysisWindow, gaps: list[str] | None = None
+) -> list[dict]:
+    """Execuções de **um** crawler. Negado aqui não zera os outros crawlers."""
+    resultado = safe_pages(glue_client, "list_crawls", "Crawls", CrawlerName=name)
+    if gaps is not None and not resultado.complete:
+        gaps.append(f"list_crawls: {resultado.error_category or 'incompleto'}")
     histories: list[dict] = []
-    for page in pages:
-        for item in page.get("Crawls", []):
-            started = item.get("StartTime")
-            if isinstance(started, datetime):
-                normalized = started.replace(tzinfo=started.tzinfo or timezone.utc)
-                if not window.contains(normalized):
-                    continue
-            histories.append(item)
+    for item in resultado.items:
+        started = item.get("StartTime")
+        if isinstance(started, datetime):
+            normalized = started.replace(tzinfo=started.tzinfo or timezone.utc)
+            if not window.contains(normalized):
+                continue
+        histories.append(item)
     return histories
 
 

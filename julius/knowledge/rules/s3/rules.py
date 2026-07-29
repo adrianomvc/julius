@@ -317,34 +317,15 @@ def signals(account: Account, config: Config) -> list[Signal]:
                     doc_links=[_DOC_VERSIONING],
                 )
             )
-        frio = _bytes_frios(bucket)
-        if frio > 0:
-            out.append(
-                Signal(
-                    kind="config",
-                    rule_id="S3-COLD-DATA-REWRITE",
-                    asset_type="s3_bucket",
-                    asset_name=bucket.name,
-                    observation=(
-                        f"{frio / _GB:.1f} GB em classe Standard em "
-                        f"'{bucket.name}', num ambiente onde lifecycle não pode "
-                        "ser configurado."
-                    ),
-                    question=(
-                        "Qual o padrão de acesso destes dados? Reescrever em "
-                        "classe fria compensa, contando o custo da própria "
-                        "reescrita e o mínimo de retenção da classe alvo?"
-                    ),
-                    missing_evidence=[
-                        "leituras por prefixo na janela",
-                        "custo de reescrita: requests e transferência",
-                    ],
-                    doc_links=[_DOC_STORAGE_CLASS],
-                )
-            )
     return out
 
 
-def _bytes_frios(bucket: S3Bucket) -> float:
-    """Bytes em Standard — os únicos candidatos a reescrita em classe fria."""
-    return float(bucket.bytes_by_class.get("StandardStorage") or 0.0)
+# `S3-COLD-DATA-REWRITE` era emitido aqui, por bucket, a partir do
+# `BucketSizeBytes` do CloudWatch. Ele apontava bytes em Standard e parava aí:
+# sem saber se o dado é lido, sem tarifa para comparar classes e sem separar
+# prefixo — e o CloudWatch não separa —, nunca teve como virar economia.
+#
+# Agora ele vive em `knowledge/rules/s3/storage_class.py`, por prefixo, ao lado
+# da regra que o promove a oportunidade quando a evidência de leitura existe. O
+# `rule_id` foi preservado de propósito: ele é parte do fingerprint do achado, e
+# trocá-lo desconectaria do backlog as decisões humanas já tomadas sobre ele.

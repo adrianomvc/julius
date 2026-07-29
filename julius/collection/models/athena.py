@@ -32,6 +32,12 @@ class AthenaQuery:
     cost_quality: str = "unavailable"
     currency: str = "USD"
     active_days: int = 0
+    #: Quando este padrão rodou pela última vez, em ISO-8601. É o que permite
+    #: derivar a última **leitura** de cada tabela em `reads_tables` — e, por
+    #: ela, do prefixo S3 que a tabela ocupa. Vazio significa não medido: o S3
+    #: não expõe último acesso por objeto, então sem isto a única data conhecida
+    #: de um arquivo é a da última escrita.
+    last_execution_at: str = ""
     actor_count: int = 0
     actors: list[str] = field(default_factory=list)
     recurring: bool = False

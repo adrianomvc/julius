@@ -12,6 +12,7 @@ from typing import Any
 
 import boto3
 
+from julius.collection.collectors.last_read import apply_last_read
 from julius.collection.health import CollectionRecorder, RequiredCollectionError
 from julius.collection.models import Account
 from julius.collection.scope import CatalogScope
@@ -33,6 +34,7 @@ def collect_account(
     include_cloudtrail: bool = False,
     datawarm_job: str = "",
     catalog_scope: CatalogScope | None = None,
+    s3_full_listing: bool = False,
     now: datetime | None = None,
 ) -> Account:
     """Coleta uma conta. `config` chega de cima e não tem default aqui.
@@ -70,6 +72,7 @@ def collect_account(
         include_cloudtrail=include_cloudtrail,
         datawarm_job=datawarm_job,
         catalog_scope=catalog_scope or CatalogScope(),
+        s3_full_listing=s3_full_listing,
         glue_usage_markers=config.glue_cost.usage_type_markers,
         allocatable_glue_buckets=config.glue_cost.allocatable_buckets,
         glue_cost_version=config.glue_cost.version,
@@ -81,8 +84,37 @@ def collect_account(
     for source in SOURCES:
         run(source, context, health)
 
+    # Derivação pura, depois de tudo coletado: a última leitura de uma tabela
+    # sai do histórico de queries do Athena, e é o que liga um prefixo S3 a uma
+    # data de **leitura** em vez de só a data da última escrita. Não faz chamada
+    # AWS, então não é fonte — mas o alcance dela entra na saúde, porque
+    # recomendar classe de armazenamento depende inteiramente dessa cobertura.
+    _record_read_evidence(account, health)
+
     account.collection_health = health.entries
     return account
+
+
+def _record_read_evidence(account: Account, health: CollectionRecorder) -> None:
+    total = len(account.tables)
+    if not total:
+        return
+    medidas = apply_last_read(account)
+    if medidas == total:
+        return
+    health.unavailable(
+        "Última leitura de tabelas",
+        category="bounded_or_incomplete" if medidas else "no_data",
+        impact=(
+            f"{total - medidas} de {total} tabela(s) sem data de última leitura: "
+            "para elas só se conhece a última escrita, que não diz se o dado é usado"
+        ),
+        next_action=(
+            "configurar --touches-table, ampliar a janela do histórico Athena, "
+            "ou habilitar server access logging nos buckets"
+        ),
+        affects_status=False,
+    )
 
 
 def _verified_identity(

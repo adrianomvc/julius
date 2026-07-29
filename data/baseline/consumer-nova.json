@@ -107,6 +107,18 @@
         "reason": "inventário vazio: s3_buckets",
         "requires": "s3_buckets",
         "service": "s3"
+      },
+      {
+        "name": "small_files",
+        "reason": "inventário vazio: s3_prefixes",
+        "requires": "s3_prefixes",
+        "service": "s3"
+      },
+      {
+        "name": "storage_class",
+        "reason": "inventário vazio: s3_prefixes",
+        "requires": "s3_prefixes",
+        "service": "s3"
       }
     ]
   },

@@ -29,6 +29,8 @@ from julius.knowledge.rules.glue import jobs as glue_jobs
 from julius.knowledge.rules.glue import sessions as glue_sessions
 from julius.knowledge.rules.redshift import rules as redshift_rules
 from julius.knowledge.rules.s3 import rules as s3_rules
+from julius.knowledge.rules.s3 import small_files as s3_small_files
+from julius.knowledge.rules.s3 import storage_class as s3_storage_class
 from julius.knowledge.rules.sagemaker import rules as sagemaker_rules
 from julius.knowledge.rules.stepfunctions import rules as stepfunctions_rules
 
@@ -117,6 +119,27 @@ REGISTRY: tuple[RuleFamily, ...] = (
         requires=("s3_buckets",),
         measures=("s3_buckets.object_count",),
         signals=s3_rules.signals,
+    ),
+    RuleFamily(
+        service="s3",
+        name="small_files",
+        detect=s3_small_files.detect,
+        # A tabela chega aqui pelo prefixo, não pela query: é o que alcança as
+        # tabelas do banco compartilhado e do `workspace_db` que nenhuma query
+        # Athena leu na janela — e que por isso escapavam do `ATHENA-SMALL-FILES`.
+        requires=("s3_prefixes",),
+        measures=("s3_prefixes.average_object_bytes",),
+    ),
+    RuleFamily(
+        service="s3",
+        name="storage_class",
+        detect=s3_storage_class.detect,
+        # O prefixo é onde a transição age, e é dele que sai a composição por
+        # classe: o `bytes_by_class` do bucket vem do CloudWatch e não separa
+        # prefixo. Sem prefixo listado, a família fica em silêncio explicado.
+        requires=("s3_prefixes",),
+        measures=("s3_prefixes.bytes_by_class", "tables.last_read_at"),
+        signals=s3_storage_class.signals,
     ),
     RuleFamily(
         service="cross_service",

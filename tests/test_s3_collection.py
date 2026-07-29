@@ -179,9 +179,15 @@ def test_each_prefix_kind_is_aged_by_its_own_threshold():
     limiares: list[int] = []
     original = s3.collect_prefixes
 
-    def _espiao(client, *, known, window, stale_after_days):
+    def _espiao(client, *, known, window, stale_after_days, **extra):
         limiares.append(stale_after_days)
-        return original(client, known=known, window=window, stale_after_days=stale_after_days)
+        return original(
+            client,
+            known=known,
+            window=window,
+            stale_after_days=stale_after_days,
+            **extra,
+        )
 
     s3.collect_prefixes = _espiao
     try:

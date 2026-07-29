@@ -36,6 +36,7 @@ from julius.collection.models.glue import (
 from julius.collection.models.health import CollectionHealth
 from julius.collection.models.s3 import (
     S3Bucket,
+    S3BucketConfig,
     S3CostCoverage,
     S3MultipartUpload,
     S3Prefix,
@@ -84,6 +85,9 @@ class Account:
     s3_prefixes: list[S3Prefix] = field(default_factory=list)
     s3_multipart: list[S3MultipartUpload] = field(default_factory=list)
     s3_cost_coverage: S3CostCoverage | None = None
+    #: O que está ligado em cada bucket — e, com isso, se dá para saber se um
+    #: objeto é lido. Sem uma destas fontes, só se conhece a última escrita.
+    s3_bucket_configs: list[S3BucketConfig] = field(default_factory=list)
 
     def job_by_name(self, name: str | None) -> GlueJob | None:
         if not name:
