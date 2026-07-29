@@ -820,6 +820,34 @@ class _Sessions:
         }
 
 
+class _SessionTags(_Sessions):
+    class _Meta:
+        region_name = "sa-east-1"
+        partition = "aws"
+
+    meta = _Meta()
+
+    def get_tags(self, **kwargs):
+        assert kwargs == {
+            "ResourceArn": (
+                "arn:aws:glue:sa-east-1:123456789012:session/session-1"
+            )
+        }
+        return {
+            "Tags": {
+                "owner": (
+                    "ARO47GCAHI5VXYBL4CCT:"
+                    "adriano.vilela-costa@itau-unibanco.com.br"
+                )
+            }
+        }
+
+
+class _SessionTagsDenied(_SessionTags):
+    def get_tags(self, **_kwargs):
+        raise RuntimeError("sem acesso")
+
+
 def test_session_idle_is_derived_from_statement_activity():
     now = datetime(2026, 7, 24, tzinfo=timezone.utc)
     # `now` e o corte da janela; execucoes precisam cair em dia fechado.
@@ -830,6 +858,32 @@ def test_session_idle_is_derived_from_statement_activity():
     assert session.observed_runs == 1
     assert session.idle_hours_per_day == pytest.approx(23.0)
     assert session.dpu_hours == 5.0
+
+
+def test_session_owner_is_loaded_with_get_tags_and_saved_as_email():
+    now = datetime(2026, 7, 24, tzinfo=timezone.utc)
+    session = sessions_collector.collect_sessions(
+        _SessionTags(now - timedelta(days=1)),
+        window=AnalysisWindow.trailing(now=now),
+        account_id="123456789012",
+    )[0]
+
+    assert session.owner_tag == "adriano.vilela-costa@itau-unibanco.com.br"
+
+
+def test_session_without_get_tags_permission_is_still_collected():
+    now = datetime(2026, 7, 24, tzinfo=timezone.utc)
+    gaps: list[str] = []
+    sessions = sessions_collector.collect_sessions(
+        _SessionTagsDenied(now - timedelta(days=1)),
+        window=AnalysisWindow.trailing(now=now),
+        account_id="123456789012",
+        gaps=gaps,
+    )
+
+    assert len(sessions) == 1
+    assert sessions[0].owner_tag is None
+    assert gaps and gaps[0].startswith("get_tags[session-1]:")
 
 
 @pytest.mark.parametrize(

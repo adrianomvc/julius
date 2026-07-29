@@ -606,13 +606,16 @@ SOURCES: tuple[Source, ...] = (
     Source(
         name="Glue Interactive Sessions",
         collect=lambda ctx: sessions.collect_sessions(
-            ctx.client("glue"), window=ctx.window, gaps=ctx.gaps
+            ctx.client("glue"),
+            window=ctx.window,
+            account_id=ctx.account.account_id,
+            gaps=ctx.gaps,
         ),
         into="interactive_sessions",
         count=len,
         data_through=_latest_data_through,
-        impact="ociosidade e capacidade de sessões não são avaliadas",
-        next_action="validar glue:ListSessions e glue:ListStatements",
+        impact="ociosidade, capacidade e responsável das sessões podem ficar incompletos",
+        next_action="validar glue:ListSessions, glue:ListStatements e glue:GetTags",
     ),
     Source(
         # Depende de jobs, crawlers, sessions e DataBrew já estarem no inventário.
