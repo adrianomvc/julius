@@ -148,6 +148,12 @@
         "reason": "inventário vazio: databrew_jobs",
         "requires": "databrew_jobs",
         "service": "glue"
+      },
+      {
+        "name": "small_files",
+        "reason": "medição ausente: s3_prefixes.average_object_bytes",
+        "requires": "s3_prefixes",
+        "service": "s3"
       }
     ]
   },

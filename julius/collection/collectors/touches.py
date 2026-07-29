@@ -32,6 +32,10 @@ class TouchStats:
     communities: int = 0
     account_ids: list[str] = field(default_factory=list)
     primary_community: str | None = None
+    #: Data do acesso mais recente na janela. É a melhor evidência de leitura
+    #: que o Julius consegue sem configuração no bucket — o S3 não expõe último
+    #: acesso por objeto, e `LastModified` é a última escrita.
+    last_access: str = ""
 
 
 def collect_touches(
@@ -51,11 +55,16 @@ def collect_touches(
     sql = (
         "WITH base AS ("
         f"SELECT {cols.table} AS tabela, cast({cols.account} AS varchar) AS conta, "
-        f"cast({cols.community} AS varchar) AS comunidade FROM {touches_table} "
+        f"cast({cols.community} AS varchar) AS comunidade, "
+        f"{cols.date} AS acesso FROM {touches_table} "
         f"WHERE {cols.date} >= date_add('day', -{int(window.days)}, current_date)"
         "), totals AS ("
         "SELECT tabela, count(*) AS toques, count(distinct conta) AS contas, "
         "count(distinct comunidade) AS comunidades, "
+        # O acesso mais recente é o que decide se o dado pode ir para classe
+        # fria. A contagem sozinha não distingue "lido ontem" de "lido uma vez,
+        # há noventa dias".
+        "cast(max(acesso) AS varchar) AS ultimo_acesso, "
         "array_join(array_agg(distinct conta), ',') AS contas_lista "
         "FROM base GROUP BY tabela"
         "), ranked AS ("
@@ -83,6 +92,7 @@ def collect_touches(
                 if value.strip()
             ],
             primary_community=r.get("comunidade_principal") or None,
+            last_access=str(r.get("ultimo_acesso") or ""),
         )
     return stats
 

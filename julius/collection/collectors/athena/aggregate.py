@@ -88,6 +88,7 @@ def aggregate_queries(items, coverage):
                 cost_quality=coverage.cost_quality,
                 currency=coverage.currency,
                 active_days=len({i.submitted_at.date() for i in group}),
+                last_execution_at=max(i.submitted_at for i in group).isoformat(),
                 actor_count=len(actors),
                 actors=actors,
                 recurring=recurring,

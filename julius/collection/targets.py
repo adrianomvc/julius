@@ -88,11 +88,29 @@ def verify_account_targets(
     targets: list[AccountTarget],
     *,
     session_factory=make_session,
-) -> list[VerifiedAccount]:
-    verified = []
+) -> tuple[list[VerifiedAccount], list[str]]:
+    """As contas cujo SSO responde, e o motivo de cada uma que não respondeu.
+
+    Um perfil com sessão SSO expirada é o caso comum de quem roda multi-conta —
+    e antes ele abortava a verificação de **todas**, inclusive das contas cujo
+    login estava válido. Cada perfil é isolado, e quem chama decide se segue com
+    as que deram certo.
+
+    A divergência de identidade continua sendo erro e não um perfil a ignorar:
+    coletar a conta errada com o nome certo é o problema que esta função existe
+    para impedir.
+    """
+    verified: list[VerifiedAccount] = []
+    falhas: list[str] = []
     for target in targets:
-        session = session_factory(target.sso_profile or None, _AWS_REGION)
-        identity = session.client("sts").get_caller_identity()
+        try:
+            session = session_factory(target.sso_profile or None, _AWS_REGION)
+            identity = session.client("sts").get_caller_identity()
+        except AccountTargetError:
+            raise
+        except Exception as exc:
+            falhas.append(f"{target.name}: {type(exc).__name__}")
+            continue
         account_id = str(identity.get("Account") or "")
         if account_id != target.expected_account_id:
             raise AccountTargetError(
@@ -110,7 +128,7 @@ def verify_account_targets(
                 credential_source="aws_cli_sso_profile",
             )
         )
-    return verified
+    return verified, falhas
 
 
 def write_verified_accounts(

@@ -73,6 +73,16 @@ class Pricing:
     sfn_express_per_request: float = 0.000001
     sagemaker_default_hourly: float = 0.18
     sagemaker_instances: dict[str, float] = field(default_factory=dict)
+    # S3 — deliberadamente **sem default**. As outras tarifas têm fallback
+    # porque governam um custo modelado que já existia; esta governa a
+    # comparação entre duas classes de armazenamento, e um número chutado aí
+    # não produz uma estimativa imprecisa: produz uma recomendação de mover
+    # petabytes para Glacier com uma economia inventada ao lado. Vazio significa
+    # que a regra de transição sai como sinal, sem cifra.
+    #
+    # Popular com `julius pricing refresh --region <regiao>`.
+    s3_storage_gb_month: dict[str, float] = field(default_factory=dict)
+    s3_request_per_1000: dict[str, float] = field(default_factory=dict)
 
     @classmethod
     def for_region(cls, region: str = DEFAULT_REGION) -> Pricing:
@@ -81,7 +91,18 @@ class Pricing:
         athena = table.get("athena", {})
         sfn = table.get("stepfunctions", {})
         sagemaker = table.get("sagemaker", {})
+        s3 = table.get("s3", {})
         return cls(
+            s3_storage_gb_month={
+                nome.removeprefix("storage_"): float(valor)
+                for nome, valor in s3.items()
+                if nome.startswith("storage_")
+            },
+            s3_request_per_1000={
+                nome.removeprefix("request_").removesuffix("_per_1000"): float(valor)
+                for nome, valor in s3.items()
+                if nome.startswith("request_")
+            },
             # A região é a da tabela, não a pedida: se um dia divergirem, o
             # relatório carimba o que foi realmente usado.
             region=str(table["region"]),
@@ -115,6 +136,35 @@ class Pricing:
         return self.sagemaker_instances.get(
             instance_type, self.sagemaker_default_hourly
         )
+
+    @property
+    def has_s3_storage_rates(self) -> bool:
+        """A tabela sabe comparar classes de armazenamento nesta região?
+
+        Falso é o estado inicial e é uma resposta legítima: a regra de transição
+        descreve o achado e diz o que falta, em vez de anunciar uma economia que
+        ninguém conferiu.
+        """
+        return "standard" in self.s3_storage_gb_month
+
+    def s3_storage_delta(self, target_class: str) -> float | None:
+        """Quanto se economiza por GB-mês ao sair de Standard para `target_class`.
+
+        `None` quando qualquer uma das duas tarifas falta — nunca zero, que se
+        leria como "não compensa" em vez de "não sabemos".
+        """
+        origem = self.s3_storage_gb_month.get("standard")
+        destino = self.s3_storage_gb_month.get(target_class)
+        if origem is None or destino is None:
+            return None
+        return round(origem - destino, 8)
+
+    def s3_request_cost(self, kind: str, requests: int) -> float | None:
+        """Custo de `requests` chamadas de um tipo. `None` se a tarifa falta."""
+        tarifa = self.s3_request_per_1000.get(kind)
+        if tarifa is None:
+            return None
+        return round(tarifa * requests / 1000.0, 8)
 
     @property
     def provenance(self) -> str:

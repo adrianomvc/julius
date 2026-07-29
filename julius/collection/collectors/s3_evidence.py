@@ -63,25 +63,37 @@ def list_objects(
     *,
     modified_after: datetime | None = None,
     max_objects: int | None = None,
-    max_pages: int = MAX_LIST_PAGES,
+    max_pages: int | None = MAX_LIST_PAGES,
 ) -> tuple[list[dict], bool]:
     """Objetos do prefixo, mais recentes primeiro, e se a listagem foi completa.
 
     `modified_after` descarta o que é anterior à janela. O segundo retorno é
     falso quando a paginação foi cortada ou quando `max_objects` truncou —
     quem chama precisa saber que a evidência é parcial.
+
+    `max_pages=None` lista até o fim. É o que a recomendação de classe de
+    armazenamento exige: dizer que um prefixo tem 8 TB frios a partir de cinco
+    páginas de mil objetos seria extrapolar. Custa requests reais — a tarifa
+    está em `pricing.s3_request_per_1000["list"]` e o custo estimado entra na
+    saúde da coleta, porque o produto não pode gastar dinheiro para descobrir
+    custo sem dizer quanto gastou.
     """
     candidates: list[dict] = []
     token = None
     listing_complete = True
-    for _ in range(max_pages):
+    pagina = 0
+    while max_pages is None or pagina < max_pages:
+        pagina += 1
         kwargs: dict[str, Any] = {"Bucket": bucket, "Prefix": prefix, "MaxKeys": 1000}
         if token:
             kwargs["ContinuationToken"] = token
         try:
             response = s3_client.list_objects_v2(**kwargs)
         except Exception:
-            return [], False
+            # O que já foi lido não é descartado: a falha na página N não apaga
+            # as N-1 anteriores, ela só torna a evidência parcial.
+            listing_complete = False
+            break
         for item in response.get("Contents", []):
             modified = as_utc(item.get("LastModified"))
             if modified_after is not None and modified is not None:

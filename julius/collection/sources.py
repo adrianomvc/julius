@@ -25,6 +25,7 @@ from julius.collection.collectors import (
     redshift,
     redshift_cost,
     s3,
+    s3_config,
     s3_cost,
     sagemaker,
     schedules,
@@ -41,10 +42,11 @@ from julius.collection.collectors.glue import (
     spark_logs,
     triggers,
 )
+from julius.collection.collectors.s3_evidence import MAX_LIST_PAGES
 from julius.collection.health import CollectionRecorder
 from julius.collection.models import Account, CollectionHealth
 from julius.collection.scope import CatalogScope
-from julius.collection.session import make_client
+from julius.collection.session import S3_LISTING_WORKERS, make_client
 from julius.collection.window import AnalysisWindow, BillingMonth
 
 
@@ -74,12 +76,21 @@ class CollectionContext:
     # Qual recorte do Glue Catalog pertence a esta conta. O default vazio
     # mantém o comportamento antigo — todos os bancos — e diz isso na saúde.
     catalog_scope: CatalogScope = field(default_factory=CatalogScope)
+    # Lista os prefixos S3 até o fim, em paralelo, em vez de parar no teto de
+    # páginas. Desligado por default porque cobra request: a coleta limitada
+    # responde "pelo menos X GB", e é o operador que decide pagar pela resposta
+    # exata. Ver `S3 Prefixes` em `SOURCES`.
+    s3_full_listing: bool = False
     # Sinais que uma fonte deixa para a seguinte — o rateio de custo só se
     # considera reconciliado quando o inventário de jobs veio íntegro.
     flags: dict[str, Any] = field(default_factory=dict)
     # Entradas de saúde produzidas dentro de um coletor: o Athena consulta sete
     # dependências e cada uma vira fonte própria no relatório.
     pending_health: list[CollectionHealth] = field(default_factory=list)
+    # Onde um coletor anota a chamada interna que não conseguiu fazer. `run`
+    # limpa antes de cada fonte e lê depois, então o coletor só precisa receber
+    # `gaps=ctx.gaps` e nunca sabe o nome da fonte em que está.
+    gaps: list[str] = field(default_factory=list)
     _clients: dict[str, Any] = field(default_factory=dict, repr=False)
 
     def client(self, service: str) -> Any:
@@ -134,6 +145,7 @@ def run(source: Source, ctx: CollectionContext, recorder: CollectionRecorder) ->
         )
         return
 
+    ctx.gaps.clear()
     result = recorder.capture(
         source.name,
         lambda: source.collect(ctx),
@@ -151,9 +163,40 @@ def run(source: Source, ctx: CollectionContext, recorder: CollectionRecorder) ->
         source.apply(ctx, result)
     if source.after is not None:
         source.after(ctx, result, recorder.entries[-1])
+    _record_gaps(ctx, recorder.entries[-1])
     if ctx.pending_health:
         recorder.entries.extend(ctx.pending_health)
         ctx.pending_health.clear()
+
+
+#: Ordem de gravidade: a categoria mais acionável é a que a fonte reporta.
+_GRAVIDADE = ("permission_denied", "credentials_expired", "throttled", "not_found")
+
+
+def _record_gaps(ctx: CollectionContext, entry: CollectionHealth) -> None:
+    """Uma listagem interna negada degrada a fonte, em vez de virar zero.
+
+    Um crawler sem `ListCrawls`, um banco sem `GetTables`, uma máquina sem
+    `DescribeStateMachine`: a fonte continua entregando o que leu, e a
+    degradação precisa aparecer — senão os zeros do que não foi lido passam por
+    medição, e o relatório afirma que o serviço não é usado nesta conta.
+
+    Só escala: uma fonte que o `after` da própria fonte já marcou como parcial
+    não volta a `ok` por aqui.
+    """
+    if not ctx.gaps:
+        return
+    anotados = sorted(set(ctx.gaps))
+    categorias = {gap.rsplit(": ", 1)[-1] for gap in anotados}
+    if entry.status == "ok":
+        entry.status = "partial" if entry.collected else "unavailable"
+    if not entry.error_category:
+        entry.error_category = next(
+            (nome for nome in _GRAVIDADE if nome in categorias),
+            "bounded_or_incomplete",
+        )
+    faltou = "não lido: " + "; ".join(anotados)
+    entry.impact = f"{entry.impact} — {faltou}" if entry.impact else faltou
 
 
 def _latest_data_through(items: Any) -> str:
@@ -244,6 +287,10 @@ def _apply_touches(ctx: CollectionContext, stats: dict) -> None:
         table.consuming_communities = measured.communities
         table.used_by_accounts = list(measured.account_ids)
         table.primary_community = measured.primary_community
+        # A tabela oficial de toques é a melhor fonte de leitura que existe
+        # nesta conta; ela sobrescreve o que o histórico do Athena derivaria.
+        if measured.last_access:
+            table.last_read_at = measured.last_access
 
 
 def _event_log_jobs(ctx: CollectionContext) -> list:
@@ -287,9 +334,38 @@ def _collect_s3_prefixes(ctx: CollectionContext) -> list:
                 known=conhecidos,
                 window=ctx.window,
                 stale_after_days=stale_after,
+                max_pages=None if ctx.s3_full_listing else MAX_LIST_PAGES,
+                workers=S3_LISTING_WORKERS if ctx.s3_full_listing else 1,
             )
         )
     return out
+
+
+def _flag_buckets_without_access_evidence(
+    ctx: CollectionContext, result: Any, entry: CollectionHealth
+) -> None:
+    """Bucket sem fonte de último acesso limita o que a análise pode afirmar.
+
+    Não é erro de coleta — é o estado real da conta, e precisa aparecer como
+    tal: sem server access logs, Storage Lens, Storage Class Analysis ou
+    Intelligent-Tiering, o Julius conhece a última **escrita** de cada objeto e
+    mais nada. Recomendar Glacier a partir disso trocaria a classe de um arquivo
+    gravado uma vez e lido todo dia.
+    """
+    sem_evidencia = s3_config.buckets_without_access_evidence(result)
+    if not sem_evidencia:
+        return
+    if entry.status == "ok":
+        entry.status = "partial"
+    entry.error_category = entry.error_category or "bounded_or_incomplete"
+    entry.impact = (
+        f"{len(sem_evidencia)} bucket(s) sem fonte de último acesso: "
+        "transição de classe sai como sinal, não como economia"
+    )
+    entry.next_action = (
+        "habilitar server access logging (s3:PutBucketLogging pelo time dono) "
+        "ou Storage Lens advanced nesses buckets"
+    )
 
 
 def _flag_partial_s3_listing(
@@ -301,6 +377,35 @@ def _flag_partial_s3_listing(
         entry.error_category = "bounded_or_incomplete"
         entry.impact = "objetos antigos contados somente sobre a parte listada"
         entry.next_action = "revisar os prefixos truncados antes de agir sobre volume"
+    _record_listing_cost(ctx, result, entry)
+
+
+def _record_listing_cost(
+    ctx: CollectionContext, result: Any, entry: CollectionHealth
+) -> None:
+    """Quanto a própria coleta gastou em `ListObjectsV2`.
+
+    O desenho original evita `ListBuckets` porque listar um data lake cobra por
+    request, e o produto não pode custar dinheiro para descobrir custo. A
+    listagem completa contraria isso de propósito, a pedido — então ela declara
+    o que gastou, em vez de a conta aparecer na fatura do mês seguinte sem
+    ninguém saber de onde veio.
+    """
+    requests = sum(int(getattr(item, "list_requests", 0) or 0) for item in result)
+    if not requests:
+        return
+    entry.impact = _com_custo(entry.impact, requests, ctx)
+
+
+def _com_custo(impacto: str, requests: int, ctx: CollectionContext) -> str:
+    nota = f"{requests} requests de listagem"
+    tarifa = getattr(ctx.config.pricing, "s3_request_per_1000", {}).get("list")
+    if tarifa:
+        nota += f" (~US$ {tarifa * requests / 1000.0:.2f})"
+    else:
+        # Sem tarifa na tabela, a contagem sozinha ainda diz o que foi gasto.
+        nota += " (tarifa de LIST ausente: rode `julius pricing refresh`)"
+    return f"{impacto} — {nota}" if impacto else nota
 
 
 def _collect_catalog(ctx: CollectionContext) -> list:
@@ -313,7 +418,7 @@ def _collect_catalog(ctx: CollectionContext) -> list:
     seen = jobs.list_database_names(glue)
     chosen = ctx.catalog_scope.select(seen)
     ctx.pending_health.append(_catalog_scope_health(ctx, seen, chosen))
-    return jobs.collect_tables(glue, chosen)
+    return jobs.collect_tables(glue, chosen, gaps=ctx.gaps)
 
 
 def _catalog_scope_health(
@@ -381,12 +486,18 @@ SOURCES: tuple[Source, ...] = (
     ),
     Source(
         name="Glue Jobs",
-        collect=lambda ctx: jobs.collect_jobs(ctx.client("glue"), window=ctx.window),
+        collect=lambda ctx: jobs.collect_jobs(
+            ctx.client("glue"), window=ctx.window, gaps=ctx.gaps
+        ),
         into="glue_jobs",
-        required=True,
+        # Já foi obrigatória, e um `GetJobs` negado abortava a conta inteira —
+        # S3, Athena, Redshift, SageMaker e Step Functions deixavam de ser
+        # coletados por causa de uma permissão de outro serviço. Sem inventário
+        # de jobs o **Glue** não é analisado; o resto do scan continua válido, e
+        # `collection_status` cai para `partial` para dizer isso.
         count=len,
         data_through=_latest_data_through,
-        impact="sem inventário de jobs o scan Glue não é confiável",
+        impact="sem inventário de jobs o Glue não é analisado; demais serviços seguem",
         next_action="validar glue:GetJobs e glue:GetJobRuns",
         after=_record_jobs_integrity,
     ),
@@ -432,7 +543,7 @@ SOURCES: tuple[Source, ...] = (
     Source(
         name="Glue Crawlers",
         collect=lambda ctx: glue_crawlers.collect_crawlers(
-            ctx.client("glue"), window=ctx.window
+            ctx.client("glue"), window=ctx.window, gaps=ctx.gaps
         ),
         into="glue_crawlers",
         count=len,
@@ -451,7 +562,7 @@ SOURCES: tuple[Source, ...] = (
     Source(
         name="Glue DataBrew",
         collect=lambda ctx: databrew.collect_jobs(
-            ctx.client("databrew"), window=ctx.window
+            ctx.client("databrew"), window=ctx.window, gaps=ctx.gaps
         ),
         into="databrew_jobs",
         count=len,
@@ -494,7 +605,7 @@ SOURCES: tuple[Source, ...] = (
     Source(
         name="Glue Interactive Sessions",
         collect=lambda ctx: sessions.collect_sessions(
-            ctx.client("glue"), window=ctx.window
+            ctx.client("glue"), window=ctx.window, gaps=ctx.gaps
         ),
         into="interactive_sessions",
         count=len,
@@ -567,6 +678,34 @@ SOURCES: tuple[Source, ...] = (
         next_action="validar cloudwatch:GetMetricStatistics e s3:GetBucketVersioning",
     ),
     Source(
+        # Depende de "Amazon S3": a lista de buckets é a mesma.
+        name="S3 Config",
+        collect=lambda ctx: s3_config.collect_bucket_configs(
+            ctx.client("s3"),
+            names=s3.bucket_names(_s3_scope(ctx)),
+            s3control_client=ctx.client("s3control"),
+            account_id=ctx.account.account_id,
+            gaps=ctx.gaps,
+        ),
+        into="s3_bucket_configs",
+        count=len,
+        enabled=lambda ctx: bool(_s3_scope(ctx)),
+        disabled_category="no_data",
+        disabled_impact="não se sabe quais buckets permitem medir último acesso",
+        disabled_next_action=(
+            "coletar catálogo, jobs ou workgroups — o escopo de S3 sai deles"
+        ),
+        # O S3 não tem last access time nativo por objeto: `LastModified` é a
+        # última escrita. Sem saber o que está ligado no bucket, recomendar
+        # classe fria seria apostar que arquivo não regravado não é lido.
+        impact="recomendação de classe de armazenamento fica sem evidência de leitura",
+        next_action=(
+            "validar s3:GetBucketLogging, s3:GetLifecycleConfiguration, "
+            "s3:GetAnalyticsConfiguration e s3:GetIntelligentTieringConfiguration"
+        ),
+        after=_flag_buckets_without_access_evidence,
+    ),
+    Source(
         name="S3 Prefixes",
         collect=_collect_s3_prefixes,
         into="s3_prefixes",
@@ -626,7 +765,10 @@ SOURCES: tuple[Source, ...] = (
     Source(
         name="SageMaker Studio",
         collect=lambda ctx: sagemaker.collect_apps(
-            ctx.client("sagemaker"), ctx.client("cloudwatch"), window=ctx.window
+            ctx.client("sagemaker"),
+            ctx.client("cloudwatch"),
+            window=ctx.window,
+            gaps=ctx.gaps,
         ),
         into="sagemaker_apps",
         count=len,
@@ -646,6 +788,7 @@ SOURCES: tuple[Source, ...] = (
             ctx.client("cloudwatch"),
             ctx.client("application-autoscaling"),
             window=ctx.window,
+            gaps=ctx.gaps,
         ),
         into="sagemaker_endpoints",
         count=len,
@@ -662,6 +805,7 @@ SOURCES: tuple[Source, ...] = (
             ctx.client("cloudwatch"),
             ctx.client("redshift-serverless"),
             window=ctx.window,
+            gaps=ctx.gaps,
         ),
         into="redshift_clusters",
         count=len,
@@ -695,7 +839,7 @@ SOURCES: tuple[Source, ...] = (
     Source(
         name="Step Functions",
         collect=lambda ctx: stepfunctions.collect_state_machines(
-            ctx.client("stepfunctions"), window=ctx.window
+            ctx.client("stepfunctions"), window=ctx.window, gaps=ctx.gaps
         ),
         into="state_machines",
         count=len,
@@ -711,7 +855,9 @@ SOURCES: tuple[Source, ...] = (
     ),
     Source(
         name="EventBridge Schedules",
-        collect=lambda ctx: schedules.collect_schedules(ctx.client("events")),
+        collect=lambda ctx: schedules.collect_schedules(
+            ctx.client("events"), gaps=ctx.gaps
+        ),
         into="schedules",
         count=len,
         impact="frequência esperada dos processos pode ficar incompleta",
@@ -752,7 +898,7 @@ SOURCES: tuple[Source, ...] = (
     Source(
         name="CloudTrail Ownership",
         collect=lambda ctx: cloudtrail.collect_actor_events(
-            ctx.client("cloudtrail"), window=ctx.window
+            ctx.client("cloudtrail"), window=ctx.window, gaps=ctx.gaps
         ),
         into="actor_events",
         count=len,

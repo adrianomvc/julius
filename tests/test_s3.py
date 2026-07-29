@@ -220,11 +220,28 @@ def test_what_the_size_does_not_decide_becomes_a_question():
     sinais = {s.rule_id: s for s in s3_rules.signals(account, DEFAULT_CONFIG)}
 
     assert "S3-NONCURRENT-VERSIONS" in sinais
-    assert "S3-COLD-DATA-REWRITE" in sinais
     for sinal in sinais.values():
         assert sinal.question and sinal.missing_evidence
-    # Lifecycle está fora do ambiente, e a pergunta precisa dizer isso.
-    assert "fria" in sinais["S3-COLD-DATA-REWRITE"].question
+
+
+def test_the_cold_data_question_moved_to_where_it_can_be_answered():
+    """`S3-COLD-DATA-REWRITE` saiu daqui, e a razão importa.
+
+    Emitido por bucket a partir do `BucketSizeBytes` do CloudWatch, ele nunca
+    tinha como virar economia: o CloudWatch não separa prefixo, e prefixo é onde
+    a transição age. Agora ele vive ao lado da regra que o promove a oportunidade
+    quando existe evidência de leitura — com o mesmo `rule_id`, porque ele faz
+    parte do fingerprint e trocá-lo desconectaria as decisões já tomadas.
+    """
+    from julius.knowledge.rules.s3 import storage_class
+
+    assert storage_class.SIGNAL_ID == "S3-COLD-DATA-REWRITE"
+    account = _conta()
+    account.s3_buckets[0].versioning_enabled = True
+
+    emitidos = {s.rule_id for s in s3_rules.signals(account, DEFAULT_CONFIG)}
+
+    assert "S3-COLD-DATA-REWRITE" not in emitidos
 
 
 def test_without_cloudwatch_the_family_explains_its_own_silence():

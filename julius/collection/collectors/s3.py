@@ -17,11 +17,18 @@ métrica não consultada deixa o campo em `None`.
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from typing import Any
 
-from julius.collection.collectors.s3_evidence import as_utc, list_objects, parse_location
+from julius.collection.collectors.s3_evidence import (
+    MAX_LIST_PAGES,
+    as_utc,
+    list_objects,
+    parse_location,
+)
 from julius.collection.models import S3Bucket, S3MultipartUpload, S3Prefix
+from julius.collection.models.s3 import age_bucket
 from julius.collection.window import AnalysisWindow
 
 #: Sufixos que denunciam staging de execução Spark/Hadoop, não dado.
@@ -62,47 +69,102 @@ def collect_prefixes(
     known: list[tuple[str, str, str]],
     window: AnalysisWindow,
     stale_after_days: int,
+    max_pages: int | None = MAX_LIST_PAGES,
+    workers: int = 1,
 ) -> list[S3Prefix]:
     """Agrega cada prefixo conhecido: quantos objetos, quanto, quão antigos.
 
     `known` é uma lista de `(location, kind, source_asset)` montada por quem
     conhece o inventário — a coleta não descobre prefixo sozinha, de propósito.
+
+    `max_pages=None` lista o prefixo inteiro; `workers` lista vários prefixos ao
+    mesmo tempo. Os dois andam juntos: sem teto, um data lake leva horas em
+    série, e o gargalo é latência de rede, não CPU. Clientes botocore são
+    seguros entre threads depois de criados — o que precisa acompanhar é o
+    `max_pool_connections` da sessão, senão as threads disputam o pool e o
+    paralelismo vira fila.
     """
     cutoff = _cutoff(window, stale_after_days)
-    out: list[S3Prefix] = []
-    for location, kind, source in known:
-        parsed = parse_location(location)
-        if s3_client is None or parsed is None:
-            continue
-        bucket, prefix = parsed
-        objects, complete = list_objects(s3_client, bucket, prefix)
-        entry = S3Prefix(
-            bucket=bucket,
-            prefix=prefix,
-            kind=kind,
-            source_asset=source,
-            listing_complete=complete,
+    alvos = [
+        (parsed[0], parsed[1], kind, source)
+        for location, kind, source in known
+        if s3_client is not None and (parsed := parse_location(location)) is not None
+    ]
+    if not alvos:
+        return []
+
+    def coletar(alvo: tuple[str, str, str, str]) -> S3Prefix:
+        bucket, prefix, kind, source = alvo
+        objects, complete = list_objects(
+            s3_client, bucket, prefix, max_pages=max_pages
         )
-        if not objects and not complete:
-            # Listagem falhou: sem contagem, e nenhuma regra vai afirmar.
-            out.append(entry)
-            continue
-        entry.object_count = len(objects)
-        entry.total_bytes = sum(int(item.get("Size") or 0) for item in objects)
-        idades = [
-            idade for item in objects if (idade := _age_days(item)) is not None
-        ]
-        entry.oldest_object_age_days = max(idades) if idades else None
-        antigos = [
-            item
-            for item in objects
-            if (modified := as_utc(item.get("LastModified"))) is not None
-            and modified < cutoff
-        ]
-        entry.stale_object_count = len(antigos)
-        entry.stale_bytes = sum(int(item.get("Size") or 0) for item in antigos)
-        out.append(entry)
-    return out
+        return _agregar(bucket, prefix, kind, source, objects, complete, cutoff)
+
+    if workers <= 1 or len(alvos) == 1:
+        return [coletar(alvo) for alvo in alvos]
+
+    with ThreadPoolExecutor(max_workers=min(workers, len(alvos))) as pool:
+        # `map` preserva a ordem da entrada: dois scans do mesmo inventário
+        # produzem o mesmo dataset, e o diff entre eles continua legível.
+        return list(pool.map(coletar, alvos))
+
+
+def _agregar(
+    bucket: str,
+    prefix: str,
+    kind: str,
+    source: str,
+    objects: list[dict],
+    complete: bool,
+    cutoff: datetime,
+) -> S3Prefix:
+    """Transforma a listagem em agregado. Nenhuma chave de objeto sobe daqui."""
+    entry = S3Prefix(
+        bucket=bucket,
+        prefix=prefix,
+        kind=kind,
+        source_asset=source,
+        listing_complete=complete,
+    )
+    entry.list_requests = max(1, -(-len(objects) // 1000)) if objects else 1
+    if not objects and not complete:
+        # Listagem falhou: sem contagem, e nenhuma regra vai afirmar.
+        return entry
+    entry.object_count = len(objects)
+    entry.total_bytes = sum(int(item.get("Size") or 0) for item in objects)
+    entry.average_object_bytes = (
+        round(entry.total_bytes / entry.object_count) if entry.object_count else None
+    )
+
+    idades = [idade for item in objects if (idade := _age_days(item)) is not None]
+    entry.oldest_object_age_days = max(idades) if idades else None
+
+    antigos = [
+        item
+        for item in objects
+        if (modified := as_utc(item.get("LastModified"))) is not None
+        and modified < cutoff
+    ]
+    entry.stale_object_count = len(antigos)
+    entry.stale_bytes = sum(int(item.get("Size") or 0) for item in antigos)
+
+    por_classe: dict[str, float] = {}
+    contagem_classe: dict[str, int] = {}
+    por_idade: dict[str, float] = {}
+    for item in objects:
+        tamanho = int(item.get("Size") or 0)
+        # `StorageClass` vem junto no `ListObjectsV2` e era descartado; ausente
+        # significa STANDARD, que é como a própria API o omite.
+        classe = str(item.get("StorageClass") or "STANDARD")
+        por_classe[classe] = por_classe.get(classe, 0.0) + tamanho
+        contagem_classe[classe] = contagem_classe.get(classe, 0) + 1
+        if (idade := _age_days(item)) is not None:
+            faixa = age_bucket(idade)
+            por_idade[faixa] = por_idade.get(faixa, 0.0) + tamanho
+    entry.bytes_by_class = por_classe
+    entry.object_count_by_class = contagem_classe
+    entry.bytes_by_age = por_idade
+    return entry
 
 
 def collect_multipart_uploads(

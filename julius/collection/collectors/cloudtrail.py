@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 
+from julius.collection.collectors.paginate import safe_pages
 from julius.collection.models import ActorEvent
 from julius.collection.window import AnalysisWindow
 
@@ -39,44 +40,48 @@ def collect_actor_events(
     cloudtrail_client,
     *,
     window: AnalysisWindow,
+    gaps: list[str] | None = None,
 ) -> list[ActorEvent]:
     start, now = window.start, window.end
     events: list[ActorEvent] = []
-    paginator = cloudtrail_client.get_paginator("lookup_events")
-    for page in paginator.paginate(StartTime=start, EndTime=now):
-        for outer in page.get("Events", []):
-            event_name = outer.get("EventName", "")
-            if event_name not in _EVENT_TYPES:
-                continue
-            try:
-                raw = json.loads(outer.get("CloudTrailEvent") or "{}")
-            except json.JSONDecodeError:
-                raw = {}
-            resource_type, keys = _EVENT_TYPES[event_name]
-            resource_name = _resource_name(raw, outer, keys)
-            if not resource_name:
-                continue
-            identity = raw.get("userIdentity", {}) or {}
-            session_context = identity.get("sessionContext", {}) or {}
-            source_identity = identity.get("sourceIdentity") or session_context.get(
-                "sourceIdentity"
+    listagem = safe_pages(
+        cloudtrail_client, "lookup_events", "Events", StartTime=start, EndTime=now
+    )
+    if gaps is not None and not listagem.complete:
+        gaps.append(f"lookup_events: {listagem.error_category or 'incompleto'}")
+    for outer in listagem.items:
+        event_name = outer.get("EventName", "")
+        if event_name not in _EVENT_TYPES:
+            continue
+        try:
+            raw = json.loads(outer.get("CloudTrailEvent") or "{}")
+        except json.JSONDecodeError:
+            raw = {}
+        resource_type, keys = _EVENT_TYPES[event_name]
+        resource_name = _resource_name(raw, outer, keys)
+        if not resource_name:
+            continue
+        identity = raw.get("userIdentity", {}) or {}
+        session_context = identity.get("sessionContext", {}) or {}
+        source_identity = identity.get("sourceIdentity") or session_context.get(
+            "sourceIdentity"
+        )
+        event_time = outer.get("EventTime") or raw.get("eventTime") or ""
+        if hasattr(event_time, "isoformat"):
+            event_time = event_time.isoformat()
+        events.append(
+            ActorEvent(
+                resource_type=resource_type,
+                resource_name=resource_name,
+                event_name=event_name,
+                event_time=str(event_time),
+                source_identity=source_identity,
+                user_arn=identity.get("arn"),
+                identity_type=str(identity.get("type") or ""),
+                event_source=str(raw.get("eventSource") or outer.get("EventSource") or ""),
+                is_human=_is_human(identity, source_identity),
             )
-            event_time = outer.get("EventTime") or raw.get("eventTime") or ""
-            if hasattr(event_time, "isoformat"):
-                event_time = event_time.isoformat()
-            events.append(
-                ActorEvent(
-                    resource_type=resource_type,
-                    resource_name=resource_name,
-                    event_name=event_name,
-                    event_time=str(event_time),
-                    source_identity=source_identity,
-                    user_arn=identity.get("arn"),
-                    identity_type=str(identity.get("type") or ""),
-                    event_source=str(raw.get("eventSource") or outer.get("EventSource") or ""),
-                    is_human=_is_human(identity, source_identity),
-                )
-            )
+        )
     return events
 
 

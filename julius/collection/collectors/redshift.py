@@ -18,6 +18,7 @@ regra que dependa dele dispara.
 
 from __future__ import annotations
 
+from julius.collection.collectors.paginate import safe_pages
 from julius.collection.models import RedshiftCluster
 from julius.collection.window import AnalysisWindow
 
@@ -28,17 +29,26 @@ def collect_clusters(
     serverless_client=None,
     *,
     window: AnalysisWindow,
+    gaps: list[str] | None = None,
 ) -> list[RedshiftCluster]:
-    clusters = _provisioned(redshift_client, window)
-    clusters.extend(_serverless(serverless_client, window))
+    """Clusters provisionados e workgroups serverless, com o que falhou anotado.
+
+    `gaps` recebe a categoria de cada listagem que não completou. Sem ele, um
+    `describe_clusters` negado devolveria a mesma lista vazia que uma conta sem
+    Redshift nenhum — e o relatório afirmaria que não há cluster.
+    """
+    clusters = _provisioned(redshift_client, window, gaps)
+    clusters.extend(_serverless(serverless_client, window, gaps))
     for cluster in clusters:
         _enrich_cloudwatch(cloudwatch_client, cluster, window)
     return clusters
 
 
-def _provisioned(client, window: AnalysisWindow) -> list[RedshiftCluster]:
+def _provisioned(
+    client, window: AnalysisWindow, gaps: list[str] | None = None
+) -> list[RedshiftCluster]:
     out: list[RedshiftCluster] = []
-    for raw in _paginate(client, "describe_clusters", "Clusters"):
+    for raw in _paginate(client, "describe_clusters", "Clusters", gaps):
         identifier = str(raw.get("ClusterIdentifier") or "")
         if not identifier:
             continue
@@ -60,11 +70,13 @@ def _provisioned(client, window: AnalysisWindow) -> list[RedshiftCluster]:
     return out
 
 
-def _serverless(client, window: AnalysisWindow) -> list[RedshiftCluster]:
+def _serverless(
+    client, window: AnalysisWindow, gaps: list[str] | None = None
+) -> list[RedshiftCluster]:
     if client is None:
         return []
     out: list[RedshiftCluster] = []
-    for raw in _paginate(client, "list_workgroups", "workgroups"):
+    for raw in _paginate(client, "list_workgroups", "workgroups", gaps):
         name = str(raw.get("workgroupName") or "")
         if not name:
             continue
@@ -135,21 +147,13 @@ def _points(
     ]
 
 
-def _paginate(client, operation: str, key: str) -> list[dict]:
-    if client is None:
-        return []
-    try:
-        paginator = client.get_paginator(operation)
-        pages = paginator.paginate()
-    except Exception:
-        try:
-            pages = [getattr(client, operation)()]
-        except Exception:
-            return []
-    out: list[dict] = []
-    for page in pages:
-        out.extend(page.get(key, []))
-    return out
+def _paginate(
+    client, operation: str, key: str, gaps: list[str] | None = None
+) -> list[dict]:
+    resultado = safe_pages(client, operation, key)
+    if gaps is not None and not resultado.complete:
+        gaps.append(f"{operation}: {resultado.error_category or 'incompleto'}")
+    return resultado.items
 
 
 def _iso(value) -> str:

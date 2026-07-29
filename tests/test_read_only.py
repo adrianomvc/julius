@@ -89,6 +89,18 @@ OPERACOES_PERMITIDAS = {
     "list_parts",
     "get_object",
     "get_bucket_versioning",
+    # S3 — configuração declarada do bucket. Lê o que está **ligado**, nunca
+    # liga nada: o S3 não expõe último acesso por objeto, e sem saber se há
+    # server access logs, Storage Lens, Storage Class Analysis ou
+    # Intelligent-Tiering, recomendar classe fria seria apostar que arquivo não
+    # regravado não é lido. Habilitar qualquer uma delas é `Put*`, e isso
+    # pertence à recomendação, que o time dono executa.
+    "get_bucket_logging",
+    "get_bucket_lifecycle_configuration",
+    "list_bucket_analytics_configurations",
+    "list_bucket_intelligent_tiering_configurations",
+    "get_bucket_metadata_configuration",
+    "list_storage_lens_configurations",
     # EventBridge.
     "list_rules",
     "list_targets_by_rule",

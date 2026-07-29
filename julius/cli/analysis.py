@@ -125,7 +125,7 @@ def agent_verify_accounts(
     """Valida via STS os perfis SSO habilitados antes da coleta."""
     try:
         targets = load_account_targets(config)
-        verified = verify_account_targets(targets)
+        verified, falhas = verify_account_targets(targets)
     except (
         AccountTargetError,
         FileNotFoundError,
@@ -135,12 +135,16 @@ def agent_verify_accounts(
     ) as exc:
         raise typer.BadParameter(str(exc)) from exc
     path = write_verified_accounts(verified, output)
-    typer.echo(f"Contas verificadas via STS: {len(verified)}")
+    typer.echo(f"Contas verificadas via STS: {len(verified)} de {len(targets)}")
     for account in verified:
         typer.echo(
             f"- {account.name}: {account.account_id} · "
             f"região {account.region} · credencial SSO ativa"
         )
+    # Um perfil que não respondeu não some do relato: sem isto, "verifiquei 3 de
+    # 5" viraria "verifiquei 3" e ninguém iria renovar o login das outras duas.
+    for falha in falhas:
+        typer.echo(f"- {falha}: não verificada — renovar o login SSO deste perfil")
     typer.echo(f"Manifesto: {path}")
 
 

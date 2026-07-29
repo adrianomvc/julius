@@ -16,6 +16,7 @@ from collections.abc import Sequence
 from datetime import datetime, timezone
 from statistics import mean, median, pstdev
 
+from julius.collection.collectors.paginate import safe_pages
 from julius.collection.models import GlueJob, Table
 from julius.collection.settings import DPU_PER_WORKER
 from julius.collection.window import AnalysisWindow
@@ -27,13 +28,13 @@ def _truthy(value) -> bool:
     return str(value).strip().lower() in ("true", "1", "yes")
 
 
-def collect_jobs(glue_client, *, window: AnalysisWindow) -> list[GlueJob]:
-    jobs: list[GlueJob] = []
-    paginator = glue_client.get_paginator("get_jobs")
-    for page in paginator.paginate():
-        for job in page.get("Jobs", []):
-            jobs.append(_build_job(glue_client, job, window))
-    return jobs
+def collect_jobs(
+    glue_client, *, window: AnalysisWindow, gaps: list[str] | None = None
+) -> list[GlueJob]:
+    resultado = safe_pages(glue_client, "get_jobs", "Jobs")
+    if gaps is not None and not resultado.complete:
+        gaps.append(f"get_jobs: {resultado.error_category or 'incompleto'}")
+    return [_build_job(glue_client, job, window) for job in resultado.items]
 
 
 def _build_job(glue_client, job: dict, window: AnalysisWindow) -> GlueJob:
@@ -315,37 +316,48 @@ def list_database_names(glue_client) -> list[str]:
     `get_tables` por banco é o que custa, e o banco de outra conta não deve
     chegar lá.
     """
-    names: list[str] = []
-    paginator = glue_client.get_paginator("get_databases")
-    for page in paginator.paginate():
-        names.extend(
-            database["Name"] for database in page.get("DatabaseList", []) if database.get("Name")
-        )
-    return names
+    return [
+        str(database["Name"])
+        for database in safe_pages(glue_client, "get_databases", "DatabaseList").items
+        if database.get("Name")
+    ]
 
 
-def collect_tables(glue_client, databases: Sequence[str]) -> list[Table]:
-    """Coleta tabelas dos bancos informados, com ownership/linhagem."""
+def collect_tables(
+    glue_client, databases: Sequence[str], *, gaps: list[str] | None = None
+) -> list[Table]:
+    """Coleta tabelas dos bancos informados, com ownership/linhagem.
+
+    O `get_tables` é isolado **por banco**: sob Lake Formation é comum a conta
+    enxergar o banco no catálogo e não ter permissão de listar as tabelas dele.
+    Antes um único banco negado zerava o catálogo inteiro, e todas as regras de
+    tabela e de S3 — cujo escopo sai da `location` daqui — ficavam sem inventário.
+    """
     tables: list[Table] = []
-    paginator = glue_client.get_paginator("get_tables")
     for db_name in databases:
-        for page in paginator.paginate(DatabaseName=db_name):
-            for raw in page.get("TableList", []):
-                params = raw.get("Parameters", {}) or {}
-                descriptor = raw.get("StorageDescriptor") or {}
-                tables.append(
-                    Table(
-                        name=f"{db_name}.{raw['Name']}",
-                        location=str(descriptor.get("Location") or ""),
-                        written_by=params.get("julius:written_by")
-                        or params.get("written_by")
-                        or params.get("producer_job"),
-                        owner_tag=params.get("Owner") or params.get("owner"),
-                        corporate_owner=params.get("corporate_owner"),
-                        datawarm_owner=params.get("datawarm_owner"),
-                        datawarm_published=_truthy(params.get("datawarm_published")),
-                    )
+        resultado = safe_pages(
+            glue_client, "get_tables", "TableList", DatabaseName=db_name
+        )
+        if gaps is not None and not resultado.complete:
+            gaps.append(
+                f"get_tables[{db_name}]: {resultado.error_category or 'incompleto'}"
+            )
+        for raw in resultado.items:
+            params = raw.get("Parameters", {}) or {}
+            descriptor = raw.get("StorageDescriptor") or {}
+            tables.append(
+                Table(
+                    name=f"{db_name}.{raw['Name']}",
+                    location=str(descriptor.get("Location") or ""),
+                    written_by=params.get("julius:written_by")
+                    or params.get("written_by")
+                    or params.get("producer_job"),
+                    owner_tag=params.get("Owner") or params.get("owner"),
+                    corporate_owner=params.get("corporate_owner"),
+                    datawarm_owner=params.get("datawarm_owner"),
+                    datawarm_published=_truthy(params.get("datawarm_published")),
                 )
+            )
     return tables
 
 

@@ -81,7 +81,7 @@ def test_verifies_each_sso_profile_in_sa_east_1(tmp_path):
         "secundaria": "210987654321",
     }
 
-    verified = verify_account_targets(
+    verified, falhas = verify_account_targets(
         load_account_targets(path),
         session_factory=lambda profile, region: (
             session_args.append((profile, region)) or FakeSession(accounts[profile])
@@ -90,6 +90,7 @@ def test_verifies_each_sso_profile_in_sa_east_1(tmp_path):
     manifest = write_verified_accounts(verified, tmp_path / "verified.json")
     payload = json.loads(manifest.read_text(encoding="utf-8"))
 
+    assert falhas == []
     assert [account.account_id for account in verified] == [
         "123456789012",
         "210987654321",
@@ -113,6 +114,55 @@ def test_stops_on_active_sso_account_mismatch(tmp_path):
             load_account_targets(path),
             session_factory=lambda *_: FakeSession("999999999999"),
         )
+
+
+def test_an_expired_profile_does_not_take_the_other_accounts_down(tmp_path):
+    """Um login SSO vencido é o caso comum de quem roda multi-conta.
+
+    Antes ele abortava a verificação inteira, inclusive das contas cujo login
+    estava válido — e o operador só descobria qual perfil renovar depois de
+    testar um a um.
+    """
+    path = tmp_path / "accounts.json"
+    _write_config(
+        path,
+        [
+            _target("expirada", "123456789012", "expirada"),
+            _target("valida", "210987654321", "valida"),
+        ],
+    )
+
+    def sessao(profile, _region):
+        if profile == "expirada":
+            raise RuntimeError("Token has expired and refresh failed")
+        return FakeSession("210987654321")
+
+    verified, falhas = verify_account_targets(
+        load_account_targets(path), session_factory=sessao
+    )
+
+    assert [account.name for account in verified] == ["valida"]
+    assert falhas == ["expirada: RuntimeError"]
+
+
+def test_a_mismatch_still_stops_everything_even_next_to_a_failure(tmp_path):
+    """Perfil que não responde é para ignorar; conta trocada nunca é."""
+    path = tmp_path / "accounts.json"
+    _write_config(
+        path,
+        [
+            _target("quebrada", "123456789012", "quebrada"),
+            _target("trocada", "210987654321", "trocada"),
+        ],
+    )
+
+    def sessao(profile, _region):
+        if profile == "quebrada":
+            raise RuntimeError("sem credencial")
+        return FakeSession("999999999999")
+
+    with pytest.raises(AccountTargetError, match="esperado"):
+        verify_account_targets(load_account_targets(path), session_factory=sessao)
 
 
 def test_rejects_implicit_or_ambiguous_scope(tmp_path):

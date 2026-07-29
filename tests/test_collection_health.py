@@ -35,13 +35,37 @@ class FakeSts:
         return {"Account": "123456789012"}
 
 
+class _PaginadorVazio:
+    def paginate(self, **_kwargs):
+        return iter([{}])
+
+
+class FakeClient:
+    """Cliente que responde vazio a qualquer operação.
+
+    Antes era um `object()` puro, e toda chamada levantava `AttributeError` —
+    que a paginação engolia e transformava em lista vazia. Isso fazia "a AWS
+    respondeu que não há nada" e "a chamada nem aconteceu" serem indistinguíveis
+    no teste, exatamente a confusão que a coleta passou a recusar.
+    """
+
+    def paginate(self, **_kwargs):
+        return iter([{}])
+
+    def get_paginator(self, _operation):
+        return _PaginadorVazio()
+
+    def __getattr__(self, _name):
+        return lambda **_kwargs: {}
+
+
 class FakeSession:
     region_name = "sa-east-1"
 
     # `**_kwargs` porque a coleta passa `config=` — retry adaptativo e timeouts
     # não são opcionais no caminho real.
     def client(self, name, **_kwargs):
-        return FakeSts() if name == "sts" else object()
+        return FakeSts() if name == "sts" else FakeClient()
 
 
 def _patch_empty_collectors(monkeypatch):
@@ -139,7 +163,10 @@ def test_collect_account_records_sources_and_optional_disabled_do_not_degrade(
 
     by_source = {item.source: item for item in account.collection_health}
     assert by_source["AWS identity"].status == "ok"
-    assert by_source["Glue Jobs"].required is True
+    # Só a identidade é obrigatória. Ver
+    # `test_a_denied_glue_does_not_take_the_other_services_down`.
+    assert by_source["AWS identity"].required is True
+    assert by_source["Glue Jobs"].required is False
     assert by_source["Spark Event Logs"].error_category == "not_configured"
     assert by_source["Table Touches"].affects_status is False
     assert by_source["CloudTrail Ownership"].affects_status is False
@@ -168,7 +195,7 @@ def test_missing_glue_billing_degrades_the_scan_when_there_are_jobs(monkeypatch)
     assert account.collection_status == "partial"
 
 
-def test_optional_failure_marks_scan_partial_and_glue_failure_blocks(monkeypatch):
+def test_optional_failure_marks_scan_partial(monkeypatch):
     _patch_empty_collectors(monkeypatch)
     monkeypatch.setattr(
         collect_module.cost_explorer,
@@ -182,12 +209,40 @@ def test_optional_failure_marks_scan_partial_and_glue_failure_blocks(monkeypatch
     )
     assert cost.error_category == "permission_denied"
 
+
+def test_a_denied_glue_does_not_take_the_other_services_down(monkeypatch):
+    """`glue:GetJobs` negado custava o scan inteiro, não só a análise de Glue.
+
+    O SSO restrito que não enxerga Glue costuma enxergar S3, Athena, Redshift e
+    SageMaker — e a conta ficava sem relatório nenhum por causa da permissão de
+    um serviço só. Agora a fonte degrada e o scan continua, dizendo o que faltou.
+    """
+    _patch_empty_collectors(monkeypatch)
     monkeypatch.setattr(
         collect_module.jobs,
         "collect_jobs",
         lambda *_a, **_k: (_ for _ in ()).throw(AwsLikeError()),
     )
-    with pytest.raises(RequiredCollectionError, match="Glue Jobs"):
+
+    account = collect_account(FakeSession(), config=DEFAULT_CONFIG)
+
+    assert account.collection_status == "partial"
+    by_source = {item.source: item for item in account.collection_health}
+    assert by_source["Glue Jobs"].status == "unavailable"
+    assert by_source["Glue Jobs"].error_category == "permission_denied"
+    # As outras fontes continuaram rodando: é o ponto da mudança.
+    assert by_source["Amazon Redshift"].status == "ok"
+    assert by_source["SageMaker Studio"].status == "ok"
+    assert by_source["Step Functions"].status == "ok"
+
+
+def test_only_a_lost_identity_stops_the_scan(monkeypatch):
+    """Sem saber em qual conta se está, nenhum número tem significado."""
+    _patch_empty_collectors(monkeypatch)
+    monkeypatch.setattr(
+        FakeSts, "get_caller_identity", lambda self: (_ for _ in ()).throw(AwsLikeError())
+    )
+    with pytest.raises(RequiredCollectionError, match="AWS identity"):
         collect_account(FakeSession(), config=DEFAULT_CONFIG)
 
 

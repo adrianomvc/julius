@@ -54,3 +54,65 @@ pick = "min"
 service = "AWSStepFunctions"
 match = { group = "SFN-ExpressWorkflows-Requests" }
 pick = "min"
+
+# S3 — a única seção cuja tarifa é usada para COMPARAR duas opções, e não para
+# modelar um custo. O rateio do Cost Explorer diz quanto o armazenamento custa
+# hoje; ele não diz quanto custaria em Glacier. Recomendar transição de classe
+# exige a diferença entre as duas tarifas, e é só para isso que estas entram.
+#
+# `pick = "min"` no armazenamento porque o S3 cobra em faixas decrescentes por
+# volume (primeiros 50 TB, próximos 450 TB, acima de 500 TB). A menor só vale
+# para quem passa de 500 TB — e é por isso que ela é a escolha certa: subestima
+# o preço do Standard, subestima a diferença entre classes e portanto subestima
+# a economia. Errar prometendo menos é o lado seguro de uma recomendação que
+# pede para mover petabytes.
+
+[s3.storage_standard]
+service = "AmazonS3"
+match = { productFamily = "Storage", volumeType = "Standard" }
+pick = "min"
+
+[s3.storage_standard_ia]
+service = "AmazonS3"
+match = { productFamily = "Storage", volumeType = "Standard - Infrequent Access" }
+pick = "min"
+
+[s3.storage_onezone_ia]
+service = "AmazonS3"
+match = { productFamily = "Storage", volumeType = "One Zone - Infrequent Access" }
+pick = "min"
+
+[s3.storage_glacier_ir]
+service = "AmazonS3"
+match = { productFamily = "Storage", volumeType = "Glacier Instant Retrieval" }
+pick = "min"
+
+[s3.storage_glacier_flexible]
+service = "AmazonS3"
+match = { productFamily = "Storage", volumeType = "Amazon Glacier" }
+pick = "min"
+
+[s3.storage_deep_archive]
+service = "AmazonS3"
+match = { productFamily = "Storage", volumeType = "Glacier Deep Archive" }
+pick = "min"
+
+# Requests. `list_per_1000` também mede o custo da **própria coleta**: o
+# `--s3-full-listing` pagina o data lake inteiro, e o Julius não pode gastar
+# dinheiro para descobrir custo sem dizer quanto gastou.
+[s3.request_list_per_1000]
+service = "AmazonS3"
+match = { productFamily = "API Request", group = "S3-API-Tier1" }
+pick = "min"
+
+[s3.request_get_per_1000]
+service = "AmazonS3"
+match = { productFamily = "API Request", group = "S3-API-Tier2" }
+pick = "min"
+
+# Mover objeto de classe cobra por request, e é o custo que a recomendação
+# precisa descontar da economia — senão promete um número que não acontece.
+[s3.request_lifecycle_transition_per_1000]
+service = "AmazonS3"
+match = { productFamily = "API Request", group = "S3-API-SIA-Tier1" }
+pick = "min"
