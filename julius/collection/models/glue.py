@@ -54,12 +54,22 @@ class GlueJob:
     overlap_seconds_window: float = 0.0
     overlapping_runs_in_window: int = 0
     retry_runs_in_window: int = 0
+    # `None` distingue dataset legado/coleta indisponível de zero falhas.
+    failed_runs_in_window: int | None = None
+    failed_retry_runs_in_window: int | None = None
+    failed_dpu_seconds_window: float | None = None
+    estimated_failed_dpu_hours_window: float | None = None
+    failure_categories: dict[str, int] = field(default_factory=dict)
     window_end: str = ""
     window_days: int = ANALYSIS_WINDOW_DAYS
     # Custo alocado por rateio da cobrança real do bucket no Cost Explorer.
     # Nunca é fatura por job: o CE não expõe dimensão de recurso para Glue.
     allocated_cost: float | None = None
     cost_quality: str = "unavailable"
+    # Parcela do custo alocado acima consumida por execuções com falha.
+    # Continua contida em `allocated_cost`; não deve ser somada ao custo total.
+    failed_cost_window: float | None = None
+    failure_cost_quality: str = "unavailable"
     trigger_names: list[str] = field(default_factory=list)
     run_ids_in_window: list[str] = field(default_factory=list)
     observed_runs: int = 0
@@ -114,6 +124,16 @@ class GlueJob:
         return self.actual_dpu_hours_window + max(0.0, self.estimated_dpu_hours_window)
 
     @property
+    def actual_failed_dpu_hours_window(self) -> float:
+        return max(0.0, (self.failed_dpu_seconds_window or 0.0) / 3600.0)
+
+    @property
+    def total_failed_dpu_hours_window(self) -> float:
+        return self.actual_failed_dpu_hours_window + max(
+            0.0, self.estimated_failed_dpu_hours_window or 0.0
+        )
+
+    @property
     def monthly_factor(self) -> float:
         return monthly_factor(self.window_days)
 
@@ -135,6 +155,12 @@ class GlueJob:
     def monthly_dpu_hours(self) -> float:
         """A mesma DPU-hora expressa por mês, para os modelos financeiros."""
         return self.window_dpu_hours * self.monthly_factor
+
+    @property
+    def monthly_failed_cost(self) -> float | None:
+        if self.failed_cost_window is None:
+            return None
+        return max(0.0, self.failed_cost_window) * self.monthly_factor
 
     @property
     def runs_per_month(self) -> float:

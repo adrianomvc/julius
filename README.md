@@ -200,15 +200,18 @@ São **três** os bancos da conta, e eles não têm a mesma forma:
 | `workspace_db` | nome fixo, igual em toda conta |
 | `sagemaker_featurestore` | nome fixo, igual em toda conta |
 
-`--account-name` resolve o primeiro; os outros dois entram por nome fixo. Uma
-regra de sufixo pegaria só o compartilhado e deixaria os outros dois de fora.
+O nome lógico da conta resolve o primeiro; os outros dois entram por nome fixo.
+Uma regra de sufixo pegaria só o compartilhado e deixaria os outros dois de fora.
 
 A comparação ignora maiúsculas e trata `-` e `_` como o mesmo separador, mas
 **não** o descarta: sem ele, `..._consumer_navi` passaria pela conta `avi`. O
-valor de `--account-name` cai para o `--sso-profile` quando não é informado,
-porque no cadastro os dois costumam coincidir, e aceita tanto `avi` quanto
-`consumer-avi`. Para um ambiente sem essa convenção,
-`--glue-databases banco1,banco2` substitui a regra inteira.
+`collect` resolve o nome pelo `sso_profile` em `~/.julius-accounts.json`; se o
+cadastro não existir, usa o próprio perfil como fallback. `--account-name`
+continua disponível para sobrescrever a resolução. Os sufixos finais `-pro` e
+`-prod` do nome cadastrado não fazem parte do nome do banco compartilhado:
+`consumeratendimentodataservice-pro` seleciona
+`database_db_compartilhado_consumer_atendimentodataservice`. Para um ambiente
+sem essa convenção, `--glue-databases banco1,banco2` substitui a regra inteira.
 
 Sem nenhum dos dois o comportamento é o antigo — todos os bancos — e a saúde da
 coleta registra isso na fonte **Glue Catalog Scope**, que mostra quantos bancos

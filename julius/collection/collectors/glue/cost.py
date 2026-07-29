@@ -151,6 +151,8 @@ def allocate_costs(
             share = max(0.0, consumption(asset)) / total
             asset.allocated_cost = round(cost * share, 6)
             asset.cost_quality = quality
+            if bucket in {"etl_job", "flex"}:
+                _allocate_failure_cost(asset)
         allocated.append(bucket)
 
     # A cobertura registra o que foi rateado de fato — um bucket cobrado sem
@@ -158,6 +160,24 @@ def allocate_costs(
     coverage.allocated_buckets = sorted(allocated)
     coverage.cost_quality = quality
     return coverage
+
+
+def _allocate_failure_cost(job) -> None:
+    """Separa a parcela de falhas sem acrescentá-la novamente ao custo total."""
+    total = job.total_dpu_hours_window
+    failed = min(job.total_failed_dpu_hours_window, total)
+    # Zero também representa dataset legado, que não possuía a separação de
+    # DPU das falhas. Nesse caso o estimador mantém o fallback histórico.
+    if job.allocated_cost is None or total <= 0 or failed <= 0:
+        return
+    job.failed_cost_window = round(
+        min(job.allocated_cost, job.allocated_cost * failed / total), 6
+    )
+    job.failure_cost_quality = (
+        "partial"
+        if (job.estimated_failed_dpu_hours_window or 0) > 0
+        else job.cost_quality
+    )
 
 
 def _is_flex(job) -> bool:

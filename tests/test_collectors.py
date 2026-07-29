@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+import json
+from dataclasses import asdict
+from datetime import datetime, timedelta, timezone
 
 import boto3
 import pytest
@@ -152,13 +154,32 @@ def test_glue_collector_jobs_and_failure_rate():
         },
     )
     now = datetime.now(timezone.utc)
+    run_started = now - timedelta(days=1)
     stub.add_response(
         "get_job_runs",
         {
             "JobRuns": [
-                {"JobRunState": "SUCCEEDED", "ExecutionTime": 3600, "StartedOn": now},
-                {"JobRunState": "SUCCEEDED", "ExecutionTime": 3600, "StartedOn": now},
-                {"JobRunState": "FAILED", "ExecutionTime": 1200, "StartedOn": now},
+                {
+                    "JobRunState": "SUCCEEDED",
+                    "ExecutionTime": 3600,
+                    "StartedOn": run_started,
+                },
+                {
+                    "JobRunState": "SUCCEEDED",
+                    "ExecutionTime": 3600,
+                    "StartedOn": run_started,
+                },
+                {
+                    "Id": "jr-failed-retry",
+                    "PreviousRunId": "jr-first",
+                    "JobRunState": "FAILED",
+                    "ExecutionTime": 1200,
+                    "DPUSeconds": 24000,
+                    "StartedOn": run_started,
+                    "ErrorMessage": (
+                        "AccessDenied for adriano.vilela-costa@itau-unibanco.com.br"
+                    ),
+                },
             ]
         },
     )
@@ -173,6 +194,13 @@ def test_glue_collector_jobs_and_failure_rate():
     assert job.avg_execution_sec == 3600
     assert job.failure_rate == pytest.approx(1 / 3, abs=0.01)
     assert job.observed_runs == 3
+    assert job.failed_runs_in_window == 1
+    assert job.failed_retry_runs_in_window == 1
+    assert job.failed_dpu_seconds_window == 24000
+    assert job.failure_categories == {"permission_denied": 1}
+    serialized = json.dumps(asdict(job))
+    assert "adriano.vilela-costa" not in serialized
+    assert "AccessDenied" not in serialized
 
 
 class _FakeCloudWatch:

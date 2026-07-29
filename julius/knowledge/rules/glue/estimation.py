@@ -253,21 +253,71 @@ def failure_waste_saving(job: GlueJob, config: Config) -> Estimation:
     O ganho é o desperdício recuperável ao corrigir a causa das falhas/retries.
     """
     pricing = config.pricing
-    failed_runs = job.runs_per_month * job.failure_rate
-    fail_exec = job.avg_failed_execution_sec or (job.avg_execution_sec * 0.5)
-    total_dpu = job.configured_dpu
+    if (
+        job.failed_dpu_seconds_window is None
+        and job.estimated_failed_dpu_hours_window is None
+    ):
+        # Contrato anterior: mantém exatamente o modelo v1 ao ler datasets
+        # existentes, sem fingir que a nova telemetria foi coletada e deu zero.
+        failed_runs = job.runs_per_month * job.failure_rate
+        fail_exec = job.avg_failed_execution_sec or (job.avg_execution_sec * 0.5)
+        rate, source, quality = billing_rate(job, pricing)
+        wasted_hours = (
+            failed_runs * job.configured_dpu * (fail_exec / 3600.0)
+        )
+        baseline = wasted_hours * rate
+        return Estimation(
+            method="glue_failure_waste_v1",
+            baseline_cost=round(baseline, 2),
+            projected_cost=0.0,
+            estimated_saving=round(baseline, 2),
+            assumptions=[
+                f"taxa de falha {job.failure_rate:.0%} de {job.runs_per_month} execuções/mês",
+                "Glue cobra DPU-hora do compute até a falha (retries incluídos)",
+                f"compute médio até a falha ~{fail_exec / 60:.0f} min",
+                "corrigir a causa recupera o desperdício",
+                source,
+            ],
+            pricing_region=pricing.region,
+            estimation_version=pricing.version,
+            baseline_quality=quality,
+        )
+
     rate, source, quality = billing_rate(job, pricing)
-    wasted_hours = failed_runs * total_dpu * (fail_exec / 3600.0)
-    baseline = wasted_hours * rate
+    failed_hours = job.total_failed_dpu_hours_window * job.monthly_factor
+    if job.monthly_failed_cost is not None:
+        baseline = job.monthly_failed_cost
+        quality = (
+            "allocated"
+            if job.failure_cost_quality == "reconciled"
+            else "allocated_partial"
+        )
+        cost_source = (
+            "parcela do custo alocado do Cost Explorer proporcional à DPU-hora "
+            f"das falhas (qualidade {job.failure_cost_quality})"
+        )
+    elif failed_hours > 0:
+        baseline = failed_hours * rate
+        cost_source = (
+            f"{failed_hours:.2f} DPU-h/mês de falhas medidas/modeladas × tarifa"
+        )
+    else:
+        # Coleta nova sem capacidade suficiente para quantificar a DPU-hora.
+        failed_runs = job.runs_per_month * job.failure_rate
+        fail_exec = job.avg_failed_execution_sec or (job.avg_execution_sec * 0.5)
+        failed_hours = failed_runs * job.configured_dpu * (fail_exec / 3600.0)
+        baseline = failed_hours * rate
+        cost_source = "fallback: taxa × duração média × capacidade configurada"
     return Estimation(
-        method="glue_failure_waste_v1",
+        method="glue_failure_waste_v2",
         baseline_cost=round(baseline, 2),
         projected_cost=0.0,
         estimated_saving=round(baseline, 2),
         assumptions=[
             f"taxa de falha {job.failure_rate:.0%} de {job.runs_per_month} execuções/mês",
             "Glue cobra DPU-hora do compute até a falha (retries incluídos)",
-            f"compute médio até a falha ~{fail_exec / 60:.0f} min",
+            f"{failed_hours:.2f} DPU-h/mês atribuídas às falhas",
+            cost_source,
             "corrigir a causa recupera o desperdício",
             source,
         ],
