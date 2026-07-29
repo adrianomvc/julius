@@ -65,7 +65,10 @@ def _config_do_bucket(
     if falha:
         _anotar(gaps, "get_bucket_logging", falha)
     else:
-        config.access_logging_enabled = bool(resposta.get("LoggingEnabled"))
+        logging = resposta.get("LoggingEnabled") or {}
+        config.access_logging_enabled = bool(logging)
+        config.access_log_target_bucket = str(logging.get("TargetBucket") or "")
+        config.access_log_target_prefix = str(logging.get("TargetPrefix") or "")
 
     resposta, falha = safe_call(
         s3_client, "list_bucket_analytics_configurations", Bucket=bucket

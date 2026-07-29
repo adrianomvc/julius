@@ -35,7 +35,9 @@ def apply_last_read(account: Any) -> int:
         return 0
     ultima = _ultima_leitura_por_tabela(account)
     if not ultima:
-        return sum(1 for table in account.tables if table.last_read_at)
+        medidas = sum(1 for table in account.tables if table.last_read_at)
+        _apply_prefix_read_evidence(account)
+        return medidas
     medidas = 0
     for table in account.tables:
         candidata = ultima.get(_normalizado(table.name), "")
@@ -43,7 +45,26 @@ def apply_last_read(account: Any) -> int:
             table.last_read_at = candidata
         if table.last_read_at:
             medidas += 1
+    _apply_prefix_read_evidence(account)
     return medidas
+
+
+def _apply_prefix_read_evidence(account: Any) -> None:
+    """Publica no contrato S3 a evidência que já existe no catálogo.
+
+    É uma projeção agregada: não afirma quantos GETs ocorreram e não inventa
+    cobertura por objeto. Datasets antigos continuam válidos porque os campos
+    de `S3Prefix` têm defaults explícitos.
+    """
+    leituras = last_read_by_prefix(account)
+    for prefixo in getattr(account, "s3_prefixes", None) or ():
+        quando = last_read_for(prefixo, leituras)
+        if not quando or quando <= prefixo.last_read_at:
+            continue
+        prefixo.last_read_at = quando
+        prefixo.access_source = "catalog_read_history"
+        prefixo.access_quality = "prefix_inferred"
+        prefixo.read_coverage_days = int(getattr(account, "window_days", 0) or 0)
 
 
 def _ultima_leitura_por_tabela(account: Any) -> dict[str, str]:

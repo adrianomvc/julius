@@ -99,6 +99,7 @@ class Candidato:
     objetos_quentes: int
     dias_sem_leitura: int | None
     fonte_de_leitura: str
+    qualidade_de_leitura: str
 
     @property
     def tem_evidencia_de_leitura(self) -> bool:
@@ -107,12 +108,44 @@ class Candidato:
 
 def detect(account: Account, config: Config, scan_id: str) -> list[Opportunity]:
     """Só vira oportunidade quando dá para provar que o dado não é lido."""
-    return [
-        _oportunidade(account, candidato, alvo, config, scan_id)
-        for candidato in _candidatos(account, config)
-        if candidato.tem_evidencia_de_leitura
-        and (alvo := _alvo(candidato, config)) is not None
-    ]
+    out: list[Opportunity] = []
+    for candidato in _candidatos(account, config):
+        if not candidato.tem_evidencia_de_leitura:
+            continue
+        alvo = _alvo(candidato, config)
+        if alvo is None:
+            continue
+        oportunidade = _oportunidade(account, candidato, alvo, config, scan_id)
+        estimation = oportunidade.estimation
+        if estimation is None:
+            continue
+        if (
+            estimation.saving_quality != "unavailable"
+            and estimation.estimated_saving <= 0
+        ):
+            continue
+        expiration = (
+            candidato.config_bucket.expiration_days_for_prefix(
+                candidato.prefixo.prefix
+            )
+            if candidato.config_bucket
+            else None
+        )
+        break_even = estimation.break_even_months
+        oldest = candidato.prefixo.oldest_object_age_days
+        if (
+            expiration is not None
+            and oldest is not None
+            and break_even is not None
+        ):
+            remaining_days = max(0, expiration - oldest)
+            if remaining_days <= break_even * 30:
+                # A expiração conta desde a criação do objeto. Se ao menos o
+                # objeto mais antigo sai antes do payback, o agregado não sabe
+                # separar os demais sem risco de dupla contagem.
+                continue
+        out.append(oportunidade)
+    return out
 
 
 def signals(account: Account, config: Config) -> list[Signal]:
@@ -135,9 +168,18 @@ def _candidatos(account: Account, config: Config) -> list[Candidato]:
     }
     leituras = last_read_by_prefix(account)
     out: list[Candidato] = []
-    for prefixo in getattr(account, "s3_prefixes", None) or ():
+    prefixos = _sem_sobreposicao(
+        [
+            item
+            for item in getattr(account, "s3_prefixes", None) or ()
+            if item.kind == "table_location"
+        ]
+    )
+    for prefixo in prefixos:
         config_bucket = por_bucket.get(prefixo.bucket)
-        if config_bucket is not None and config_bucket.transitions_automatically:
+        if config_bucket is not None and config_bucket.transitions_prefix(
+            prefixo.prefix
+        ):
             # Lifecycle ou Intelligent-Tiering já movem este dado. Recomendar
             # aqui seria cobrar de novo por uma economia que já está em curso.
             continue
@@ -146,7 +188,9 @@ def _candidatos(account: Account, config: Config) -> list[Candidato]:
             continue
         if not _objeto_grande_o_bastante(prefixo, config):
             continue
-        dias, fonte = _dias_sem_leitura(prefixo, leituras, config_bucket, account)
+        dias, fonte, qualidade = _dias_sem_leitura(
+            prefixo, leituras, config_bucket, account, config
+        )
         out.append(
             Candidato(
                 prefixo=prefixo,
@@ -155,6 +199,7 @@ def _candidatos(account: Account, config: Config) -> list[Candidato]:
                 objetos_quentes=objetos,
                 dias_sem_leitura=dias,
                 fonte_de_leitura=fonte,
+                qualidade_de_leitura=qualidade,
             )
         )
     return out
@@ -192,25 +237,75 @@ def _dias_sem_leitura(
     leituras: dict[str, str],
     config_bucket: S3BucketConfig | None,
     account: Account,
-) -> tuple[int | None, str]:
+    config: Config,
+) -> tuple[int | None, str, str]:
     """Há quantos dias este prefixo não é lido, e como se sabe disso.
 
     `None` significa que ninguém mediu — nunca "não é lido". A diferença é a
     razão de existir desta regra: `LastModified` responderia sempre, e
     responderia a outra pergunta.
     """
-    ultima = last_read_for(prefixo, leituras)
+    ultima = prefixo.last_read_at or last_read_for(prefixo, leituras)
     if ultima:
         dias = _dias_ate(ultima, account.window_end)
         if dias is not None:
-            return dias, "histórico de leitura do catálogo"
+            source = prefixo.access_source or "catalog_read_history"
+            if (
+                source != "catalog_read_history"
+                and dias >= config.thresholds.s3_cold_after_days
+                and prefixo.read_coverage_days
+                < config.thresholds.s3_cold_after_days
+            ):
+                return None, source, "insufficient_coverage"
+            return (
+                dias,
+                source,
+                prefixo.access_quality or "prefix_inferred",
+            )
+    if (
+        prefixo.read_requests_window == 0
+        and prefixo.access_quality != "partial"
+        and prefixo.read_coverage_days >= config_bucket_days(account)
+    ):
+        return (
+            prefixo.read_coverage_days,
+            prefixo.access_source or "observed_access",
+            prefixo.access_quality or "measured",
+        )
     fonte = config_bucket.last_access_source if config_bucket else "none"
     if fonte != "none":
         # A fonte está ligada no bucket mas o Julius ainda não lê o conteúdo
         # dela. Saber que existe já muda a recomendação: a evidência é
         # obtenível, e o próximo passo é consultá-la, não habilitá-la.
-        return None, fonte
-    return None, "none"
+        return None, fonte, "configured_not_collected"
+    return None, "none", "unavailable"
+
+
+def config_bucket_days(account: Account) -> int:
+    """Cobertura mínima útil para afirmar ausência de leitura."""
+    return max(1, int(getattr(account, "window_days", 0) or 0))
+
+
+def _sem_sobreposicao(prefixos: list[S3Prefix]) -> list[S3Prefix]:
+    """Mantém o prefixo mais específico quando dois cobrem os mesmos objetos."""
+    escolhidos: list[S3Prefix] = []
+    for item in sorted(
+        prefixos,
+        key=lambda p: (p.bucket, -len(p.prefix.strip("/")), p.prefix),
+    ):
+        local = item.prefix.strip("/")
+        if any(
+            outro.bucket == item.bucket
+            and (
+                local == outro.prefix.strip("/")
+                or local.startswith(outro.prefix.strip("/") + "/")
+                or outro.prefix.strip("/").startswith(local + "/")
+            )
+            for outro in escolhidos
+        ):
+            continue
+        escolhidos.append(item)
+    return escolhidos
 
 
 def _dias_ate(quando: str, referencia: str) -> int | None:
@@ -249,14 +344,14 @@ def _alvo(candidato: Candidato, config: Config) -> tuple[str, str] | None:
 
 
 def _estimation(
-    candidato: Candidato, alvo: tuple[str, str], config: Config
+    account: Account, candidato: Candidato, alvo: tuple[str, str], config: Config
 ) -> Estimation:
     chave, rotulo = alvo
     pricing = config.pricing
     delta_gb = pricing.s3_storage_delta(chave)
     if delta_gb is None:
         return Estimation(
-            method="s3_storage_class_transition_v1",
+            method="s3_storage_class_transition_v2",
             baseline_cost=0.0,
             projected_cost=0.0,
             estimated_saving=0.0,
@@ -268,34 +363,140 @@ def _estimation(
         )
 
     gb = candidato.bytes_quentes / _GB
-    economia_mensal = delta_gb * gb
+    bytes_alvo = _bytes_faturaveis(candidato, chave, config)
+    gb_alvo = bytes_alvo / _GB
     transicao = pricing.s3_request_cost(
         "lifecycle_transition", candidato.objetos_quentes
     ) or 0.0
-    baseline = (pricing.s3_storage_gb_month.get("standard") or 0.0) * gb
-    liquida = max(0.0, economia_mensal - transicao)
+    standard_rate = pricing.s3_storage_gb_month.get("standard") or 0.0
+    target_rate = pricing.s3_storage_gb_month.get(chave) or 0.0
+    baseline_modelado = standard_rate * gb
+    baseline, baseline_quality = _baseline_real(
+        account, candidato, baseline_modelado
+    )
+    # Quando o baseline vem da cobrança real, aplica-se a razão entre tarifas
+    # apenas para projetar a classe alvo; assim taxas/descontos do contrato
+    # continuam ancorados no que efetivamente foi pago.
+    projected_storage = (
+        baseline * (target_rate / standard_rate) * (gb_alvo / gb)
+        if standard_rate > 0 and gb > 0
+        else target_rate * gb_alvo
+    )
+    retrieval = 0.0
+    retrieval_known = (
+        candidato.prefixo.read_requests_window is not None
+        and candidato.prefixo.bytes_read_window is not None
+    )
+    if retrieval_known:
+        retrieval = (
+            pricing.s3_retrieval_cost(
+                chave,
+                bytes_read=candidato.prefixo.bytes_read_window or 0,
+                requests=candidato.prefixo.read_requests_window or 0,
+            )
+            or 0.0
+        )
+    recorrente = max(0.0, baseline - projected_storage - retrieval)
+    primeiro_mes = recorrente - transicao
+    break_even = round(transicao / recorrente, 3) if recorrente > 0 else None
+    custo_leitura_total = pricing.s3_retrieval_cost(
+        chave,
+        bytes_read=int(candidato.bytes_quentes),
+        requests=candidato.objetos_quentes,
+    )
+    max_reads = (
+        round((baseline - projected_storage) / custo_leitura_total, 2)
+        if custo_leitura_total and custo_leitura_total > 0
+        else None
+    )
     return Estimation(
-        method="s3_storage_class_transition_v1",
+        method="s3_storage_class_transition_v2",
         baseline_cost=round(baseline, 2),
-        projected_cost=round(max(0.0, baseline - liquida), 2),
-        estimated_saving=round(liquida, 2),
+        projected_cost=round(projected_storage + retrieval, 2),
+        estimated_saving=round(recorrente, 2),
         assumptions=[
-            f"{gb:.1f} GB em classe quente movidos para {rotulo}",
+            (
+                f"{gb:.1f} GB físicos em classe quente; "
+                f"{gb_alvo:.1f} GB faturáveis em {rotulo}"
+            ),
             f"economia por GB-mês = diferença de tarifa ({delta_gb:.5f} USD)",
             (
-                f"descontado o custo de transição de {candidato.objetos_quentes} "
-                f"objeto(s): US$ {transicao:.2f}"
+                f"custo pontual de transição de {candidato.objetos_quentes} "
+                f"objeto(s): US$ {transicao:.2f}; não descontado dos meses seguintes"
+            ),
+            (
+                f"retrieval observado na janela: US$ {retrieval:.2f}"
+                if retrieval_known
+                else "retrieval não medido; cenário de releitura aparece como risco"
             ),
             f"tarifa: {pricing.provenance}",
-            "recorrente a partir do mês seguinte à execução",
+            "economia recorrente após a execução; primeiro mês separa o custo pontual",
         ],
-        baseline_quality="modeled",
+        baseline_quality=baseline_quality,
         # A tarifa é da tabela oficial; a evidência de que o dado é frio é
         # inferida de leitura no catálogo, não medida por objeto.
-        saving_quality="modeled_evidence",
+        saving_quality=(
+            "allocated_partial"
+            if baseline_quality.startswith("allocated")
+            else "modeled_evidence"
+        ),
         baseline_bytes=int(candidato.bytes_quentes),
+        projected_bytes=int(bytes_alvo),
         avoidable_bytes=int(candidato.bytes_quentes),
+        one_time_cost=round(transicao, 2),
+        monthly_recurring_saving=round(recorrente, 2),
+        first_month_net_saving=round(primeiro_mes, 2),
+        break_even_months=break_even,
+        maximum_profitable_reads=max_reads,
     )
+
+
+def _bytes_faturaveis(
+    candidato: Candidato, target_class: str, config: Config
+) -> float:
+    """Aplica o mínimo faturável por objeto somente à classe quente."""
+    minimo = int(config.pricing.s3_minimum_billable_bytes.get(target_class, 0))
+    prefixo = candidato.prefixo
+    if not prefixo.bytes_by_class_size or not prefixo.object_count_by_class_size:
+        return max(
+            candidato.bytes_quentes,
+            float(candidato.objetos_quentes * minimo),
+        )
+    total = 0.0
+    for classe, por_faixa in prefixo.bytes_by_class_size.items():
+        if classe.upper() in _JA_FRIAS:
+            continue
+        contagens = prefixo.object_count_by_class_size.get(classe, {})
+        for faixa, physical in por_faixa.items():
+            total += max(float(physical), float(contagens.get(faixa, 0) * minimo))
+    return total
+
+
+def _baseline_real(
+    account: Account, candidato: Candidato, fallback: float
+) -> tuple[float, str]:
+    """Rateia a cobrança Standard real pelo volume, quando a cobertura fecha."""
+    coverage = getattr(account, "s3_cost_coverage", None)
+    buckets = getattr(account, "s3_buckets", None) or ()
+    standard_cost = (
+        coverage.cost_for({"storage_standard"})
+        if coverage is not None and coverage.cost_quality != "unavailable"
+        else 0.0
+    )
+    total_standard = sum(
+        float(bucket.bytes_by_class.get("StandardStorage", 0.0))
+        for bucket in buckets
+    )
+    if coverage is not None and standard_cost > 0 and total_standard > 0:
+        return (
+            standard_cost * candidato.bytes_quentes / total_standard,
+            (
+                "allocated"
+                if coverage.cost_quality == "reconciled"
+                else "allocated_partial"
+            ),
+        )
+    return fallback, "modeled"
 
 
 # ---------------------------------------------------------------------------
@@ -310,11 +511,11 @@ def _oportunidade(
     config: Config,
     scan_id: str,
 ) -> Opportunity:
-    _, rotulo = alvo
+    chave, rotulo = alvo
     prefixo = candidato.prefixo
     gb = candidato.bytes_quentes / _GB
     parcial = not prefixo.listing_complete
-    est = _estimation(candidato, alvo, config)
+    est = _estimation(account, candidato, alvo, config)
 
     opportunity = build(
         Finding(
@@ -326,9 +527,10 @@ def _oportunidade(
             why=(
                 f"{gb:.1f} GB em classe quente sob '{prefixo.location}', sem "
                 f"leitura registrada há {candidato.dias_sem_leitura} dias. O "
-                f"objeto médio tem {(prefixo.average_object_bytes or 0) / 1024:.0f} KB, "
-                f"acima do mínimo faturável de 128 KB — a transição para {rotulo} "
-                "reduz o armazenamento sem cair na cobrança mínima por objeto."
+                f"objeto médio não-zero tem "
+                f"{(prefixo.average_object_bytes or 0) / 1024:.0f} KB. O cálculo "
+                f"aplica o mínimo faturável por objeto da classe {rotulo}, em vez "
+                "de comparar somente bytes físicos."
             ),
             source_process=prefixo.source_asset or None,
         ),
@@ -353,22 +555,41 @@ def _oportunidade(
                 *(["listagem parcial: o volume real pode ser maior"] if parcial else []),
             ],
             docs=[_DOC_STORAGE_CLASS, _DOC_COPY],
-            blocked=est.saving_quality == "unavailable",
+            blocked=(
+                est.saving_quality == "unavailable"
+                or chave == "glacier_flexible"
+            ),
         ),
         Evidence(
             items=[
                 f"{gb:.2f} GB em classe quente",
                 f"{candidato.objetos_quentes} objeto(s) a mover",
                 f"sem leitura há {candidato.dias_sem_leitura} dias "
-                f"({candidato.fonte_de_leitura})",
+                f"({candidato.fonte_de_leitura}; "
+                f"qualidade={candidato.qualidade_de_leitura})",
                 f"objeto médio: {(prefixo.average_object_bytes or 0) / 1024:.0f} KB",
+                (
+                    f"economia recorrente: US$ "
+                    f"{est.monthly_recurring_saving or 0:.2f}/mês; "
+                    f"custo pontual: US$ {est.one_time_cost or 0:.2f}"
+                ),
+                (
+                    f"break-even: {est.break_even_months:.3f} mês(es)"
+                    if est.break_even_months is not None
+                    else "break-even indisponível"
+                ),
                 (
                     "listagem completa"
                     if prefixo.listing_complete
                     else "listagem truncada: evidência parcial"
                 ),
             ],
-            sources=["S3 ListObjectsV2", "Athena GetQueryExecution", "Price List"],
+            sources=[
+                "S3 ListObjectsV2",
+                candidato.fonte_de_leitura,
+                "Cost Explorer",
+                "Price List",
+            ],
             observed_runs=1,
             coverage_days=config.thresholds.min_coverage_days,
             has_optional_metrics=est.saving_quality != "unavailable",
@@ -383,6 +604,21 @@ def _oportunidade(
     if candidato.fonte_de_leitura != "server_access_logs":
         faltando.append(
             "leitura por objeto: a evidência atual é do catálogo, não do bucket"
+        )
+    if (
+        prefixo.read_requests_window is None
+        or prefixo.bytes_read_window is None
+    ):
+        faltando.append(
+            "volume e quantidade de leituras para incorporar retrieval observado"
+        )
+    if est.maximum_profitable_reads is None:
+        faltando.append(
+            "tarifa de retrieval por GB/request para calcular o limite de releituras"
+        )
+    if chave == "glacier_flexible":
+        faltando.append(
+            "confirmação humana de que o SLA aceita recuperação em horas"
         )
     opportunity.missing_evidence = faltando
     return opportunity

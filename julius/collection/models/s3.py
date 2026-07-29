@@ -27,6 +27,17 @@ from dataclasses import dataclass, field
 #: ser movido, porque a AWS cobra o período inteiro mesmo assim.
 AGE_BUCKETS = ((0, 30), (30, 90), (90, 180), (180, 365), (365, None))
 
+#: Distribuição estável de tamanho usada para calcular a cobrança mínima das
+#: classes frias sem persistir nenhuma chave de objeto.
+SIZE_BUCKETS = (
+    (0, 0, "zero"),
+    (1, 128 * 1024, "1-128kb"),
+    (128 * 1024, 1024 * 1024, "128kb-1mb"),
+    (1024 * 1024, 64 * 1024**2, "1-64mb"),
+    (64 * 1024**2, 128 * 1024**2, "64-128mb"),
+    (128 * 1024**2, None, "128mb+"),
+)
+
 
 def age_bucket(days: int) -> str:
     """A faixa de `AGE_BUCKETS` em que uma idade cai, como rótulo estável."""
@@ -36,6 +47,16 @@ def age_bucket(days: int) -> str:
         if days < fim:
             return f"{inicio}-{fim}"
     return f"{AGE_BUCKETS[-1][0]}+"
+
+
+def size_bucket(size: int) -> str:
+    """Faixa de tamanho de um objeto, com limites inclusivo/exclusivo."""
+    if size <= 0:
+        return "zero"
+    for inicio, fim, rotulo in SIZE_BUCKETS[1:]:
+        if size >= inicio and (fim is None or size < fim):
+            return rotulo
+    return "128mb+"
 
 
 #: Como o prefixo foi descoberto — decide qual regra o avalia.
@@ -97,15 +118,35 @@ class S3Prefix:
     #: separar prefixo — e é no prefixo que a recomendação de transição age.
     bytes_by_class: dict[str, float] = field(default_factory=dict)
     object_count_by_class: dict[str, int] = field(default_factory=dict)
+    #: Matrizes agregadas que permitem calcular o tamanho faturável em uma
+    #: classe alvo. Continuam sem revelar nomes/chaves de objetos.
+    bytes_by_class_size: dict[str, dict[str, float]] = field(default_factory=dict)
+    object_count_by_class_size: dict[str, dict[str, int]] = field(
+        default_factory=dict
+    )
     #: Bytes por faixa de idade desde a última **escrita** (`LastModified`), nas
     #: faixas de `AGE_BUCKETS`. Não é idade desde a última leitura: o S3 não
     #: expõe isso. Serve para dimensionar o candidato, nunca para concluir
     #: sozinho que o dado é frio — ver `S3BucketConfig.last_access_source`.
     bytes_by_age: dict[str, float] = field(default_factory=dict)
+    object_count_by_age: dict[str, int] = field(default_factory=dict)
+    bytes_by_size: dict[str, float] = field(default_factory=dict)
+    object_count_by_size: dict[str, int] = field(default_factory=dict)
+    #: Marcadores de diretório com zero byte não entram no tamanho médio.
+    nonzero_object_count: int | None = None
     #: Tamanho médio do objeto. Abaixo de 128 KB a cobrança mínima de IA e
     #: Glacier torna a transição mais cara que o Standard, e a regra precisa
     #: saber disso antes de recomendar.
     average_object_bytes: int | None = None
+    #: Evidência normalizada de leitura. `None` nos contadores significa fonte
+    #: não consultada; zero significa consultada e nenhuma leitura observada.
+    last_read_at: str = ""
+    read_requests_window: int | None = None
+    bytes_read_window: int | None = None
+    read_coverage_days: int = 0
+    access_source: str = ""
+    access_quality: str = "unavailable"
+    inventory_data_through: str = ""
     #: Requests de `ListObjectsV2` gastos para montar este agregado.
     list_requests: int = 0
 
@@ -142,6 +183,8 @@ class S3BucketConfig:
 
     bucket: str
     access_logging_enabled: bool | None = None
+    access_log_target_bucket: str = ""
+    access_log_target_prefix: str = ""
     storage_class_analysis_ids: list[str] | None = None
     intelligent_tiering_ids: list[str] | None = None
     #: Regras de lifecycle declaradas. `NoSuchLifecycleConfiguration` é resposta,
@@ -177,6 +220,27 @@ class S3BucketConfig:
             rule.get("Transitions") or rule.get("NoncurrentVersionTransitions")
             for rule in self.lifecycle_rules or ()
         )
+
+    def transitions_prefix(self, prefix: str) -> bool:
+        """Se uma automação de transição alcança este prefixo específico."""
+        if self.intelligent_tiering_ids:
+            return True
+        return any(
+            (rule.get("Transitions") or rule.get("NoncurrentVersionTransitions"))
+            and _lifecycle_matches(rule, prefix)
+            for rule in self.lifecycle_rules or ()
+        )
+
+    def expiration_days_for_prefix(self, prefix: str) -> int | None:
+        """Menor expiração aplicável; evita recomendar transição sem payback."""
+        values: list[int] = []
+        for rule in self.lifecycle_rules or ():
+            if not _lifecycle_matches(rule, prefix):
+                continue
+            expiration = rule.get("Expiration") or {}
+            if isinstance(expiration, dict) and expiration.get("Days") is not None:
+                values.append(int(expiration["Days"]))
+        return min(values) if values else None
 
 
 @dataclass
@@ -219,3 +283,17 @@ class S3CostCoverage:
         return round(
             sum(value for name, value in self.buckets.items() if name in names), 6
         )
+
+
+def _lifecycle_matches(rule: dict, prefix: str) -> bool:
+    """Filtro simples de prefixo; filtros por tag ficam conservadoramente fora."""
+    filtro = rule.get("Filter") or {}
+    declared = rule.get("Prefix")
+    if isinstance(filtro, dict):
+        declared = filtro.get("Prefix", declared)
+        if filtro.get("Tag") or filtro.get("And"):
+            return False
+    if declared in (None, ""):
+        return True
+    normalized = str(prefix or "").lstrip("/")
+    return normalized.startswith(str(declared).lstrip("/"))

@@ -44,6 +44,13 @@ class Estimation:
     baseline_bytes: int | None = None
     projected_bytes: int | None = None
     avoidable_bytes: int | None = None
+    #: Custos pontuais não devem ser subtraídos de todos os meses. Estes campos
+    #: tornam explícitos o primeiro mês e o ponto de equilíbrio.
+    one_time_cost: float | None = None
+    monthly_recurring_saving: float | None = None
+    first_month_net_saving: float | None = None
+    break_even_months: float | None = None
+    maximum_profitable_reads: float | None = None
     # Ganho não financeiro (migração, governança): existe economia de risco ou
     # de esforço, mas não um número em USD a somar no portfólio.
     is_strategic: bool = False

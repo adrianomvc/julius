@@ -8,14 +8,18 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from julius.collection.collectors.paginate import safe_pages
+from julius.collection.collectors.paginate import safe_call, safe_pages
 from julius.collection.models import InteractiveSession
 from julius.collection.settings import DPU_PER_WORKER
 from julius.collection.window import AnalysisWindow
 
 
 def collect_sessions(
-    glue_client, *, window: AnalysisWindow, gaps: list[str] | None = None
+    glue_client,
+    *,
+    window: AnalysisWindow,
+    account_id: str = "",
+    gaps: list[str] | None = None,
 ) -> list[InteractiveSession]:
     now = window.end
     out: list[InteractiveSession] = []
@@ -59,6 +63,13 @@ def collect_sessions(
             if fully_observed_window and reported_seconds > 0
             else overlap_seconds * dpu / 3600.0
         )
+        tags = _session_tags(
+            glue_client,
+            str(s.get("Id") or ""),
+            account_id,
+            inline=s.get("Tags"),
+            gaps=gaps,
+        )
         out.append(
             InteractiveSession(
                 session_id=s.get("Id", "?"),
@@ -70,7 +81,7 @@ def collect_sessions(
                 idle_timeout_min=int(s.get("IdleTimeout", 2880) or 2880),
                 status=s.get("Status", "READY"),
                 idle_hours_per_day=activity["idle_hours_per_day"],
-                owner_tag=_owner_from_tags(s.get("Tags")),
+                owner_tag=_owner_from_tags(tags),
                 created_on=_iso(s.get("CreatedOn")),
                 completed_on=_iso(s.get("CompletedOn")),
                 execution_time_sec=float(s.get("ExecutionTime", 0) or 0),
@@ -87,6 +98,33 @@ def collect_sessions(
             )
         )
     return out
+
+
+def _session_tags(
+    glue_client,
+    session_id: str,
+    account_id: str,
+    *,
+    inline=None,
+    gaps: list[str] | None = None,
+) -> dict:
+    """Busca tags pela ARN; `ListSessions` não as devolve."""
+    if isinstance(inline, dict):
+        return inline
+    if not session_id or not account_id:
+        return {}
+    meta = getattr(glue_client, "meta", None)
+    region = str(getattr(meta, "region_name", "") or "")
+    partition = str(getattr(meta, "partition", "") or "aws")
+    if not region:
+        return {}
+    arn = f"arn:{partition}:glue:{region}:{account_id}:session/{session_id}"
+    response, category = safe_call(
+        glue_client, "get_tags", ResourceArn=arn
+    )
+    if category and gaps is not None:
+        gaps.append(f"get_tags[{session_id}]: {category}")
+    return response.get("Tags", {}) or {}
 
 
 def _owner_from_tags(tags) -> str | None:

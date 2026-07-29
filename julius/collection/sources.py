@@ -25,6 +25,7 @@ from julius.collection.collectors import (
     redshift,
     redshift_cost,
     s3,
+    s3_access,
     s3_config,
     s3_cost,
     sagemaker,
@@ -606,13 +607,16 @@ SOURCES: tuple[Source, ...] = (
     Source(
         name="Glue Interactive Sessions",
         collect=lambda ctx: sessions.collect_sessions(
-            ctx.client("glue"), window=ctx.window, gaps=ctx.gaps
+            ctx.client("glue"),
+            window=ctx.window,
+            account_id=ctx.account.account_id,
+            gaps=ctx.gaps,
         ),
         into="interactive_sessions",
         count=len,
         data_through=_latest_data_through,
-        impact="ociosidade e capacidade de sessões não são avaliadas",
-        next_action="validar glue:ListSessions e glue:ListStatements",
+        impact="ociosidade, capacidade e responsável das sessões podem ficar incompletos",
+        next_action="validar glue:ListSessions, glue:ListStatements e glue:GetTags",
     ),
     Source(
         # Depende de jobs, crawlers, sessions e DataBrew já estarem no inventário.
@@ -720,6 +724,30 @@ SOURCES: tuple[Source, ...] = (
         impact="acúmulo em prefixos conhecidos permanece invisível",
         next_action="validar s3:ListBucket nos prefixos do inventário",
         after=_flag_partial_s3_listing,
+    ),
+    Source(
+        name="S3 Access Evidence",
+        collect=lambda ctx: s3_access.collect_access_evidence(
+            ctx.client("s3"),
+            prefixes=ctx.account.s3_prefixes,
+            configs=ctx.account.s3_bucket_configs,
+            window=ctx.window,
+            gaps=ctx.gaps,
+        ),
+        count=len,
+        enabled=lambda ctx: any(
+            item.access_logging_enabled and item.access_log_target_bucket
+            for item in ctx.account.s3_bucket_configs
+        ),
+        disabled_category="not_configured",
+        disabled_impact=(
+            "leituras fora do Athena não entram na decisão de classe S3"
+        ),
+        disabled_next_action=(
+            "usar histórico/tabela de toques ou server access logs já habilitados"
+        ),
+        impact="recomendação de classe S3 fica sem leitura observada no bucket",
+        next_action="validar s3:ListBucket e s3:GetObject no bucket de access logs",
     ),
     Source(
         name="S3 Multipart Uploads",
