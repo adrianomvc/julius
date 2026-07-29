@@ -216,13 +216,6 @@ entraram de quantos vistos e por qual regra. Menos tabelas por escopo e menos
 tabelas por permissão faltando se parecem no relatório; essa linha é o que
 separa as duas.
 
-As permissões necessárias estão em
-[docs/permissoes-aws.md](docs/permissoes-aws.md), com a política pronta em
-[install/julius-readonly-policy.json](install/julius-readonly-policy.json): 52
-ações, todas de leitura. `glue:GetJobs` e `glue:GetJobRuns` são as duas que
-derrubam o scan inteiro quando faltam — as demais degradam e aparecem na saúde
-da coleta.
-
 Access key, secret, token e cache SSO nunca devem ser copiados para o
 repositório nem para os arquivos Julius. O boto3/AWS CLI lê essas credenciais
 do armazenamento local gerenciado pelo AWS CLI.
