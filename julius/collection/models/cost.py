@@ -134,3 +134,48 @@ class RedshiftCostCoverage:
             ),
             6,
         )
+
+
+@dataclass
+class SageMakerCostCoverage:
+    """Cobrança SageMaker da janela, classificada e rateada por componente."""
+
+    period_start: str = ""
+    data_through: str = ""
+    window_days: int = 0
+    cost_metric: str = ""
+    currency: str = "USD"
+    net_cost: float | None = None
+    buckets: dict[str, float] = field(default_factory=dict)
+    allocated_buckets: list[str] = field(default_factory=list)
+    unknown_usage_types: list[str] = field(default_factory=list)
+    cost_quality: str = "unavailable"
+    allocation_version: str = ""
+    gaps: list[str] = field(default_factory=list)
+    efs_cost_metric: str = ""
+    efs_storage_cost: float | None = None
+    efs_cost_quality: str = "unavailable"
+
+    @property
+    def unattributed_cost(self) -> float:
+        allocated = set(self.allocated_buckets)
+        return round(
+            sum(value for name, value in self.buckets.items() if name not in allocated),
+            2,
+        )
+
+
+@dataclass
+class SageMakerSavingsPlanCoverage:
+    """Sinal FinOps: cobertura/utilização/recomendação, nunca compra automática."""
+
+    period_start: str = ""
+    data_through: str = ""
+    coverage_percent: float | None = None
+    utilization_percent: float | None = None
+    current_on_demand_spend: float | None = None
+    estimated_monthly_commitment: float | None = None
+    estimated_monthly_saving: float | None = None
+    currency: str = "USD"
+    quality: str = "unavailable"
+    gaps: list[str] = field(default_factory=list)

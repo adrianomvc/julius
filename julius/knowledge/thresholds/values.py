@@ -67,6 +67,11 @@ class Thresholds:
     # SageMaker: idle shutdown "alto" (min) e horas ociosas/dia relevantes.
     sm_idle_shutdown_high_min: int = 120
     sm_idle_hours_min: float = 1.0
+    # Economia recorrente só entra no portfólio com janela longa ou repetição
+    # consistente. A janela curta continua como sinal para a IA.
+    sm_financial_coverage_days: int = 90
+    sm_financial_consistent_scans: int = 3
+    sm_low_utilization: float = 0.30
     # S3: idade a partir da qual o objeto sob um prefixo descartável deixa
     # de ter consumidor plausível. Resultado de query segue a janela de
     # reuso do Athena, que é de 60 minutos — um dia já é folga larga.

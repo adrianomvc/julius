@@ -91,6 +91,9 @@ def collect_access_evidence(
             for prefix in candidates:
                 if prefix.read_requests_window is None:
                     prefix.read_requests_window = 0
+                    prefix.get_requests_window = 0
+                    prefix.head_requests_window = 0
+                    prefix.select_requests_window = 0
                     prefix.bytes_read_window = 0
                 prefix.read_coverage_days = window.days
                 prefix.access_source = "server_access_logs"
@@ -104,10 +107,10 @@ def _consume(
     payload: bytes, prefixes: list[S3Prefix], window: AnalysisWindow
 ) -> None:
     for raw in payload.decode("utf-8", errors="replace").splitlines():
-        record = parse_access_log_line(raw)
+        record = _parse_access_log_record(raw)
         if record is None:
             continue
-        bucket, key, when, size = record
+        bucket, key, when, size, operation = record
         if when < window.start or when >= window.end:
             continue
         for prefix in prefixes:
@@ -115,6 +118,14 @@ def _consume(
             if prefix.bucket != bucket or not key.startswith(normalized):
                 continue
             prefix.read_requests_window = (prefix.read_requests_window or 0) + 1
+            if operation == "REST.GET.OBJECT":
+                prefix.get_requests_window = (prefix.get_requests_window or 0) + 1
+            elif operation == "REST.HEAD.OBJECT":
+                prefix.head_requests_window = (prefix.head_requests_window or 0) + 1
+            elif operation == "S3.SELECT.OBJECT":
+                prefix.select_requests_window = (
+                    prefix.select_requests_window or 0
+                ) + 1
             prefix.bytes_read_window = (prefix.bytes_read_window or 0) + size
             instant = when.isoformat()
             if instant > prefix.last_read_at:
@@ -125,6 +136,17 @@ def parse_access_log_line(
     line: str,
 ) -> tuple[str, str, datetime, int] | None:
     """Extrai somente os quatro campos necessários de uma linha oficial."""
+    record = _parse_access_log_record(line)
+    if record is None:
+        return None
+    bucket, key, when, size, _operation = record
+    return bucket, key, when, size
+
+
+def _parse_access_log_record(
+    line: str,
+) -> tuple[str, str, datetime, int, str] | None:
+    """Versão interna que preserva a operação sem persistir a linha bruta."""
     match = _LOG.match(line)
     if match is None or match.group("operation") not in _READ_OPERATIONS:
         return None
@@ -143,7 +165,13 @@ def parse_access_log_line(
     raw_bytes = match.group("bytes")
     size = int(raw_bytes) if raw_bytes.isdigit() else 0
     key = unquote(match.group("key"))
-    return match.group("bucket"), key, as_utc(when) or when, size
+    return (
+        match.group("bucket"),
+        key,
+        as_utc(when) or when,
+        size,
+        match.group("operation"),
+    )
 
 
 def _gap(gaps: list[str] | None, operation: str, category: str) -> None:

@@ -28,13 +28,18 @@
         "cost_fmt": "—",
         "executions": 20,
         "failures": 0,
+        "filter_columns": [],
         "fingerprint": "relatorio_diario",
         "full_scan": false,
+        "partition_candidate_keys": [],
         "projection_candidates": [],
         "recurrence": "ocasional",
         "reuse": 0,
         "reuse_avoidable_cost_fmt": "—",
+        "reuse_configured": 0,
         "reuse_eligible": 0,
+        "reuse_ineligible_reasons": [],
+        "reuse_max_age_minutes": null,
         "sql": "SELECT * FROM eventos WHERE cliente = 'x'",
         "uncompressed": [],
         "unpartitioned": [],
@@ -48,13 +53,18 @@
         "cost_fmt": "—",
         "executions": 4,
         "failures": 0,
+        "filter_columns": [],
         "fingerprint": "dashboard_adhoc",
         "full_scan": false,
+        "partition_candidate_keys": [],
         "projection_candidates": [],
         "recurrence": "ocasional",
         "reuse": 0,
         "reuse_avoidable_cost_fmt": "—",
+        "reuse_configured": 0,
         "reuse_eligible": 0,
+        "reuse_ineligible_reasons": [],
+        "reuse_max_age_minutes": null,
         "sql": "SELECT * FROM vendas",
         "uncompressed": [],
         "unpartitioned": [],
@@ -68,13 +78,18 @@
         "cost_fmt": "—",
         "executions": 30,
         "failures": 0,
+        "filter_columns": [],
         "fingerprint": "kpi_horario",
         "full_scan": false,
+        "partition_candidate_keys": [],
         "projection_candidates": [],
         "recurrence": "ocasional",
         "reuse": 0,
         "reuse_avoidable_cost_fmt": "—",
+        "reuse_configured": 0,
         "reuse_eligible": 0,
+        "reuse_ineligible_reasons": [],
+        "reuse_max_age_minutes": null,
         "sql": "SELECT hora, count(1) FROM eventos WHERE dt = ? GROUP BY hora",
         "uncompressed": [],
         "unpartitioned": [],
@@ -160,13 +175,6 @@
   "lifecycle": {
     "diff_events": [
       {
-        "asset": "jupyter-avi-ds",
-        "current": 114.27,
-        "previous": null,
-        "rule_id": "SM-APP-IDLE",
-        "type": "new_opportunity"
-      },
-      {
         "asset": "etl-explore",
         "current": 77.92,
         "previous": null,
@@ -188,10 +196,10 @@
         "type": "new_opportunity"
       },
       {
-        "asset": "modelo-churn-dev",
-        "current": 117.53,
+        "asset": "jupyter-avi-ds",
+        "current": 114.27,
         "previous": null,
-        "rule_id": "SM-ENDPOINT-UNUSED",
+        "rule_id": "SM-APP-IDLE",
         "type": "new_opportunity"
       },
       {
@@ -203,9 +211,9 @@
       },
       {
         "asset": "relatorio_diario",
-        "current": 63.0,
+        "current": 50.4,
         "previous": null,
-        "rule_id": "ATHENA-NO-PARTITION-FILTER",
+        "rule_id": "ATHENA-EXCESSIVE-SCAN",
         "type": "new_opportunity"
       },
       {
@@ -338,110 +346,6 @@
     ]
   },
   "opportunities": [
-    {
-      "account": "consumer-avi",
-      "actionable": true,
-      "actor": "Squad AVI",
-      "actor_confidence": 1.0,
-      "actor_source": "tag Owner do recurso",
-      "asset_name": "jupyter-avi-ds",
-      "asset_type": "sagemaker_app",
-      "blocked": false,
-      "bucket": "fazer_agora",
-      "calibration_factor": 1.0,
-      "category": "cost_optimization",
-      "confidence": 0.86,
-      "confidence_label": "Alta",
-      "data_sources": [
-        "SageMaker ListApps",
-        "CloudWatch"
-      ],
-      "difficulty_score": 1,
-      "doc_links": [
-        "https://docs.aws.amazon.com/sagemaker/latest/dg/studio-jl-admin-idle.html"
-      ],
-      "downstream_consumers": 0,
-      "estimated_gain": {
-        "annual_potential": 1371.22,
-        "is_strategic": false,
-        "likely_implementation_date": "2026-07",
-        "monthly_expected": 114.27,
-        "monthly_high": 159.98,
-        "monthly_low": 68.56,
-        "realizable_year": 457.07,
-        "realization_factor": 0.8
-      },
-      "estimation": {
-        "assumptions": [
-          "ml.g4dn.xlarge a USD 0.53/h",
-          "~14.0h ociosas/dia × 22 dias",
-          "idle shutdown recupera as horas ociosas",
-          "economia esperada aplica fator conservador de realização de 70%"
-        ],
-        "avoidable_bytes": null,
-        "baseline_bytes": null,
-        "baseline_cost": 163.24,
-        "baseline_quality": "modeled",
-        "break_even_months": null,
-        "currency": "USD",
-        "estimated_saving": 114.27,
-        "estimated_saving_high": 159.98,
-        "estimated_saving_low": 68.56,
-        "estimation_version": "2.0-usd",
-        "first_month_net_saving": null,
-        "is_strategic": false,
-        "maximum_profitable_reads": null,
-        "method": "sm_idle_app_v1",
-        "monthly_recurring_saving": null,
-        "one_time_cost": null,
-        "pricing_region": "sa-east-1",
-        "projected_bytes": null,
-        "projected_cost": 48.97,
-        "saving_quality": "modeled"
-      },
-      "evidence": [
-        "status=InService, ~14.0h ociosas/dia",
-        "idle_shutdown=off",
-        "instância ml.g4dn.xlarge (GPU)"
-      ],
-      "evidence_coverage": 1.0,
-      "evidence_quality": "modeled",
-      "evidence_refs": [],
-      "execution_priority": 65,
-      "finding": "JupyterLab ocioso sem idle shutdown",
-      "first_seen": "",
-      "gain_score": 76,
-      "how_to_apply": "Configurar auto-shutdown (ex.: 60 min) no Studio; se for só código, usar instância menor.",
-      "how_to_validate": "Medir horas InService ociosas por semana após a mudança.",
-      "julius_version": "0.6.0",
-      "knowledge_version": "aws-glue-guidance-2026-07",
-      "last_seen": "",
-      "missing_evidence": [],
-      "next_action": null,
-      "opportunity_id": "SM-APP-IDLE-54da62fb",
-      "origin": "rule",
-      "owner": "Squad AVI",
-      "owner_confidence": 1.0,
-      "owner_event_name": "",
-      "owner_event_time": "",
-      "owner_source": "tag oficial",
-      "process_cost_monthly": null,
-      "process_cost_window": null,
-      "process_criticality": 0.0,
-      "recommended_action": "Habilitar idle shutdown (ou reduzir o período)",
-      "risks": [
-        "shutdown pode interromper trabalho não salvo"
-      ],
-      "rule_id": "SM-APP-IDLE",
-      "rule_version": "1.0.0",
-      "scan_id": "baseline",
-      "source_process": null,
-      "status": "detected",
-      "strategic_priority": 40,
-      "urgency": 1.0,
-      "why": "JupyterLab (ml.g4dn.xlarge) fica ~14.0h ociosa/dia; idle shutdown desabilitado. Instância GPU parada é especialmente cara.",
-      "window_end": null
-    },
     {
       "account": "consumer-avi",
       "actionable": true,
@@ -773,82 +677,83 @@
       "actor": "Squad AVI",
       "actor_confidence": 1.0,
       "actor_source": "tag Owner do recurso",
-      "asset_name": "modelo-churn-dev",
-      "asset_type": "sagemaker_endpoint",
+      "asset_name": "jupyter-avi-ds",
+      "asset_type": "sagemaker_app",
       "blocked": false,
-      "bucket": "planejar",
+      "bucket": "investigar_primeiro",
       "calibration_factor": 1.0,
       "category": "cost_optimization",
-      "confidence": 0.86,
-      "confidence_label": "Alta",
+      "confidence": 0.5,
+      "confidence_label": "Baixa",
       "data_sources": [
-        "SageMaker DescribeEndpoint",
-        "CloudWatch Invocations"
+        "SageMaker List/DescribeApp",
+        "CloudWatch",
+        "Cost Explorer"
       ],
-      "difficulty_score": 2,
+      "difficulty_score": 1,
       "doc_links": [
-        "https://docs.aws.amazon.com/sagemaker/latest/dg/serverless-endpoints.html",
-        "https://docs.aws.amazon.com/sagemaker/latest/dg/realtime-endpoints.html"
+        "https://docs.aws.amazon.com/sagemaker/latest/dg/studio-updated-idle-shutdown.html"
       ],
       "downstream_consumers": 0,
       "estimated_gain": {
-        "annual_potential": 1410.36,
+        "annual_potential": 1371.22,
         "is_strategic": false,
         "likely_implementation_date": "2026-07",
-        "monthly_expected": 117.53,
-        "monthly_high": 164.54,
-        "monthly_low": 70.52,
-        "realizable_year": 470.12,
+        "monthly_expected": 114.27,
+        "monthly_high": 163.24,
+        "monthly_low": 57.13,
+        "realizable_year": 457.07,
         "realization_factor": 0.8
       },
       "estimation": {
         "assumptions": [
-          "1× ml.m5.xlarge a USD 0.23/h, 24/7",
-          "8 invocações/mês (praticamente sem uso)",
-          "descomissionar ou migrar para Serverless/Async recupera o custo",
+          "ml.g4dn.xlarge Studio a USD 0.5300/h",
+          "~14.0h de baixa atividade/dia",
+          "CPU é proxy; idle oficial depende de kernels e terminais",
           "economia esperada aplica fator conservador de realização de 70%"
         ],
         "avoidable_bytes": null,
         "baseline_bytes": null,
-        "baseline_cost": 167.9,
+        "baseline_cost": 163.24,
         "baseline_quality": "modeled",
         "break_even_months": null,
         "currency": "USD",
-        "estimated_saving": 117.53,
-        "estimated_saving_high": 164.54,
-        "estimated_saving_low": 70.52,
+        "estimated_saving": 114.27,
+        "estimated_saving_high": 163.24,
+        "estimated_saving_low": 57.13,
         "estimation_version": "2.0-usd",
         "first_month_net_saving": null,
         "is_strategic": false,
         "maximum_profitable_reads": null,
-        "method": "sm_unused_endpoint_v1",
+        "method": "sm_idle_app_v2",
         "monthly_recurring_saving": null,
         "one_time_cost": null,
         "pricing_region": "sa-east-1",
         "projected_bytes": null,
-        "projected_cost": 50.37,
-        "saving_quality": "modeled"
+        "projected_cost": 48.97,
+        "saving_quality": "modeled_rule"
       },
       "evidence": [
-        "8 invocações/mês",
-        "1× ml.m5.xlarge sempre ligado",
-        "auto_scaling=não"
+        "baixa atividade ~14.0h/dia",
+        "idle_shutdown=0",
+        "instância=ml.g4dn.xlarge GPU",
+        "cobertura=90 dias"
       ],
       "evidence_coverage": 1.0,
-      "evidence_quality": "modeled",
+      "evidence_quality": "modeled_rule",
       "evidence_refs": [],
-      "execution_priority": 34,
-      "finding": "Endpoint em tempo real praticamente sem uso",
+      "execution_priority": 38,
+      "finding": "JupyterLab com baixa atividade sem proteção adequada",
       "first_seen": "",
-      "gain_score": 78,
-      "how_to_apply": "Se for esporádico, usar Serverless Inference (scale-to-zero); se obsoleto, remover o endpoint.",
-      "how_to_validate": "Confirmar ausência de invocações e a queda do custo de instância.",
+      "gain_score": 76,
+      "how_to_apply": "O time dono deve configurar idle shutdown compatível com a sessão e validar trabalho não salvo.",
+      "how_to_validate": "Comparar horas de baixa atividade e custo no scan seguinte.",
       "julius_version": "0.6.0",
       "knowledge_version": "aws-glue-guidance-2026-07",
       "last_seen": "",
       "missing_evidence": [],
       "next_action": null,
-      "opportunity_id": "SM-ENDPOINT-UNUSED-61c5679c",
+      "opportunity_id": "SM-APP-IDLE-54da62fb",
       "origin": "rule",
       "owner": "Squad AVI",
       "owner_confidence": 1.0,
@@ -858,18 +763,18 @@
       "process_cost_monthly": null,
       "process_cost_window": null,
       "process_criticality": 0.0,
-      "recommended_action": "Descomissionar ou migrar para Serverless/Async Inference",
+      "recommended_action": "Habilitar ou reduzir o idle shutdown",
       "risks": [
-        "pode haver consumidor esporádico crítico"
+        "shutdown pode interromper sessão com trabalho não salvo"
       ],
-      "rule_id": "SM-ENDPOINT-UNUSED",
-      "rule_version": "1.0.0",
+      "rule_id": "SM-APP-IDLE",
+      "rule_version": "2.0.0",
       "scan_id": "baseline",
       "source_process": null,
       "status": "detected",
-      "strategic_priority": 47,
+      "strategic_priority": 23,
       "urgency": 1.0,
-      "why": "Endpoint com 1× ml.m5.xlarge roda 24/7 mas teve 8 invocações/mês.",
+      "why": "ml.g4dn.xlarge apresentou ~14.0h/dia de baixa atividade e idle shutdown desabilitado.",
       "window_end": null
     },
     {
@@ -1000,70 +905,69 @@
       ],
       "difficulty_score": 2,
       "doc_links": [
-        "https://docs.aws.amazon.com/athena/latest/ug/partitions.html"
+        "https://docs.aws.amazon.com/athena/latest/ug/performance-tuning-query-optimization-techniques.html"
       ],
       "downstream_consumers": 0,
       "estimated_gain": {
-        "annual_potential": 756.0,
+        "annual_potential": 604.8,
         "is_strategic": false,
         "likely_implementation_date": "2026-07",
-        "monthly_expected": 63.0,
-        "monthly_high": 88.2,
-        "monthly_low": 37.8,
-        "realizable_year": 252.0,
+        "monthly_expected": 50.4,
+        "monthly_high": 75.6,
+        "monthly_low": 25.2,
+        "realizable_year": 201.6,
         "realization_factor": 0.8
       },
       "estimation": {
         "assumptions": [
           "20 execuções/mês",
-          "faixa da regra missing_partition_filter: 30%/50%/70%",
+          "faixa da regra full_scan: 20%/40%/60%",
           "preço de tabela aplicado aos bytes faturáveis",
           "modelo athena-recovery-1.0; substituir por benchmark quando disponível",
-          "seletividade ainda não medida; confiança baixa",
+          "bytes comprimidos por coluna ainda não medidos; confiança baixa",
           "economia esperada aplica fator conservador de realização de 70%"
         ],
-        "avoidable_bytes": 19791209298940,
+        "avoidable_bytes": 15832967439152,
         "baseline_bytes": 39582418597880,
         "baseline_cost": 180.0,
         "baseline_quality": "modeled",
         "break_even_months": null,
         "currency": "USD",
-        "estimated_saving": 63.0,
-        "estimated_saving_high": 88.2,
-        "estimated_saving_low": 37.8,
+        "estimated_saving": 50.4,
+        "estimated_saving_high": 75.6,
+        "estimated_saving_low": 25.2,
         "estimation_version": "athena-recovery-1.0",
         "first_month_net_saving": null,
         "is_strategic": false,
         "maximum_profitable_reads": null,
-        "method": "athena_missing_partition_filter_modeled_rule_v1",
+        "method": "athena_full_scan_modeled_rule_v1",
         "monthly_recurring_saving": null,
         "one_time_cost": null,
         "pricing_region": "sa-east-1",
-        "projected_bytes": 19791209298940,
-        "projected_cost": 117.0,
+        "projected_bytes": 23749451158728,
+        "projected_cost": 129.6,
         "saving_quality": "modeled_rule"
       },
       "evidence": [
-        "DataScannedInBytes 1843 GB por execução",
-        "sem filtro de partição: evidência do inventário legado",
-        "20 execuções/mês no histórico",
-        "Achados relacionados no mesmo ativo: Query com leitura excessiva (SELECT * / sem result reuse) (ATHENA-EXCESSIVE-SCAN); Repetições exatas elegíveis sem query result reuse (ATHENA-RESULT-REUSE)"
+        "1843 GB escaneados por execução",
+        "SELECT * detectado",
+        "Achados relacionados no mesmo ativo: Repetições exatas elegíveis sem query result reuse (ATHENA-RESULT-REUSE); Query sem filtro de partição varre a tabela inteira (ATHENA-NO-PARTITION-FILTER)"
       ],
       "evidence_coverage": 1.0,
       "evidence_quality": "modeled_rule",
       "evidence_refs": [],
-      "execution_priority": 10,
-      "finding": "Query sem filtro de partição varre a tabela inteira (+2 achados relacionados)",
+      "execution_priority": 8,
+      "finding": "Query com leitura excessiva (+2 achados relacionados)",
       "first_seen": "",
-      "gain_score": 42,
-      "how_to_apply": "Adicionar filtro de partição e projetar só as colunas usadas.",
-      "how_to_validate": "Comparar DataScannedInBytes antes × depois na mesma janela.",
+      "gain_score": 34,
+      "how_to_apply": "Selecionar só as colunas necessárias e preservar o schema esperado pelos consumidores.",
+      "how_to_validate": "Comparar bytes faturáveis e resultado funcional em execuções equivalentes.",
       "julius_version": "0.6.0",
       "knowledge_version": "aws-glue-guidance-2026-07",
       "last_seen": "",
       "missing_evidence": [],
       "next_action": null,
-      "opportunity_id": "ATHENA-NO-PARTITION-FILTER-bc1cece3",
+      "opportunity_id": "ATHENA-EXCESSIVE-SCAN-bc1cece3",
       "origin": "rule",
       "owner": "Squad AVI",
       "owner_confidence": 1.0,
@@ -1073,20 +977,20 @@
       "process_cost_monthly": null,
       "process_cost_window": null,
       "process_criticality": 0.0,
-      "recommended_action": "Adicionar filtro de partição (WHERE dt=…)",
+      "recommended_action": "Projetar somente as colunas necessárias",
       "risks": [
-        "resultado incompleto se a partição errada for filtrada",
-        "Ação relacionada ATHENA-EXCESSIVE-SCAN: Projetar colunas e habilitar result reuse. Validar: Comparar bytes escaneados e cache hits no workgroup.",
-        "Ação relacionada ATHENA-RESULT-REUSE: Configurar result reuse no cliente que submete a query. Validar: Comparar bytes faturáveis, custo líquido alocado e ReusedPreviousResult."
+        "quebra de compatibilidade se colunas removidas forem usadas",
+        "Ação relacionada ATHENA-RESULT-REUSE: Configurar result reuse no cliente que submete a query. Validar: Comparar bytes faturáveis, custo líquido alocado e ReusedPreviousResult.",
+        "Ação relacionada ATHENA-NO-PARTITION-FILTER: Adicionar filtro de partição (WHERE dt=…). Validar: Comparar DataScannedInBytes antes × depois na mesma janela."
       ],
-      "rule_id": "ATHENA-NO-PARTITION-FILTER",
+      "rule_id": "ATHENA-EXCESSIVE-SCAN",
       "rule_version": "1.0.0",
       "scan_id": "baseline",
       "source_process": null,
       "status": "detected",
-      "strategic_priority": 13,
+      "strategic_priority": 10,
       "urgency": 1.0,
-      "why": "Query recorrente varre 1.80 TB/execução sem predicado de partição; 20 execuções/mês.",
+      "why": "Varre 1843 GB/execução; SELECT * detectado.",
       "window_end": null
     },
     {
@@ -1766,7 +1670,7 @@
       "risks": [
         "timeout curto demais pode cortar picos legítimos",
         "Ação relacionada GLUE-FLEX-CANDIDATE: Mudar ExecutionClass para FLEX. Validar: Comparar custo por execução e tempo de conclusão por 2 semanas.",
-        "Ação relacionada GLUE-OVERPROVISIONED: Reduzir o número de workers após teste controlado. Validar: Comparar duração e DPU-h por execução em 3 execuções pós-mudança."
+        "Ação relacionada GLUE-OVERPROVISIONED: Reduzir o número de workers após teste controlado. Validar: Comparar DPUSeconds, duração p95, memória, disco, spill, erros e equivalência da saída em cada candidato."
       ],
       "rule_id": "GLUE-TIMEOUT-EXCESSIVE",
       "rule_version": "1.0.0",
@@ -1887,7 +1791,7 @@
       "risks": [
         "timeout curto demais pode cortar picos legítimos",
         "Ação relacionada GLUE-VERSION-OLD: Avaliar migração para a versão preferencial configurada (5.1). Validar: Comparar custo/execução e duração; validar saídas com testes.",
-        "Ação relacionada GLUE-OVERPROVISIONED: Reduzir o número de workers após teste controlado. Validar: Comparar duração e DPU-h por execução em 3 execuções pós-mudança.",
+        "Ação relacionada GLUE-OVERPROVISIONED: Reduzir o número de workers após teste controlado. Validar: Comparar DPUSeconds, duração p95, memória, disco, spill, erros e equivalência da saída em cada candidato.",
         "Ação relacionada GLUE-BOOKMARK-OFF: Habilitar job bookmarks (processamento incremental). Validar: Comparar bytes lidos e DPU-h por execução após ativar bookmarks."
       ],
       "rule_id": "GLUE-TIMEOUT-EXCESSIVE",
@@ -2243,7 +2147,7 @@
       ],
       "difficulty_score": 2,
       "doc_links": [
-        "https://docs.aws.amazon.com/athena/latest/ug/reusing-query-results.html"
+        "https://docs.aws.amazon.com/athena/latest/ug/performance-tuning-query-optimization-techniques.html"
       ],
       "downstream_consumers": 0,
       "estimated_gain": {
@@ -2288,18 +2192,17 @@
       },
       "evidence": [
         "300 GB escaneados por execução",
-        "SELECT * detectado",
-        "workgroup sem result reuse"
+        "SELECT * detectado"
       ],
       "evidence_coverage": 0.9,
       "evidence_quality": "modeled_rule",
       "evidence_refs": [],
       "execution_priority": 0,
-      "finding": "Query com leitura excessiva (SELECT * / sem result reuse)",
+      "finding": "Query com leitura excessiva",
       "first_seen": "",
       "gain_score": 1,
-      "how_to_apply": "Selecionar só as colunas necessárias e ativar query result reuse no workgroup.",
-      "how_to_validate": "Comparar bytes escaneados e cache hits no workgroup.",
+      "how_to_apply": "Selecionar só as colunas necessárias e preservar o schema esperado pelos consumidores.",
+      "how_to_validate": "Comparar bytes faturáveis e resultado funcional em execuções equivalentes.",
       "julius_version": "0.6.0",
       "knowledge_version": "aws-glue-guidance-2026-07",
       "last_seen": "",
@@ -2317,7 +2220,7 @@
       "process_cost_monthly": null,
       "process_cost_window": null,
       "process_criticality": 0.0,
-      "recommended_action": "Projetar colunas e habilitar result reuse",
+      "recommended_action": "Projetar somente as colunas necessárias",
       "risks": [
         "quebra de compatibilidade se colunas removidas forem usadas"
       ],
@@ -2328,7 +2231,7 @@
       "status": "detected",
       "strategic_priority": 0,
       "urgency": 1.0,
-      "why": "Varre 300 GB/execução; SELECT * sem result reuse no workgroup.",
+      "why": "Varre 300 GB/execução; SELECT * detectado.",
       "window_end": null
     },
     {
@@ -2709,17 +2612,52 @@
       "y": "28%"
     }
   ],
+  "s3_cost": {
+    "cost_fmt": "US$ 812,90",
+    "cost_metric": "NetUnblendedCost",
+    "cost_quality": "reconciled",
+    "gaps": [],
+    "lines": [],
+    "request_cost_fmt": "US$ 174",
+    "request_groups": [
+      {
+        "cost": 142.8,
+        "cost_fmt": "US$ 142,80",
+        "cost_per_thousand_fmt": "—",
+        "kind": "GET/read",
+        "quantity": null,
+        "quantity_fmt": "—"
+      },
+      {
+        "cost": 31.2,
+        "cost_fmt": "US$ 31,20",
+        "cost_per_thousand_fmt": "—",
+        "kind": "PUT/write",
+        "quantity": null,
+        "quantity_fmt": "—"
+      },
+      {
+        "cost": 0,
+        "cost_fmt": "US$ 0",
+        "cost_per_thousand_fmt": "—",
+        "kind": "outras",
+        "quantity": null,
+        "quantity_fmt": "—"
+      }
+    ],
+    "window": "2026-06-23 → 2026-07-22"
+  },
   "scan_id": "baseline",
   "summary": {
     "billing_cost_mtd": "US$ 5.860,46",
     "committed_monthly": "US$ 0",
-    "high_confidence_monthly": "US$ 1.471,03",
-    "identified_monthly": "US$ 1.557,01",
-    "pareto_count": 4,
+    "high_confidence_monthly": "US$ 1.239,23",
+    "identified_monthly": "US$ 1.426,88",
+    "pareto_count": 3,
     "pareto_pct": 83,
-    "realizable_year": "US$ 6.122,14",
+    "realizable_year": "US$ 5.601,62",
     "realization_rate": "—",
     "realized_monthly": "US$ 0",
-    "recommendation": "Começar por jupyter-avi-ds e etl-explore — mudanças isoladas, baixa dificuldade, economia combinada estimada de US$ 192,19/mês. Estimativa a validar após a mudança."
+    "recommendation": "Começar por etl-explore — mudanças isoladas, baixa dificuldade, economia combinada estimada de US$ 77,92/mês. Estimativa a validar após a mudança."
   }
 }

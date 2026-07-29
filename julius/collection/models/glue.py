@@ -35,10 +35,19 @@ class GlueJob:
     max_task_skew: float | None = None
     avg_all_executors: float | None = None
     avg_max_needed_executors: float | None = None
+    #: Resultado importado de um benchmark humano controlado. O Julius
+    #: recomenda candidatos, mas nunca executa nem altera o job.
+    rightsize_tested_workers: int | None = None
+    rightsize_test_runs: int = 0
+    rightsize_output_validated: bool = False
     shuffle_spill_bytes: float | None = None
     shuffle_read_bytes: float | None = None
     shuffle_write_bytes: float | None = None
     bytes_read_window: float | None = None
+    #: Parcela comprovadamente relida sem necessidade na janela. Não é
+    #: inferida do total: permanece `None` até existir evidência de entrada nova
+    #: versus já processada.
+    redundant_read_bytes_window: float | None = None
     bytes_written_window: float | None = None
     files_written_window: float | None = None
     streaming_records_window: float | None = None
@@ -80,6 +89,12 @@ class GlueJob:
     #: "ninguém rodou" e "não deu para ler" viram o mesmo zero, e o segundo
     #: viraria conclusão sobre um job que não foi medido.
     run_history_available: bool = True
+    created_at: str = ""
+    last_modified_at: str = ""
+    last_run_at: str = ""
+    observability_enabled: bool | None = None
+    continuous_logging_enabled: bool | None = None
+    metrics_enabled: bool | None = None
     owner_tag: str | None = None
     script_location: str | None = None
     default_argument_keys: list[str] = field(default_factory=list)

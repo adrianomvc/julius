@@ -73,6 +73,55 @@ def test_existing_access_logs_enrich_only_aggregated_prefix_fields():
     assert not hasattr(prefix, "object_keys")
 
 
+def test_access_logs_split_get_head_and_select_requests():
+    window = AnalysisWindow(
+        start=datetime(2026, 7, 1, tzinfo=timezone.utc),
+        end=datetime(2026, 7, 29, tzinfo=timezone.utc),
+        days=28,
+    )
+    head = _LINE.replace("REST.GET.OBJECT", "REST.HEAD.OBJECT").replace(
+        '"GET /lake/', '"HEAD /lake/'
+    )
+    select = _LINE.replace("REST.GET.OBJECT", "S3.SELECT.OBJECT")
+
+    class Client:
+        def list_objects_v2(self, **_kwargs):
+            return {
+                "Contents": [
+                    {
+                        "Key": "logs/one",
+                        "LastModified": datetime(
+                            2026, 7, 11, tzinfo=timezone.utc
+                        ),
+                    }
+                ]
+            }
+
+        def get_object(self, **_kwargs):
+            payload = "\n".join((_LINE, head, select))
+            return {"Body": BytesIO(payload.encode())}
+
+    prefix = S3Prefix(bucket="lake", prefix="vendas/")
+    collect_access_evidence(
+        Client(),
+        prefixes=[prefix],
+        configs=[
+            S3BucketConfig(
+                bucket="lake",
+                access_logging_enabled=True,
+                access_log_target_bucket="audit",
+                access_log_target_prefix="logs/",
+            )
+        ],
+        window=window,
+    )
+
+    assert prefix.read_requests_window == 3
+    assert prefix.get_requests_window == 1
+    assert prefix.head_requests_window == 1
+    assert prefix.select_requests_window == 1
+
+
 def test_prefix_aggregation_excludes_zero_markers_from_average():
     now = datetime.now(timezone.utc)
     prefix = _agregar(

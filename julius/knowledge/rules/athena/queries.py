@@ -10,6 +10,10 @@ from julius.findings.finding import Finding
 from julius.findings.opportunity import Estimation, Opportunity
 from julius.findings.recommendation import Recommendation
 from julius.knowledge.rules.athena import estimation as athena_est
+from julius.knowledge.rules.s3.request_cost import (
+    request_estimation,
+    request_evidence,
+)
 
 _DOC_PARTITION = "https://docs.aws.amazon.com/athena/latest/ug/partitions.html"
 _DOC_REUSE = "https://docs.aws.amazon.com/athena/latest/ug/reusing-query-results.html"
@@ -168,7 +172,9 @@ def _full_table_scan(account: Account, q: AthenaQuery, config: Config, scan_id: 
 def _table_not_partitioned(
     account: Account, q: AthenaQuery, config: Config, scan_id: str
 ) -> Opportunity:
-    return build(
+    candidates = q.partition_candidate_keys[:3]
+    candidate_text = ", ".join(candidates) if candidates else "a definir"
+    opportunity = build(
         Finding(
             asset_type="athena_query",
             asset_name=q.query_id,
@@ -182,27 +188,52 @@ def _table_not_partitioned(
         ),
         Recommendation(
             difficulty=3,
-            action="Projetar uma estratégia de particionamento alinhada aos filtros reais",
-            how_to_apply="Escolher chave de baixa/moderada cardinalidade e criar uma versão particionada controlada.",
-            how_to_validate="Comparar bytes e resultados antes de migrar consumidores.",
+            action=(
+                "Criar com CTAS uma versão Parquet particionada pelos filtros reais"
+            ),
+            how_to_apply=(
+                f"Validar cardinalidade de {candidate_text}; escolher chave "
+                "estável de baixa/moderada cardinalidade; executar "
+                "CTAS em uma nova localização com format='PARQUET', compressão e "
+                "partitioned_by. O Julius não executa o SQL."
+            ),
+            how_to_validate=(
+                "Comparar contagem, schema, resultado e bytes escaneados antes de "
+                "migrar consumidores."
+            ),
             risks=["particionamento excessivo cria muitos arquivos e piora planejamento"],
             docs=[_DOC_PARTITION],
         ),
         Evidence(
-            items=q.evidence + ["sem partition keys: " + ", ".join(q.unpartitioned_tables)],
+            items=q.evidence
+            + [
+                "sem partition keys: " + ", ".join(q.unpartitioned_tables),
+                "colunas observadas em filtros: " + candidate_text,
+            ],
             sources=["Glue GetTable", "S3 ListObjectsV2", "Athena history"],
             observed_runs=q.observed_runs,
             coverage_days=q.coverage_days,
             has_optional_metrics=q.total_table_bytes > 0,
             owner_tag=q.owner_tag,
         ),
-        athena_est.partition_pruning_saving(q, config, "table_not_partitioned"),
+        athena_est.observed_partition_saving(
+            q,
+            config,
+            scanned_ratio=None,
+            profile="table_not_partitioned",
+        ),
         RuleContext(
             account=account.account_id,
             config=config,
             scan_id=scan_id,
         ),
     )
+    opportunity.missing_evidence = [
+        "cardinalidade e distribuição da chave candidata",
+        "bytes por partição numa CTAS piloto",
+        "equivalência funcional e consumidores da localização atual",
+    ]
+    return opportunity
 
 
 def _uncompressed_row_format(
@@ -345,6 +376,14 @@ def _result_reuse(account: Account, q: AthenaQuery, config: Config, scan_id: str
         Evidence(
             items=q.evidence
             + [
+                *(
+                    [
+                        "inelegibilidade observada: "
+                        + ", ".join(q.reuse_ineligible_reasons)
+                    ]
+                    if q.reuse_ineligible_reasons
+                    else []
+                ),
                 f"custo evitável reconciliado: {q.reuse_avoidable_cost:.6f} {q.currency}"
                 if q.reuse_avoidable_cost is not None
                 else "custo evitável indisponível sem reconciliação completa"
@@ -365,7 +404,12 @@ def _result_reuse(account: Account, q: AthenaQuery, config: Config, scan_id: str
 
 
 def _no_partition(account: Account, q: AthenaQuery, config: Config, scan_id: str) -> Opportunity:
-    est = athena_est.partition_pruning_saving(q, config)
+    est = athena_est.observed_partition_saving(
+        q,
+        config,
+        scanned_ratio=_partition_peer_ratio(account, q),
+        profile="missing_partition_filter",
+    )
     return build(
         Finding(
             asset_type="athena_query",
@@ -422,29 +466,31 @@ def _excessive_scan(account: Account, q: AthenaQuery, config: Config, scan_id: s
             asset_name=q.query_id,
             rule_id="ATHENA-EXCESSIVE-SCAN",
             rule_version="1.0.0",
-            title="Query com leitura excessiva (SELECT * / sem result reuse)",
+            title="Query com leitura excessiva",
             why=(
                 f"Varre {q.data_scanned_bytes / _GB:.0f} GB/execução; "
-                f"{'SELECT * ' if q.selects_star else ''}"
-                f"{'sem result reuse no workgroup' if not q.result_reuse_enabled else ''}."
+                f"{'SELECT * detectado.' if q.selects_star else 'leitura ampla detectada.'}"
             ),
         ),
         Recommendation(
             difficulty=2,
-            action="Projetar colunas e habilitar result reuse",
-            how_to_apply="Selecionar só as colunas necessárias e ativar query result reuse no workgroup.",
-            how_to_validate="Comparar bytes escaneados e cache hits no workgroup.",
+            action="Projetar somente as colunas necessárias",
+            how_to_apply=(
+                "Selecionar só as colunas necessárias e preservar o schema "
+                "esperado pelos consumidores."
+            ),
+            how_to_validate=(
+                "Comparar bytes faturáveis e resultado funcional em execuções "
+                "equivalentes."
+            ),
             risks=["quebra de compatibilidade se colunas removidas forem usadas"],
-            docs=[_DOC_REUSE],
+            docs=[_DOC_QUERY_OPT],
         ),
         Evidence(
             items=q.evidence
             + [
                 f"{q.data_scanned_bytes / _GB:.0f} GB escaneados por execução",
                 "SELECT * detectado" if q.selects_star else "leitura ampla de colunas",
-                "workgroup sem result reuse"
-                if not q.result_reuse_enabled
-                else "result reuse ativo",
             ],
             sources=["Athena workgroup history"],
             observed_runs=q.observed_runs,
@@ -499,31 +545,25 @@ def _failures(account: Account, q: AthenaQuery, config: Config, scan_id: str) ->
     )
 
 
-def _request_cost_evidence(account: Account) -> list[str]:
-    """A magnitude do custo de request da conta, sem ratear ao ativo.
-
-    Ratear exigiria o número de requests por prefixo, e o Cost Explorer entrega
-    custo, não contagem — as métricas de request do S3 são opcionais e pagas.
-    Sem a contagem não existe tarifa implícita por request, então a evidência
-    dá ao leitor os dois números que ele precisa para julgar a ordem de
-    grandeza, em vez de o Julius inventar a proporção.
-    """
-    coverage = getattr(account, "s3_cost_coverage", None)
-    if coverage is None or not coverage.buckets:
-        return []
-    from julius.knowledge.s3_cost import S3_REQUEST_BUCKETS
-
-    custo = coverage.cost_for(S3_REQUEST_BUCKETS)
-    if custo <= 0:
-        return []
-    return [
-        f"requests S3 da conta na janela: {custo:.2f} USD "
-        "(não rateado ao ativo: a contagem por prefixo não é coletável)"
+def _small_files(
+    account: Account,
+    q: AthenaQuery,
+    config: Config,
+    scan_id: str,
+) -> Opportunity:
+    tables = {name.strip().lower() for name in q.reads_tables}
+    prefixes = [
+        prefix
+        for prefix in account.s3_prefixes
+        if prefix.source_asset.strip().lower() in tables
     ]
-
-
-def _small_files(account: Account, q: AthenaQuery, config: Config, scan_id: str) -> Opportunity:
-    return build(
+    estimation = request_estimation(
+        account,
+        prefixes,
+        config,
+        method="athena_small_files_requests_v2",
+    )
+    opportunity = build(
         Finding(
             asset_type="athena_query",
             asset_name=q.query_id,
@@ -544,6 +584,7 @@ def _small_files(account: Account, q: AthenaQuery, config: Config, scan_id: str)
             how_to_validate="Comparar tempo, bytes e custo por execução na janela seguinte.",
             risks=["compactação exige escrita de dados e aprovação humana separada"],
             docs=[_DOC_PERFORMANCE],
+            blocked=True,
         ),
         Evidence(
             items=q.evidence
@@ -551,7 +592,7 @@ def _small_files(account: Account, q: AthenaQuery, config: Config, scan_id: str)
                 f"{q.small_file_count} objetos S3",
                 f"tamanho médio {q.average_file_bytes / 1024**2:.1f} MiB",
                 f"{q.executions_per_month} execuções/mês sobre esses objetos",
-                *_request_cost_evidence(account),
+                *request_evidence(account, prefixes),
             ],
             sources=["S3 ListObjectsV2", "Glue GetTable", "Cost Explorer"],
             observed_runs=q.observed_runs,
@@ -559,15 +600,50 @@ def _small_files(account: Account, q: AthenaQuery, config: Config, scan_id: str)
             has_optional_metrics=True,
             owner_tag=q.owner_tag,
         ),
-        # Compactar arquivos pequenos exige escrita e aprovação separada; o
-        # ganho é estratégico até alguém medir o antes e o depois.
-        athena_est.modeled_saving(q, config, "small_files", strategic=True),
+        estimation,
         RuleContext(
             account=account.account_id,
             config=config,
             scan_id=scan_id,
         ),
     )
+    opportunity.missing_evidence = [
+        "aprovação do owner e validação dos consumidores antes da reescrita"
+    ]
+    if estimation.saving_quality == "unavailable":
+        opportunity.missing_evidence.extend(
+            [
+                "GETs por prefixo com cobertura utilizável",
+                "custo e UsageQuantity de Requests-Tier2",
+            ]
+        )
+    return opportunity
+
+
+def _partition_peer_ratio(
+    account: Account,
+    query: AthenaQuery,
+) -> float | None:
+    """Razão de bytes em padrões comparáveis que aplicaram partition pruning."""
+    tables = {name.strip().lower() for name in query.reads_tables}
+    baseline = query.avg_billed_bytes or query.data_scanned_bytes
+    if not tables or baseline <= 0:
+        return None
+    ratios: list[float] = []
+    for peer in account.athena_queries:
+        if peer is query or not peer.table_is_partitioned:
+            continue
+        if peer.missing_partition_filters or not peer.has_partition_filter:
+            continue
+        if {name.strip().lower() for name in peer.reads_tables} != tables:
+            continue
+        scanned = peer.avg_billed_bytes or peer.data_scanned_bytes
+        if 0 < scanned < baseline:
+            ratios.append(scanned / baseline)
+    if not ratios:
+        return None
+    ratios.sort()
+    return ratios[len(ratios) // 2]
 
 
 _DOC_WORKGROUP = (

@@ -21,7 +21,7 @@ from collections.abc import Sequence
 from typing import Any
 
 from julius.collection.currency import non_usd_gap, usd_amount
-from julius.collection.models import Account, S3CostCoverage
+from julius.collection.models import Account, S3CostCoverage, S3CostLine
 from julius.collection.window import AnalysisWindow
 
 _METRICS = ("NetUnblendedCost", "UnblendedCost")
@@ -51,13 +51,13 @@ def collect_s3_costs(
 
     for metric in _METRICS:
         try:
-            response = ce_client.get_cost_and_usage(
+            request: dict[str, Any] = dict(
                 TimePeriod={
                     "Start": window.start_date.isoformat(),
                     "End": window.end_date.isoformat(),
                 },
                 Granularity="MONTHLY",
-                Metrics=[metric],
+                Metrics=[metric, "UsageQuantity"],
                 Filter={
                     "Dimensions": {
                         "Key": "SERVICE",
@@ -66,27 +66,58 @@ def collect_s3_costs(
                 },
                 GroupBy=[{"Type": "DIMENSION", "Key": "USAGE_TYPE"}],
             )
+            responses = []
+            while True:
+                response = ce_client.get_cost_and_usage(**request)
+                responses.append(response)
+                token = response.get("NextPageToken")
+                if not token:
+                    break
+                request["NextPageToken"] = token
         except Exception as exc:
             coverage.gaps.append(f"Cost Explorer {metric}: {type(exc).__name__}")
             continue
 
         buckets: dict[str, float] = {}
+        lines_by_key: dict[tuple[str, str, str], S3CostLine] = {}
         unknown: list[str] = []
-        for period in response.get("ResultsByTime", []):
-            for group in period.get("Groups", []):
-                usage_type = next(iter(group.get("Keys", [])), "")
-                value = (group.get("Metrics") or {}).get(metric, {})
-                amount = usd_amount(value.get("Amount"), value.get("Unit"))
-                if amount is None:
-                    coverage.gaps.append(non_usd_gap(value.get("Unit")))
-                    return coverage
-                bucket = classify_usage_type(usage_type, markers)
-                if bucket == "other" and usage_type:
-                    unknown.append(str(usage_type))
-                buckets[bucket] = buckets.get(bucket, 0.0) + amount
+        for response in responses:
+            for period in response.get("ResultsByTime", []):
+                for group in period.get("Groups", []):
+                    usage_type = next(iter(group.get("Keys", [])), "")
+                    value = (group.get("Metrics") or {}).get(metric, {})
+                    amount = usd_amount(value.get("Amount"), value.get("Unit"))
+                    if amount is None:
+                        coverage.gaps.append(non_usd_gap(value.get("Unit")))
+                        return coverage
+                    bucket = classify_usage_type(usage_type, markers)
+                    if bucket == "other" and usage_type:
+                        unknown.append(str(usage_type))
+                    buckets[bucket] = buckets.get(bucket, 0.0) + amount
+                    usage = (group.get("Metrics") or {}).get("UsageQuantity", {})
+                    usage_unit = str(usage.get("Unit") or "")
+                    key = (str(usage_type), bucket, usage_unit)
+                    line = lines_by_key.setdefault(
+                        key,
+                        S3CostLine(
+                            usage_type=str(usage_type),
+                            bucket=bucket,
+                            usage_unit=usage_unit,
+                        ),
+                    )
+                    line.cost = round(line.cost + amount, 6)
+                    quantity = _number(usage.get("Amount"))
+                    if quantity is not None:
+                        line.usage_quantity = (
+                            (line.usage_quantity or 0.0) + quantity
+                        )
 
         coverage.cost_metric = metric
         coverage.buckets = {name: round(value, 6) for name, value in buckets.items()}
+        coverage.lines = sorted(
+            lines_by_key.values(),
+            key=lambda item: (item.usage_type, item.usage_unit),
+        )
         coverage.unknown_usage_types = sorted(set(unknown))
         coverage.net_cost = round(sum(buckets.values()), 6)
         coverage.cost_quality = "partial" if coverage.net_cost else "unavailable"
@@ -128,3 +159,10 @@ def allocate_costs(
 def _peso(bucket: Any) -> float:
     """Bytes medidos. Bucket sem métrica não puxa cobrança."""
     return float(bucket.total_bytes or 0.0)
+
+
+def _number(value: object) -> float | None:
+    try:
+        return float(str(value)) if value is not None else None
+    except (TypeError, ValueError):
+        return None

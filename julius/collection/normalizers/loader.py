@@ -30,10 +30,23 @@ from julius.collection.models import (
     S3Bucket,
     S3BucketConfig,
     S3CostCoverage,
+    S3CostLine,
     S3MultipartUpload,
     S3Prefix,
     SageMakerApp,
+    SageMakerCostCoverage,
+    SageMakerDomain,
     SageMakerEndpoint,
+    SageMakerFeatureGroup,
+    SageMakerInferenceComponent,
+    SageMakerInferenceRecommendation,
+    SageMakerJob,
+    SageMakerMonitoringSchedule,
+    SageMakerNotebook,
+    SageMakerPipeline,
+    SageMakerSavingsPlanCoverage,
+    SageMakerSpace,
+    SageMakerVariant,
     Schedule,
     ServiceCost,
     StateMachine,
@@ -46,6 +59,19 @@ def _pick(d: dict, cls):
     """Instancia `cls` apenas com as chaves que ela conhece (tolerante a extras)."""
     fields = set(getattr(cls, "__dataclass_fields__", {}))
     return cls(**{k: v for k, v in d.items() if k in fields})
+
+
+def _sagemaker_endpoint(raw: dict) -> SageMakerEndpoint:
+    """Carrega os novos filhos sem quebrar o formato plano anterior."""
+    values = dict(raw)
+    values["variants"] = [
+        _pick(item, SageMakerVariant) for item in raw.get("variants", [])
+    ]
+    values["inference_components"] = [
+        _pick(item, SageMakerInferenceComponent)
+        for item in raw.get("inference_components", [])
+    ]
+    return _pick(values, SageMakerEndpoint)
 
 
 def _usd_record(raw: dict) -> dict | None:
@@ -151,9 +177,44 @@ def load_account(path: str | Path) -> Account:
     ]
     account.state_machines = [_pick(s, StateMachine) for s in raw.get("state_machines", [])]
     account.sagemaker_apps = [_pick(a, SageMakerApp) for a in raw.get("sagemaker_apps", [])]
-    account.sagemaker_endpoints = [
-        _pick(e, SageMakerEndpoint) for e in raw.get("sagemaker_endpoints", [])
+    account.sagemaker_spaces = [
+        _pick(s, SageMakerSpace) for s in raw.get("sagemaker_spaces", [])
     ]
+    account.sagemaker_domains = [
+        _pick(d, SageMakerDomain) for d in raw.get("sagemaker_domains", [])
+    ]
+    account.sagemaker_endpoints = [
+        _sagemaker_endpoint(e) for e in raw.get("sagemaker_endpoints", [])
+    ]
+    account.sagemaker_notebooks = [
+        _pick(n, SageMakerNotebook) for n in raw.get("sagemaker_notebooks", [])
+    ]
+    account.sagemaker_jobs = [
+        _pick(j, SageMakerJob) for j in raw.get("sagemaker_jobs", [])
+    ]
+    account.sagemaker_feature_groups = [
+        _pick(g, SageMakerFeatureGroup)
+        for g in raw.get("sagemaker_feature_groups", [])
+    ]
+    account.sagemaker_pipelines = [
+        _pick(p, SageMakerPipeline) for p in raw.get("sagemaker_pipelines", [])
+    ]
+    account.sagemaker_monitoring_schedules = [
+        _pick(s, SageMakerMonitoringSchedule)
+        for s in raw.get("sagemaker_monitoring_schedules", [])
+    ]
+    account.sagemaker_inference_recommendations = [
+        _pick(r, SageMakerInferenceRecommendation)
+        for r in raw.get("sagemaker_inference_recommendations", [])
+    ]
+    if raw.get("sagemaker_cost_coverage"):
+        account.sagemaker_cost_coverage = _pick(
+            raw["sagemaker_cost_coverage"], SageMakerCostCoverage
+        )
+    if raw.get("sagemaker_savings_plans"):
+        account.sagemaker_savings_plans = _pick(
+            raw["sagemaker_savings_plans"], SageMakerSavingsPlanCoverage
+        )
     account.redshift_clusters = [
         _pick(c, RedshiftCluster) for c in raw.get("redshift_clusters", [])
     ]
@@ -170,7 +231,11 @@ def load_account(path: str | Path) -> Account:
         _pick(c, S3BucketConfig) for c in raw.get("s3_bucket_configs", [])
     ]
     if raw.get("s3_cost_coverage"):
-        account.s3_cost_coverage = _pick(raw["s3_cost_coverage"], S3CostCoverage)
+        coverage_raw = dict(raw["s3_cost_coverage"])
+        coverage_raw["lines"] = [
+            _pick(line, S3CostLine) for line in coverage_raw.get("lines", [])
+        ]
+        account.s3_cost_coverage = _pick(coverage_raw, S3CostCoverage)
     account.tables = [_pick(t, Table) for t in raw.get("tables", [])]
     account.schedules = [_pick(s, Schedule) for s in raw.get("schedules", [])]
     account.actor_events = [_pick(e, ActorEvent) for e in raw.get("actor_events", [])]

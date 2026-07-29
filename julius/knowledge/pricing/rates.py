@@ -71,8 +71,13 @@ class Pricing:
     # Step Functions: USD/state transition (Standard) e USD/request (Express).
     sfn_standard_per_transition: float = 0.000025
     sfn_express_per_request: float = 0.000001
+    # Mantido apenas para ler tabelas antigas. Não é usado como fallback:
+    # preço ausente bloqueia a cifra da recomendação.
     sagemaker_default_hourly: float = 0.18
     sagemaker_instances: dict[str, float] = field(default_factory=dict)
+    sagemaker_component_instances: dict[str, dict[str, float]] = field(
+        default_factory=dict
+    )
     # S3 — deliberadamente **sem default**. As outras tarifas têm fallback
     # porque governam um custo modelado que já existia; esta governa a
     # comparação entre duas classes de armazenamento, e um número chutado aí
@@ -144,6 +149,14 @@ class Pricing:
                 str(name): float(value)
                 for name, value in (sagemaker.get("instances") or {}).items()
             },
+            sagemaker_component_instances={
+                str(component): {
+                    str(name): float(value)
+                    for name, value in (rates or {}).items()
+                }
+                for component, rates in (sagemaker.get("components") or {}).items()
+                if isinstance(rates, dict)
+            },
         )
 
     def glue_rate(self, execution_class: str = "STANDARD") -> float:
@@ -153,10 +166,17 @@ class Pricing:
             else self.glue_dpu_hour
         )
 
-    def sagemaker_hourly(self, instance_type: str) -> float:
-        return self.sagemaker_instances.get(
-            instance_type, self.sagemaker_default_hourly
-        )
+    def sagemaker_hourly(
+        self, instance_type: str, component: str | None = None
+    ) -> float | None:
+        """Tarifa do componente, sem inventar um default para tipo desconhecido."""
+        if component:
+            rate = self.sagemaker_component_instances.get(component, {}).get(
+                instance_type
+            )
+            if rate is not None:
+                return rate
+        return self.sagemaker_instances.get(instance_type)
 
     @property
     def has_s3_storage_rates(self) -> bool:

@@ -13,7 +13,7 @@ from julius.collection.artifacts import (
     load_glue_artifacts,
     summarize_glue_artifact_health,
 )
-from julius.collection.collectors import redshift_cost
+from julius.collection.collectors import redshift_cost, sagemaker_cost
 from julius.collection.collectors.glue import cost as glue_cost
 from julius.collection.models import Account, CollectionHealth, PreviousResult
 from julius.collection.normalizers import load_account
@@ -156,6 +156,19 @@ def analyze_account(
         code_opportunities, code_signals = glue_code.detect(
             account, code_artifacts, config, scan_id
         )
+        code_small_file_assets = {
+            item.asset_name
+            for item in code_opportunities
+            if item.rule_id == "GLUE-CODE-SMALL-FILES"
+        }
+        opportunities = [
+            item
+            for item in opportunities
+            if not (
+                item.rule_id == "GLUE-SMALL-FILES-OUTPUT"
+                and item.asset_name in code_small_file_assets
+            )
+        ]
         opportunities += code_opportunities
         signals += code_signals
     # O que a análise contextual já julgou não volta a ser perguntado, e o que
@@ -344,6 +357,22 @@ def _allocate_billing(account: Account, config: Config) -> None:
         redshift_cost.allocate_costs(
             account, redshift_coverage, config.redshift_cost.compute_buckets
         )
+
+    sagemaker_coverage = getattr(account, "sagemaker_cost_coverage", None)
+    if sagemaker_coverage and sagemaker_coverage.buckets:
+        assets = [
+            *account.sagemaker_apps,
+            *account.sagemaker_endpoints,
+            *account.sagemaker_notebooks,
+            *account.sagemaker_jobs,
+            *account.sagemaker_feature_groups,
+        ]
+        if not any(getattr(item, "allocated_cost", None) for item in assets):
+            sagemaker_cost.allocate_costs(
+                account,
+                sagemaker_coverage,
+                config.sagemaker_cost.allocatable_buckets,
+            )
 
 
 def _drop_non_recurrent(

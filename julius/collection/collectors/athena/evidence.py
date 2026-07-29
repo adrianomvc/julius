@@ -52,7 +52,10 @@ class AthenaExecutionEvidence:
     billed_bytes: int = 0
     duration_ms: int = 0
     reused: bool = False
+    reuse_configured: bool = False
+    reuse_max_age_minutes: int | None = None
     reuse_eligible: bool = False
+    reuse_ineligible_reasons: list[str] = field(default_factory=list)
     modality: str = "on_demand"
     actor: str = "desconhecido"
     actor_type: str = "unknown"
@@ -63,6 +66,7 @@ class AthenaExecutionEvidence:
     selects_star: bool = False
     partition_keys: list[str] = field(default_factory=list)
     missing_partition_filters: list[str] = field(default_factory=list)
+    filter_columns: list[str] = field(default_factory=list)
     storage_formats: list[str] = field(default_factory=list)
     small_files_confirmed: bool = False
     small_file_count: int = 0

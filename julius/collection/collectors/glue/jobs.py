@@ -61,7 +61,7 @@ def _build_job(glue_client, job: dict, window: AnalysisWindow) -> GlueJob:
     # em **um** job — política de recurso, Lake Formation, tag de restrição. Sem
     # este isolamento esse job derruba `collect_jobs`, que é a fonte obrigatória,
     # e a conta inteira fica sem scan por causa de um recurso.
-    runs, historico_lido = _job_runs_isolados(
+    runs, historico_lido, last_run_at = _job_runs_isolados(
         glue_client,
         name,
         window.start,
@@ -159,6 +159,20 @@ def _build_job(glue_client, job: dict, window: AnalysisWindow) -> GlueJob:
         observed_runs=total,
         coverage_days=window.days,
         run_history_available=historico_lido,
+        created_at=_iso(job.get("CreatedOn")),
+        last_modified_at=_iso(job.get("LastModifiedOn")),
+        last_run_at=last_run_at,
+        observability_enabled=_truthy(
+            args.get("--enable-observability-metrics")
+        ),
+        continuous_logging_enabled=(
+            _glue_version(job) >= 5.0
+            or _truthy(args.get("--enable-continuous-cloudwatch-log"))
+        ),
+        metrics_enabled=(
+            "--enable-metrics" in args
+            and str(args.get("--enable-metrics", "")).lower() != "false"
+        ),
         window_days=window.days,
         dpu_seconds_window=round(dpu_seconds, 3),
         estimated_dpu_hours_window=round(estimated_dpu_hours, 4),
@@ -237,6 +251,18 @@ def _as_utc(value) -> datetime | None:
     return value.replace(tzinfo=value.tzinfo or timezone.utc)
 
 
+def _iso(value) -> str:
+    parsed = _as_utc(value)
+    return parsed.isoformat() if parsed is not None else ""
+
+
+def _glue_version(job: dict) -> float:
+    try:
+        return float(job.get("GlueVersion") or 0.0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
 def _billable_execution_seconds(glue_version: str, execution_sec: float) -> float:
     try:
         version = float(glue_version)
@@ -278,20 +304,21 @@ def _job_runs_isolados(
     cutoff: datetime,
     *,
     include_overlapping: bool = False,
-) -> tuple[list[dict], bool]:
+) -> tuple[list[dict], bool, str]:
     """As execuções do job, e se elas puderam ser lidas.
 
-    Devolve `(runs, False)` em vez de propagar: a configuração do job veio do
+    Devolve `(runs, False, "")` em vez de propagar: a configuração do job veio do
     `GetJobs` e continua válida, só o histórico é que falta. Zero execução
     porque ninguém rodou e zero execução porque não deu para ler são coisas
     diferentes, e o segundo caso precisa chegar ao relatório dizendo isso.
     """
     try:
-        return _job_runs(
+        runs, last_run_at = _job_runs(
             glue_client, name, cutoff, include_overlapping=include_overlapping
-        ), True
+        )
+        return runs, True, last_run_at
     except Exception:
-        return [], False
+        return [], False, ""
 
 
 def _job_runs(
@@ -300,12 +327,15 @@ def _job_runs(
     cutoff: datetime,
     *,
     include_overlapping: bool = False,
-) -> list[dict]:
+) -> tuple[list[dict], str]:
     runs: list[dict] = []
+    last_run_at = ""
     paginator = glue_client.get_paginator("get_job_runs")
     for page in paginator.paginate(JobName=name):
         for run in page.get("JobRuns", []):
             started = _as_utc(run.get("StartedOn"))
+            if not last_run_at and started is not None:
+                last_run_at = started.isoformat()
             if started and started < cutoff:
                 completed = _as_utc(run.get("CompletedOn"))
                 if include_overlapping and (completed is None or completed >= cutoff):
@@ -313,9 +343,9 @@ def _job_runs(
                     continue
                 if include_overlapping:
                     continue
-                return runs  # execuções vêm mais recentes primeiro
+                return runs, last_run_at  # execuções vêm mais recentes primeiro
             runs.append(run)
-    return runs
+    return runs, last_run_at
 
 
 def _interval_stats(

@@ -142,6 +142,12 @@ class S3Prefix:
     #: não consultada; zero significa consultada e nenhuma leitura observada.
     last_read_at: str = ""
     read_requests_window: int | None = None
+    #: Subconjunto de `read_requests_window` que é GET de objeto. HEAD e
+    #: Select permanecem separados porque não têm necessariamente a mesma
+    #: cobrança no Cost Explorer.
+    get_requests_window: int | None = None
+    head_requests_window: int | None = None
+    select_requests_window: int | None = None
     bytes_read_window: int | None = None
     read_coverage_days: int = 0
     access_source: str = ""
@@ -260,6 +266,17 @@ class S3MultipartUpload:
 
 
 @dataclass
+class S3CostLine:
+    """Custo e quantidade preservados por usage type e unidade."""
+
+    usage_type: str
+    bucket: str
+    cost: float = 0.0
+    usage_quantity: float | None = None
+    usage_unit: str = ""
+
+
+@dataclass
 class S3CostCoverage:
     """Cobrança S3 da janela, separada entre armazenamento e requests.
 
@@ -274,6 +291,7 @@ class S3CostCoverage:
     currency: str = "USD"
     net_cost: float | None = None
     buckets: dict[str, float] = field(default_factory=dict)
+    lines: list[S3CostLine] = field(default_factory=list)
     unknown_usage_types: list[str] = field(default_factory=list)
     cost_quality: str = "unavailable"
     allocation_version: str = ""
@@ -283,6 +301,29 @@ class S3CostCoverage:
         return round(
             sum(value for name, value in self.buckets.items() if name in names), 6
         )
+
+    def quantity_for(self, names: frozenset[str] | set[str]) -> float | None:
+        """Soma quantidades somente quando todas são contagens de requests."""
+        relevant = [line for line in self.lines if line.bucket in names]
+        if not relevant:
+            return None
+        if any(
+            line.usage_quantity is None
+            or line.usage_unit.strip().lower() not in {"request", "requests"}
+            for line in relevant
+        ):
+            return None
+        return round(sum(line.usage_quantity or 0.0 for line in relevant), 6)
+
+    def unit_cost_for(
+        self, names: frozenset[str] | set[str]
+    ) -> float | None:
+        """Custo faturado por request, sem misturar unidades incompatíveis."""
+        quantity = self.quantity_for(names)
+        cost = self.cost_for(names)
+        if quantity is None or quantity <= 0 or cost <= 0:
+            return None
+        return cost / quantity
 
 
 def _lifecycle_matches(rule: dict, prefix: str) -> bool:

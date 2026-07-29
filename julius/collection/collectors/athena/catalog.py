@@ -84,11 +84,21 @@ def enrich_catalog(items: list[AthenaExecutionEvidence], glue, s3, telemetry) ->
                             and objects["count"] > 0
                             and objects["compressed_count"] == 0
                         ),
+                        "lake_formation_governed": bool(
+                            table.get("IsRegisteredWithLakeFormation")
+                            or str(table.get("TableType") or "").upper()
+                            == "GOVERNED"
+                        ),
                     }
                 except Exception as exc:
                     telemetry.failed("Athena Glue Catalog", exc, detail=name)
                     continue
             evidence = cache[name]
+            if evidence["lake_formation_governed"]:
+                item.reuse_eligible = False
+                reason = "tabela governada/registrada no Lake Formation"
+                if reason not in item.reuse_ineligible_reasons:
+                    item.reuse_ineligible_reasons.append(reason)
             keys = evidence["keys"]
             fmt = evidence["format"]
             objects = evidence["objects"]

@@ -31,6 +31,7 @@ _DROP = {
     "glue_version_num",
     "monthly_bytes_scanned",
     "unattributed_cost",
+    "instance_hours",
 }
 
 
@@ -70,7 +71,29 @@ def account_to_dataset(account: Account) -> dict:
         if account.glue_cost_coverage else None,
         "state_machines": [_clean(asdict(s)) for s in account.state_machines],
         "sagemaker_apps": [_clean(asdict(a)) for a in account.sagemaker_apps],
+        "sagemaker_spaces": [_clean(asdict(s)) for s in account.sagemaker_spaces],
+        "sagemaker_domains": [_clean(asdict(d)) for d in account.sagemaker_domains],
         "sagemaker_endpoints": [_clean(asdict(e)) for e in account.sagemaker_endpoints],
+        "sagemaker_notebooks": [
+            _clean(asdict(n)) for n in account.sagemaker_notebooks
+        ],
+        "sagemaker_jobs": [_clean(asdict(j)) for j in account.sagemaker_jobs],
+        "sagemaker_feature_groups": [
+            _clean(asdict(g)) for g in account.sagemaker_feature_groups
+        ],
+        "sagemaker_pipelines": [
+            _clean(asdict(p)) for p in account.sagemaker_pipelines
+        ],
+        "sagemaker_monitoring_schedules": [
+            _clean(asdict(s)) for s in account.sagemaker_monitoring_schedules
+        ],
+        "sagemaker_inference_recommendations": [
+            _clean(asdict(r)) for r in account.sagemaker_inference_recommendations
+        ],
+        "sagemaker_cost_coverage": _clean(asdict(account.sagemaker_cost_coverage))
+        if account.sagemaker_cost_coverage else None,
+        "sagemaker_savings_plans": _clean(asdict(account.sagemaker_savings_plans))
+        if account.sagemaker_savings_plans else None,
         "redshift_clusters": [_clean(asdict(c)) for c in account.redshift_clusters],
         "redshift_cost_coverage": _clean(asdict(account.redshift_cost_coverage))
         if account.redshift_cost_coverage else None,

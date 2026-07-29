@@ -91,9 +91,9 @@
         "service": "stepfunctions"
       },
       {
-        "name": "apps_and_endpoints",
-        "reason": "inventário vazio: sagemaker_apps, sagemaker_endpoints",
-        "requires": "sagemaker_apps, sagemaker_endpoints",
+        "name": "compute_inference_and_feature_store",
+        "reason": "inventário vazio: sagemaker_apps, sagemaker_spaces, sagemaker_domains, sagemaker_endpoints, sagemaker_notebooks, sagemaker_jobs, sagemaker_feature_groups, sagemaker_pipelines, sagemaker_monitoring_schedules",
+        "requires": "sagemaker_apps, sagemaker_spaces, sagemaker_domains, sagemaker_endpoints, sagemaker_notebooks, sagemaker_jobs, sagemaker_feature_groups, sagemaker_pipelines, sagemaker_monitoring_schedules",
         "service": "sagemaker"
       },
       {
@@ -507,6 +507,7 @@
       "y": "78%"
     }
   ],
+  "s3_cost": {},
   "scan_id": "baseline",
   "summary": {
     "billing_cost_mtd": "US$ 846,16",

@@ -10,7 +10,15 @@ from julius.collection.models.assets import (
     ProducerCandidate,
     RedshiftCluster,
     SageMakerApp,
+    SageMakerDomain,
     SageMakerEndpoint,
+    SageMakerFeatureGroup,
+    SageMakerInferenceRecommendation,
+    SageMakerJob,
+    SageMakerMonitoringSchedule,
+    SageMakerNotebook,
+    SageMakerPipeline,
+    SageMakerSpace,
     Schedule,
     StateMachine,
     Table,
@@ -24,6 +32,8 @@ from julius.collection.models.cost import (
     GlueCostCoverage,
     ProcessCost,
     RedshiftCostCoverage,
+    SageMakerCostCoverage,
+    SageMakerSavingsPlanCoverage,
     ServiceCost,
 )
 from julius.collection.models.glue import (
@@ -69,7 +79,21 @@ class Account:
     athena_queries: list[AthenaQuery] = field(default_factory=list)
     state_machines: list[StateMachine] = field(default_factory=list)
     sagemaker_apps: list[SageMakerApp] = field(default_factory=list)
+    sagemaker_spaces: list[SageMakerSpace] = field(default_factory=list)
+    sagemaker_domains: list[SageMakerDomain] = field(default_factory=list)
     sagemaker_endpoints: list[SageMakerEndpoint] = field(default_factory=list)
+    sagemaker_notebooks: list[SageMakerNotebook] = field(default_factory=list)
+    sagemaker_jobs: list[SageMakerJob] = field(default_factory=list)
+    sagemaker_feature_groups: list[SageMakerFeatureGroup] = field(default_factory=list)
+    sagemaker_pipelines: list[SageMakerPipeline] = field(default_factory=list)
+    sagemaker_monitoring_schedules: list[SageMakerMonitoringSchedule] = field(
+        default_factory=list
+    )
+    sagemaker_inference_recommendations: list[
+        SageMakerInferenceRecommendation
+    ] = field(default_factory=list)
+    sagemaker_cost_coverage: SageMakerCostCoverage | None = None
+    sagemaker_savings_plans: SageMakerSavingsPlanCoverage | None = None
     redshift_clusters: list[RedshiftCluster] = field(default_factory=list)
     tables: list[Table] = field(default_factory=list)
     schedules: list[Schedule] = field(default_factory=list)

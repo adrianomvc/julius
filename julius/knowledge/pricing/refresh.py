@@ -125,6 +125,7 @@ def render_table(
     *,
     today: date,
     sagemaker: dict[str, float] | None = None,
+    sagemaker_components: dict[str, dict[str, float]] | None = None,
     sagemaker_default: float,
     carry: dict[str, dict[str, float]] | None = None,
 ) -> str:
@@ -165,6 +166,13 @@ def render_table(
         lines.extend(["", "[sagemaker.instances]"])
         lines.extend(
             f'"{name}" = {value!r}' for name, value in sorted(sagemaker.items())
+        )
+    for component, rates in sorted((sagemaker_components or {}).items()):
+        if not rates:
+            continue
+        lines.extend(["", f"[sagemaker.components.{component}]"])
+        lines.extend(
+            f'"{name}" = {value!r}' for name, value in sorted(rates.items())
         )
     return "\n".join(lines) + "\n"
 
@@ -236,6 +244,9 @@ def refresh_region(
         resolutions,
         today=today,
         sagemaker=getattr(keep, "sagemaker_instances", None),
+        sagemaker_components=getattr(
+            keep, "sagemaker_component_instances", None
+        ),
         sagemaker_default=float(getattr(keep, "sagemaker_default_hourly", 0.18)),
         carry=carried_sections(region, set(mapping), tables=tables),
     )

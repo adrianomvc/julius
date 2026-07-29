@@ -86,6 +86,66 @@ class SageMakerApp:
     active_days_per_month: int = 22
     coverage_days: int = 0
     owner_tag: str | None = None
+    arn: str = ""
+    domain_id: str = ""
+    space_name: str = ""
+    user_profile_name: str = ""
+    activity_metrics_available: bool = False
+    cpu_p95: float | None = None
+    allocated_cost: float | None = None
+    cost_quality: str = "unavailable"
+    cost_coverage_days: int | None = None
+    consistent_scans: int = 1
+
+
+@dataclass
+class SageMakerSpace:
+    """Storage persistente e apps associados a um Studio Space."""
+
+    name: str
+    domain_id: str = ""
+    arn: str = ""
+    status: str = ""
+    sharing_type: str = ""
+    owner_tag: str | None = None
+    owner_user_profile: str = ""
+    ebs_volume_size_gb: int = 0
+    created_at: str = ""
+    last_modified_at: str = ""
+    app_count: int = 0
+    active_app_count: int = 0
+    coverage_days: int = 0
+    allocated_storage_cost: float | None = None
+    cost_quality: str = "unavailable"
+    cost_coverage_days: int | None = None
+    consistent_scans: int = 1
+
+
+@dataclass
+class SageMakerDomain:
+    """Domain Studio e o EFS doméstico gerenciado associado."""
+
+    domain_id: str
+    name: str = ""
+    arn: str = ""
+    status: str = ""
+    home_efs_file_system_id: str = ""
+    created_at: str = ""
+    last_modified_at: str = ""
+    owner_tag: str | None = None
+    space_count: int = 0
+    active_app_count: int = 0
+    efs_storage_bytes: float | None = None
+    efs_total_io_bytes: float | None = None
+    efs_read_io_bytes: float | None = None
+    efs_write_io_bytes: float | None = None
+    efs_client_connections: float | None = None
+    coverage_days: int = 0
+    modeled_storage_cost: float | None = None
+    allocated_storage_cost: float | None = None
+    cost_quality: str = "unavailable"
+    cost_coverage_days: int | None = None
+    consistent_scans: int = 1
 
 
 @dataclass
@@ -103,6 +163,222 @@ class SageMakerEndpoint:
     min_capacity: int = 1
     coverage_days: int = 0
     owner_tag: str | None = None
+    arn: str = ""
+    status: str = ""
+    endpoint_config_name: str = ""
+    mode: str = "real_time"
+    variants: list[SageMakerVariant] = field(default_factory=list)
+    inference_components: list[SageMakerInferenceComponent] = field(
+        default_factory=list
+    )
+    invocations: int | None = None
+    model_errors: int | None = None
+    invocation_4xx: int | None = None
+    invocation_5xx: int | None = None
+    model_latency_p95_us: float | None = None
+    backlog_without_capacity: int | None = None
+    last_invocation_at: str = ""
+    serverless_memory_mb: int = 0
+    provisioned_concurrency: int = 0
+    allocated_cost: float | None = None
+    cost_quality: str = "unavailable"
+    cost_coverage_days: int | None = None
+    consistent_scans: int = 1
+
+
+@dataclass
+class SageMakerVariant:
+    """Uma variante de endpoint, preservada em vez de usar somente a primeira."""
+
+    name: str
+    instance_type: str = ""
+    current_instance_count: int = 0
+    desired_instance_count: int = 0
+    initial_instance_count: int = 0
+    min_capacity: int = 0
+    max_capacity: int = 0
+    auto_scaling: bool = False
+    scaling_policy_count: int = 0
+    serverless_memory_mb: int = 0
+    provisioned_concurrency: int = 0
+    invocations: int | None = None
+    cpu_p95: float | None = None
+    gpu_p95: float | None = None
+    memory_p95: float | None = None
+
+
+@dataclass
+class SageMakerInferenceComponent:
+    """Capacidade implantada por inference component."""
+
+    name: str
+    variant_name: str = ""
+    status: str = ""
+    instance_type: str = ""
+    current_copies: int = 0
+    desired_copies: int = 0
+    min_copies: int = 0
+    max_copies: int = 0
+    auto_scaling: bool = False
+    cpu_p95: float | None = None
+    gpu_p95: float | None = None
+    memory_p95: float | None = None
+
+
+@dataclass
+class SageMakerNotebook:
+    """Notebook Instance clássico.
+
+    O plano de controle informa que está ligado, mas não oferece uma métrica
+    oficial de idle equivalente à do Studio. Por isso este inventário produz
+    sinal contextual, não economia automática.
+    """
+
+    name: str
+    arn: str = ""
+    status: str = ""
+    instance_type: str = ""
+    platform_identifier: str = ""
+    lifecycle_config_name: str = ""
+    created_at: str = ""
+    last_modified_at: str = ""
+    coverage_days: int = 0
+    owner_tag: str | None = None
+    allocated_cost: float | None = None
+    cost_quality: str = "unavailable"
+    cost_coverage_days: int | None = None
+    consistent_scans: int = 1
+
+
+@dataclass
+class SageMakerJob:
+    """Training, Processing ou Batch Transform na mesma janela de análise."""
+
+    name: str
+    kind: str
+    arn: str = ""
+    status: str = ""
+    created_at: str = ""
+    started_at: str = ""
+    ended_at: str = ""
+    instance_type: str = ""
+    instance_count: int = 0
+    duration_seconds: float = 0.0
+    billable_seconds: float | None = None
+    training_seconds: float | None = None
+    use_spot: bool = False
+    checkpoint_configured: bool = False
+    keep_alive_seconds: int = 0
+    warm_pool_status: str = ""
+    warm_pool_billable_seconds: float = 0.0
+    warm_pool_reused: bool = False
+    failure_category: str = ""
+    pipeline_name: str = ""
+    pipeline_execution_arn: str = ""
+    workload_fingerprint: str = ""
+    workload_runs: int = 0
+    low_utilization_runs: int = 0
+    history_coverage_days: int = 0
+    in_financial_window: bool = True
+    cpu_p95: float | None = None
+    gpu_p95: float | None = None
+    memory_p95: float | None = None
+    disk_p95: float | None = None
+    detailed_metrics: bool = False
+    coverage_days: int = 0
+    owner_tag: str | None = None
+    modeled_cost: float | None = None
+    allocated_cost: float | None = None
+    cost_quality: str = "unavailable"
+    cost_coverage_days: int | None = None
+    consistent_scans: int = 1
+
+    @property
+    def instance_hours(self) -> float:
+        seconds = (
+            self.billable_seconds
+            if self.billable_seconds is not None
+            else self.duration_seconds
+        )
+        return max(0.0, float(seconds)) * max(0, self.instance_count) / 3600.0
+
+
+@dataclass
+class SageMakerFeatureGroup:
+    """Feature Store online/offline e sua capacidade declarada."""
+
+    name: str
+    arn: str = ""
+    status: str = ""
+    online_store: bool = False
+    offline_store: bool = False
+    storage_type: str = ""
+    throughput_mode: str = ""
+    provisioned_read_capacity: int = 0
+    provisioned_write_capacity: int = 0
+    max_consumed_read_capacity: float | None = None
+    max_consumed_write_capacity: float | None = None
+    consumed_read_request_units: float | None = None
+    consumed_write_request_units: float | None = None
+    throttled_requests: int | None = None
+    server_errors: int | None = None
+    ttl_seconds: int | None = None
+    coverage_days: int = 0
+    owner_tag: str | None = None
+    allocated_cost: float | None = None
+    cost_quality: str = "unavailable"
+    cost_coverage_days: int | None = None
+    consistent_scans: int = 1
+
+
+@dataclass
+class SageMakerPipeline:
+    """Resumo de execuções e passos de uma Model Building Pipeline."""
+
+    name: str
+    arn: str = ""
+    status: str = ""
+    executions: int = 0
+    succeeded: int = 0
+    failed: int = 0
+    stopped: int = 0
+    avg_duration_seconds: float | None = None
+    job_names: list[str] = field(default_factory=list)
+    coverage_days: int = 0
+    owner_tag: str | None = None
+
+
+@dataclass
+class SageMakerMonitoringSchedule:
+    """Model Monitor já configurado; o Julius nunca cria schedules."""
+
+    name: str
+    arn: str = ""
+    status: str = ""
+    monitoring_type: str = ""
+    endpoint_name: str = ""
+    last_execution_status: str = ""
+    last_execution_time: str = ""
+    failure_reason: str = ""
+    coverage_days: int = 0
+    owner_tag: str | None = None
+
+
+@dataclass
+class SageMakerInferenceRecommendation:
+    """Resultado já produzido pelo Inference Recommender."""
+
+    job_name: str
+    status: str = ""
+    model_name: str = ""
+    endpoint_name: str = ""
+    recommended_instance_type: str = ""
+    initial_instance_count: int = 0
+    max_invocations: float | None = None
+    model_latency_ms: float | None = None
+    cost_per_hour: float | None = None
+    created_at: str = ""
+    coverage_days: int = 0
 
 
 @dataclass

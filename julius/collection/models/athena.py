@@ -49,13 +49,18 @@ class AthenaQuery:
     failed_runs: int = 0
     cancelled_runs: int = 0
     reused_runs: int = 0
+    reuse_configured_runs: int = 0
+    reuse_max_age_minutes: int | None = None
     reuse_eligible_runs: int = 0
     reuse_avoidable_billed_bytes: int = 0
     reuse_avoidable_cost: float | None = None
+    reuse_ineligible_reasons: list[str] = field(default_factory=list)
     billed_bytes: int = 0
     avg_billed_bytes: int = 0
     partition_keys: list[str] = field(default_factory=list)
     missing_partition_filters: list[str] = field(default_factory=list)
+    filter_columns: list[str] = field(default_factory=list)
+    partition_candidate_keys: list[str] = field(default_factory=list)
     storage_formats: list[str] = field(default_factory=list)
     small_files_confirmed: bool = False
     small_file_count: int = 0

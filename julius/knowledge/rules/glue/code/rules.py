@@ -18,6 +18,10 @@ from julius.knowledge.rules.glue.estimation import (
     code_pattern_saving,
     python_shell_migration_saving,
 )
+from julius.knowledge.rules.s3.request_cost import (
+    request_estimation,
+    request_evidence,
+)
 
 _DOC_TUNING = "https://docs.aws.amazon.com/glue/latest/dg/tuning-aws-glue-for-apache-spark.html"
 _DOC_PUSHDOWN = "https://docs.aws.amazon.com/glue/latest/dg/aws-glue-programming-pushdown.html"
@@ -330,6 +334,12 @@ def _code_opportunity(
 ) -> Opportunity:
     correlated = _has_runtime_correlation(rule_id, job, config)
     runtime_items: list[str] = []
+    output_tables = {name.strip().lower() for name in job.writes_tables}
+    output_prefixes = [
+        prefix
+        for prefix in account.s3_prefixes
+        if prefix.source_asset.strip().lower() in output_tables
+    ]
     if rule_id == "GLUE-CODE-SMALL-FILES" and job.average_output_file_bytes is not None:
         runtime_items.extend(
             [
@@ -338,15 +348,24 @@ def _code_opportunity(
                     "tamanho médio observado="
                     f"{job.average_output_file_bytes / 1024**2:.2f} MiB"
                 ),
+                *request_evidence(account, output_prefixes),
             ]
         )
-    estimation = code_pattern_saving(
-        job,
-        config,
-        method=rule_id.lower().replace("-", "_") + "_v1",
-        potential_fraction=spec.fraction if correlated else 0.0,
-        assumption=spec.why,
-    )
+    if rule_id == "GLUE-CODE-SMALL-FILES":
+        estimation = request_estimation(
+            account,
+            output_prefixes,
+            config,
+            method="glue_code_small_files_requests_v2",
+        )
+    else:
+        estimation = code_pattern_saving(
+            job,
+            config,
+            method=rule_id.lower().replace("-", "_") + "_v1",
+            potential_fraction=spec.fraction if correlated else 0.0,
+            assumption=spec.why,
+        )
     opportunity = build(
         Finding(
             asset_type="glue_job",
@@ -392,6 +411,16 @@ def _code_opportunity(
     opportunity.missing_evidence = _missing_runtime_evidence(
         rule_id, job, artifact, config
     )
+    if (
+        rule_id == "GLUE-CODE-SMALL-FILES"
+        and estimation.saving_quality == "unavailable"
+    ):
+        opportunity.missing_evidence.extend(
+            [
+                "prefixo S3 da tabela de saída ligado ao job",
+                "GETs por prefixo e UsageQuantity de Requests-Tier2",
+            ]
+        )
     opportunity.next_action = spec.validate
     opportunity.evidence_refs.append(
         {
