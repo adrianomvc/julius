@@ -441,7 +441,8 @@ def _catalog_scope_health(
         status = "partial"
         category = "not_configured"
         next_action = (
-            "informar --account-name para restringir o catálogo à conta analisada"
+            "cadastrar o perfil em ~/.julius-accounts.json ou informar "
+            "--account-name para restringir o catálogo"
         )
     elif not chosen:
         status = "partial"

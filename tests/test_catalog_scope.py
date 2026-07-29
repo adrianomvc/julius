@@ -80,6 +80,26 @@ def test_the_registry_name_matches_however_it_is_written(conta):
     assert CatalogScope(account_name=conta).select(_MESH)[0] == _DA_CONTA
 
 
+@pytest.mark.parametrize("conta", ["avi-prod", "consumer-avi-prod", "AVI_PROD"])
+def test_the_environment_suffix_is_not_part_of_the_shared_database(conta):
+    """O cadastro nomeia o ambiente; o banco compartilhado não."""
+    assert CatalogScope(account_name=conta).select(_MESH)[0] == _DA_CONTA
+
+
+def test_the_real_compact_account_name_matches_the_shared_database():
+    database = "database_db_compartilhado_consumer_atendimentodataservice"
+
+    assert CatalogScope(
+        account_name="consumeratendimentodataservice-pro"
+    ).select([database]) == [database]
+
+
+def test_prod_inside_the_account_name_is_not_mistaken_for_an_environment():
+    database = "database_db_compartilhado_consumer_produtos"
+
+    assert CatalogScope(account_name="consumer-produtos").select([database]) == [database]
+
+
 def test_case_and_separators_in_the_database_do_not_decide_anything():
     escritas = ["DATABASE_DB_COMPARTILHADO_CONSUMER_AVI", "workspace-db"]
 

@@ -200,6 +200,93 @@ def test_quality_is_partial_when_runs_did_not_report_dpu_seconds():
     assert any("DPUSeconds" in gap for gap in coverage.gaps)
 
 
+def test_failed_cost_is_a_subset_of_the_allocated_job_cost():
+    job = _job(
+        "instavel",
+        1000,
+        failed_dpu_seconds_window=_hours(250),
+        failed_runs_in_window=5,
+        failure_rate=0.25,
+        runs_in_window=20,
+    )
+    account = _account(jobs=[job])
+    ce = FakeCE([("SAE1-Glue-ETL-DPU-Hour", 440, "USD")])
+
+    glue_cost.allocate_costs(
+        account,
+        glue_cost.collect_glue_costs(
+            ce, window=WINDOW, markers=GLUE_USAGE_TYPE_MARKERS
+        ),
+        DEFAULT_CONFIG,
+        allocatable_buckets=ALLOCATED_GLUE_BUCKETS,
+    )
+
+    assert job.allocated_cost == pytest.approx(440.0)
+    assert job.failed_cost_window == pytest.approx(110.0)
+    assert job.failure_cost_quality == "reconciled"
+    assert job.failed_cost_window <= job.allocated_cost
+
+
+def test_estimated_failed_consumption_downgrades_only_failure_cost_quality():
+    job = _job(
+        "sem-dpuseconds",
+        750,
+        estimated_dpu_hours_window=250,
+        estimated_failed_dpu_hours_window=250,
+        failure_rate=0.25,
+    )
+    account = _account(jobs=[job])
+    ce = FakeCE([("SAE1-Glue-ETL-DPU-Hour", 440, "USD")])
+
+    glue_cost.allocate_costs(
+        account,
+        glue_cost.collect_glue_costs(
+            ce, window=WINDOW, markers=GLUE_USAGE_TYPE_MARKERS
+        ),
+        DEFAULT_CONFIG,
+        allocatable_buckets=ALLOCATED_GLUE_BUCKETS,
+    )
+
+    assert job.failed_cost_window == pytest.approx(110.0)
+    assert job.failure_cost_quality == "partial"
+
+
+def test_failure_estimation_prefers_allocated_failed_cost():
+    job = _job(
+        "instavel",
+        1000,
+        failed_dpu_seconds_window=_hours(250),
+        failure_rate=0.25,
+        runs_in_window=20,
+        failed_cost_window=110.0,
+        failure_cost_quality="reconciled",
+    )
+
+    estimate = glue_est.failure_waste_saving(job, DEFAULT_CONFIG)
+
+    assert estimate.method == "glue_failure_waste_v2"
+    assert estimate.baseline_cost == pytest.approx(
+        round(110.0 * job.monthly_factor, 2)
+    )
+    assert estimate.baseline_quality == "allocated"
+    assert any("parcela do custo alocado" in item for item in estimate.assumptions)
+
+
+def test_legacy_failure_dataset_keeps_the_previous_fallback():
+    job = _job(
+        "legado",
+        1000,
+        failure_rate=0.25,
+        runs_in_window=20,
+        avg_failed_execution_sec=600,
+    )
+
+    estimate = glue_est.failure_waste_saving(job, DEFAULT_CONFIG)
+
+    assert estimate.baseline_cost > 0
+    assert estimate.method == "glue_failure_waste_v1"
+
+
 def test_quality_is_partial_when_the_job_inventory_is_incomplete():
     account = _account(jobs=[_job("unico", 1000)])
     ce = FakeCE([("SAE1-Glue-ETL-DPU-Hour", 440, "USD")])

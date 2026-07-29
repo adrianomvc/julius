@@ -32,6 +32,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 
 _SEPARATORS = re.compile(r"[^a-z0-9]+")
+_CATALOG_ENVIRONMENT_SUFFIXES: tuple[str, ...] = ("_prod", "_pro")
 
 #: Prefixo do banco compartilhado da conta. O nome da conta vem depois dele.
 SHARED_DATABASE_PREFIX = "database_db_compartilhado_consumer_"
@@ -73,7 +74,21 @@ class CatalogScope:
         # O cadastro às vezes chama a conta de `consumer-avi` e o banco termina
         # em `consumer_avi`: repetir o token produziria
         # `..._consumer_consumer_avi` e não casaria com nada.
-        token = normalize(self.account_name).removeprefix("consumer_")
+        token = normalize(self.account_name)
+        if token.startswith("consumer_"):
+            token = token.removeprefix("consumer_")
+        elif token.startswith("consumer"):
+            # Alguns nomes cadastrais juntam o tipo e o nome da conta:
+            # `consumeratendimentodataservice-pro`.
+            token = token.removeprefix("consumer")
+        # O cadastro identifica a conta/ambiente (`consumer-avi-prod`), mas o
+        # banco compartilhado identifica somente a conta (`consumer_avi`).
+        # Remove apenas sufixo completo: `produto` e `produtos` continuam
+        # intactos.
+        for suffix in _CATALOG_ENVIRONMENT_SUFFIXES:
+            if token.endswith(suffix):
+                token = token.removesuffix(suffix)
+                break
         return normalize(SHARED_DATABASE_PREFIX) + "_" + token
 
     @property

@@ -9,6 +9,7 @@ from pathlib import Path
 from julius.collection.session import make_session
 
 _AWS_REGION = "sa-east-1"
+DEFAULT_ACCOUNT_TARGETS_PATH = "~/.julius-accounts.json"
 
 
 class AccountTargetError(ValueError):
@@ -33,7 +34,9 @@ class VerifiedAccount:
     credential_source: str
 
 
-def load_account_targets(path: str | Path) -> list[AccountTarget]:
+def load_account_targets(
+    path: str | Path, *, require_enabled: bool = True
+) -> list[AccountTarget]:
     file_path = Path(path).expanduser()
     if not file_path.exists():
         raise FileNotFoundError(f"cadastro de contas não encontrado: {file_path}")
@@ -79,9 +82,32 @@ def load_account_targets(path: str | Path) -> list[AccountTarget]:
             )
         )
     enabled = [target for target in targets if target.enabled]
-    if not enabled:
+    if not enabled and require_enabled:
         raise AccountTargetError("nenhuma conta está habilitada no cadastro")
     return enabled
+
+
+def resolve_account_name(
+    *,
+    explicit_name: str = "",
+    sso_profile: str = "",
+    config_path: str | Path = DEFAULT_ACCOUNT_TARGETS_PATH,
+) -> str:
+    """Resolve o nome lógico sem pedir acesso ao AWS Organizations.
+
+    O cadastro local já liga `sso_profile`, Account ID e nome. Um valor
+    explícito continua soberano; sem cadastro, o perfil preserva o fallback
+    histórico do CLI.
+    """
+    if explicit_name.strip():
+        return explicit_name.strip()
+    profile = sso_profile.strip()
+    path = Path(config_path).expanduser()
+    if profile and path.exists():
+        for target in load_account_targets(path, require_enabled=False):
+            if target.sso_profile == profile:
+                return target.name
+    return profile
 
 
 def verify_account_targets(

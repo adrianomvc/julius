@@ -1173,7 +1173,6 @@
       "confidence": 0.86,
       "confidence_label": "Alta",
       "data_sources": [
-        "CloudWatch",
         "GetJobRuns",
         "Glue GetJob",
         "Glue GetJobRuns"

@@ -22,6 +22,22 @@ from julius.collection.settings import DPU_PER_WORKER
 from julius.collection.window import AnalysisWindow
 
 _FAILED_STATES = {"FAILED", "TIMEOUT", "ERROR"}
+_FAILURE_MARKERS = (
+    ("out_of_memory", ("outofmemory", "out of memory", "memory limit", "heap space")),
+    (
+        "permission_denied",
+        ("accessdenied", "access denied", "not authorized", "permission denied"),
+    ),
+    ("dependency_failure", ("dependency", "connection refused", "unavailable")),
+    (
+        "data_error",
+        ("analysisexception", "schema", "malformed", "parse", "invalid data"),
+    ),
+    (
+        "infrastructure_error",
+        ("internal service", "internal error", "resource unavailable", "network"),
+    ),
+)
 
 
 def _truthy(value) -> bool:
@@ -70,30 +86,46 @@ def _build_job(glue_client, job: dict, window: AnalysisWindow) -> GlueJob:
     )
     dpu_seconds = 0.0
     estimated_dpu_hours = 0.0
+    failed_dpu_seconds = 0.0
+    estimated_failed_dpu_hours = 0.0
+    failure_categories: dict[str, int] = {}
     worker_type = job.get("WorkerType")
     number_of_workers = _optional_int(job.get("NumberOfWorkers"))
     max_capacity = _optional_float(job.get("MaxCapacity"))
     for run in window_runs:
+        is_failed = run.get("JobRunState") in _FAILED_STATES
+        if is_failed:
+            category = _failure_category(run)
+            failure_categories[category] = failure_categories.get(category, 0) + 1
         if command_type == "gluestreaming":
             capacity = _run_capacity(
                 run, worker_type, number_of_workers, max_capacity
             )
-            estimated_dpu_hours += (
+            run_hours = (
                 window.overlap_seconds(run.get("StartedOn"), run.get("CompletedOn"))
                 * capacity
                 / 3600.0
             )
+            estimated_dpu_hours += run_hours
+            if is_failed:
+                estimated_failed_dpu_hours += run_hours
             continue
         reported = _optional_float(run.get("DPUSeconds"))
         if reported is not None:
-            dpu_seconds += max(0.0, reported)
+            reported = max(0.0, reported)
+            dpu_seconds += reported
+            if is_failed:
+                failed_dpu_seconds += reported
             continue
         execution_sec = _billable_execution_seconds(
             str(job.get("GlueVersion", "0.9")),
             float(run.get("ExecutionTime", 0) or 0),
         )
         capacity = _run_capacity(run, worker_type, number_of_workers, max_capacity)
-        estimated_dpu_hours += max(0.0, execution_sec * capacity / 3600.0)
+        run_hours = max(0.0, execution_sec * capacity / 3600.0)
+        estimated_dpu_hours += run_hours
+        if is_failed:
+            estimated_failed_dpu_hours += run_hours
 
     total = len(runs)
     return GlueJob(
@@ -137,6 +169,19 @@ def _build_job(glue_client, job: dict, window: AnalysisWindow) -> GlueJob:
         retry_runs_in_window=sum(
             1 for run in window_runs if run.get("PreviousRunId")
         ),
+        failed_runs_in_window=sum(
+            1 for run in window_runs if run.get("JobRunState") in _FAILED_STATES
+        ),
+        failed_retry_runs_in_window=sum(
+            1
+            for run in window_runs
+            if run.get("PreviousRunId") and run.get("JobRunState") in _FAILED_STATES
+        ),
+        failed_dpu_seconds_window=round(failed_dpu_seconds, 3),
+        estimated_failed_dpu_hours_window=round(
+            estimated_failed_dpu_hours, 4
+        ),
+        failure_categories=dict(sorted(failure_categories.items())),
         window_end=window.data_through.isoformat(),
         trigger_names=sorted(
             {
@@ -165,6 +210,17 @@ def _build_job(glue_client, job: dict, window: AnalysisWindow) -> GlueJob:
             args, "--target_table", "--output_table", "--writes_table"
         ),
     )
+
+
+def _failure_category(run: dict) -> str:
+    """Classifica a causa sem persistir a mensagem potencialmente sensível."""
+    if str(run.get("JobRunState") or "").upper() == "TIMEOUT":
+        return "timeout"
+    message = str(run.get("ErrorMessage") or "").lower()
+    for category, markers in _FAILURE_MARKERS:
+        if any(marker in message for marker in markers):
+            return category
+    return "unknown"
 
 
 def _optional_int(value) -> int | None:

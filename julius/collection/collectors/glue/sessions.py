@@ -70,7 +70,7 @@ def collect_sessions(
                 idle_timeout_min=int(s.get("IdleTimeout", 2880) or 2880),
                 status=s.get("Status", "READY"),
                 idle_hours_per_day=activity["idle_hours_per_day"],
-                owner_tag=(s.get("Tags", {}) or {}).get("Owner"),
+                owner_tag=_owner_from_tags(s.get("Tags")),
                 created_on=_iso(s.get("CreatedOn")),
                 completed_on=_iso(s.get("CompletedOn")),
                 execution_time_sec=float(s.get("ExecutionTime", 0) or 0),
@@ -87,6 +87,28 @@ def collect_sessions(
             )
         )
     return out
+
+
+def _owner_from_tags(tags) -> str | None:
+    """Responsável da sessão, removendo o ID técnico antes do e-mail.
+
+    O Glue pode gravar `owner` como `<principal-id>:<e-mail>`. O identificador
+    temporário não é útil para atribuição; o e-mail é estável e legível.
+    """
+    if not isinstance(tags, dict):
+        return None
+    raw = next(
+        (value for key, value in tags.items() if str(key).strip().lower() == "owner"),
+        None,
+    )
+    owner = str(raw or "").strip()
+    if not owner:
+        return None
+    _, separator, candidate = owner.partition(":")
+    candidate = candidate.strip()
+    if separator and "@" in candidate:
+        return candidate
+    return owner
 
 
 def _iso(value) -> str:

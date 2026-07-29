@@ -11,6 +11,7 @@ from julius.cli import app
 from julius.collection.targets import (
     AccountTargetError,
     load_account_targets,
+    resolve_account_name,
     verify_account_targets,
     write_verified_accounts,
 )
@@ -64,6 +65,44 @@ def test_loads_only_explicitly_enabled_accounts(tmp_path):
 
     targets = load_account_targets(path)
     assert [target.name for target in targets] == ["principal"]
+
+
+def test_account_name_is_resolved_from_the_profile_in_the_local_registry(tmp_path):
+    path = tmp_path / "accounts.json"
+    _write_config(
+        path,
+        [_target("consumer-avi-prod", "123456789012", "avi-administrator")],
+    )
+
+    assert resolve_account_name(
+        sso_profile="avi-administrator", config_path=path
+    ) == "consumer-avi-prod"
+
+
+def test_explicit_account_name_wins_over_the_registry(tmp_path):
+    path = tmp_path / "accounts.json"
+    _write_config(path, [_target("cadastro", "123456789012", "perfil")])
+
+    assert resolve_account_name(
+        explicit_name="informada", sso_profile="perfil", config_path=path
+    ) == "informada"
+
+
+def test_missing_registry_preserves_the_profile_fallback(tmp_path):
+    assert resolve_account_name(
+        sso_profile="consumer-avi-prod",
+        config_path=tmp_path / "nao-existe.json",
+    ) == "consumer-avi-prod"
+
+
+def test_disabled_registry_does_not_break_the_profile_fallback(tmp_path):
+    path = tmp_path / "accounts.json"
+    _write_config(
+        path,
+        [_target("consumer-avi-prod", "123456789012", "perfil", enabled=False)],
+    )
+
+    assert resolve_account_name(sso_profile="perfil", config_path=path) == "perfil"
 
 
 def test_verifies_each_sso_profile_in_sa_east_1(tmp_path):

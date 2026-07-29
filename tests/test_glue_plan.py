@@ -833,6 +833,29 @@ def test_session_idle_is_derived_from_statement_activity():
 
 
 @pytest.mark.parametrize(
+    ("tags", "expected"),
+    [
+        (
+            {
+                "owner": (
+                    "ARO47GCAHI5VXYBL4CCT:"
+                    "adriano.vilela-costa@itau-unibanco.com.br"
+                )
+            },
+            "adriano.vilela-costa@itau-unibanco.com.br",
+        ),
+        ({"Owner": "pessoa@empresa.com.br"}, "pessoa@empresa.com.br"),
+        ({"OWNER": "squad-dados"}, "squad-dados"),
+        ({}, None),
+    ],
+)
+def test_interactive_session_owner_tag_uses_the_email_after_the_principal_id(
+    tags, expected
+):
+    assert sessions_collector._owner_from_tags(tags) == expected
+
+
+@pytest.mark.parametrize(
     ("expression", "expected"),
     [
         ("rate(1 hour)", 720.0),

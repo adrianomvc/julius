@@ -39,9 +39,14 @@ def collect(
         "",
         "--account-name",
         help=(
-            "Nome da conta no cadastro. Restringe o Glue Catalog aos bancos "
-            "terminados nele; vazio usa o --sso-profile."
+            "Nome lógico da conta. Restringe o Glue Catalog; vazio resolve pelo "
+            "cadastro de contas e depois pelo --sso-profile."
         ),
+    ),
+    accounts_config: str = typer.Option(
+        "~/.julius-accounts.json",
+        "--accounts-config",
+        help="Cadastro que relaciona nome lógico, Account ID e perfil SSO.",
     ),
     glue_databases: str = typer.Option(
         "",
@@ -65,13 +70,16 @@ def collect(
     from julius.collection.normalizers.dump import account_to_dataset
     from julius.collection.orchestrator import collect_account
     from julius.collection.scope import CatalogScope
+    from julius.collection.targets import resolve_account_name
 
     session = make_session(sso_profile or None, "sa-east-1")
-    # O nome da conta cai para o perfil SSO porque no cadastro os dois costumam
-    # coincidir (`.julius-accounts.example.json`): quem roda multi-conta não
-    # precisa digitar a mesma coisa duas vezes.
+    resolved_account_name = resolve_account_name(
+        explicit_name=account_name,
+        sso_profile=sso_profile,
+        config_path=accounts_config,
+    )
     scope = CatalogScope(
-        account_name=account_name or sso_profile,
+        account_name=resolved_account_name,
         databases=tuple(
             part.strip() for part in glue_databases.split(",") if part.strip()
         ),

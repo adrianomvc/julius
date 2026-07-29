@@ -508,6 +508,26 @@ def _worker_type(
 def _failing(account: Account, job: GlueJob, config: Config, scan_id: str) -> Opportunity:
     est = glue_est.failure_waste_saving(job, config)
     failed = round(job.runs_per_month * job.failure_rate)
+    failed_dpu_monthly = job.total_failed_dpu_hours_window * job.monthly_factor
+    categories = ", ".join(
+        f"{name}={count}" for name, count in sorted(job.failure_categories.items())
+    )
+    sources = ["Glue GetJobRuns"]
+    if job.failed_cost_window is not None:
+        sources.append("Cost Explorer")
+    evidence_items = [
+        f"taxa de falha {job.failure_rate:.0%} em {job.observed_runs} execuções observadas",
+        f"~{failed} execuções falhas/mês cobrando DPU-hora",
+    ]
+    if job.total_failed_dpu_hours_window > 0:
+        evidence_items.extend(
+            [
+                f"{failed_dpu_monthly:.2f} DPU-h/mês atribuídas às falhas",
+                f"{job.failed_retry_runs_in_window or 0} retries com falha na janela",
+                f"causas sanitizadas na janela: {categories or 'não classificadas'}",
+            ]
+        )
+    evidence_items.append(f"max_retries={job.max_retries}")
     return build(
         Finding(
             asset_type="glue_job",
@@ -533,12 +553,8 @@ def _failing(account: Account, job: GlueJob, config: Config, scan_id: str) -> Op
             risk=0.8,
         ),
         Evidence(
-            items=[
-                f"taxa de falha {job.failure_rate:.0%} em {job.observed_runs} execuções observadas",
-                f"~{failed} execuções falhas/mês cobrando DPU-hora",
-                f"max_retries={job.max_retries}",
-            ],
-            sources=["Glue GetJobRuns", "CloudWatch"],
+            items=evidence_items,
+            sources=sources,
             observed_runs=job.observed_runs,
             coverage_days=job.coverage_days,
             has_optional_metrics=job.observed_runs >= config.thresholds.min_runs,
