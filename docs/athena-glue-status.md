@@ -201,6 +201,19 @@ que ela adivinhe o que a AWS publica.
   entre atributo de produto e tarifa (`knowledge/pricing/mapping.toml`) é um
   ponto de partida plausível, **não validado** — rodar `inspect` antes do
   primeiro `refresh` não é opcional.
+- **SageMaker no mapa, via `expand`.** Hora de instância ficava fora do mapa por
+  ser longa demais para conferência manual, e a consequência era silenciosa:
+  toda cifra modelada de SageMaker era rebaixada a `unavailable` pelo gate de
+  pricing, porque a seção nunca podia ser marcada como conferida. Agora cada
+  componente consultado pelas regras (`studio`, `notebook`, `training`,
+  `processing`, `endpoint`) é uma entrada com `expand = "instanceName"`: uma
+  decisão humana por componente, e a lista de tipos vem da API. O rótulo de
+  `component` é o palpite menos seguro do arquivo — a Price List do SageMaker já
+  os renomeou. Conferir com
+  `julius pricing inspect --service AmazonSageMaker --attributes productFamily,component,instanceName`
+  antes do primeiro refresh. Quando a seção é refrescada, a lista
+  `[sagemaker.instances]` escrita à mão é descartada: ela não foi conferida por
+  aquele refresh e não pode herdar sua procedência.
 
 ## Redshift — escopo da coleta, e por quê
 

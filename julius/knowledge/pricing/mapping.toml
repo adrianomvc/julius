@@ -17,6 +17,12 @@
 # caso de o produto ter várias dimensões de preço: "min" pega a menor, "max" a
 # maior, "only" exige exatamente uma.
 #
+# `expand = "<atributo>"` rende uma tarifa por valor daquele atributo, em vez de
+# um escalar. Existe para tarifa de instância, onde a decisão humana é uma só
+# (quais atributos identificam a hora de instância do componente) e a lista de
+# valores é longa e muda — mapeá-la à mão seria copiar a mesma decisão dezenas
+# de vezes e deixar tipo novo sem tarifa.
+#
 # ATENÇÃO: os valores abaixo são um ponto de partida plausível, NÃO conferidos
 # contra a API. Rodar `inspect` antes do primeiro `refresh` não é opcional.
 
@@ -168,4 +174,57 @@ pick = "min"
 [s3.retrieval_request_glacier_flexible_per_1000]
 service = "AmazonS3"
 match = { productFamily = "API Request", group = "S3-API-Glacier-Tier3" }
+pick = "min"
+
+# SageMaker — hora de instância por componente. A chave da entrada é o nome do
+# componente como as regras o consultam (`pricing.sagemaker_hourly(tipo,
+# componente)`); o refresh a escreve em `[sagemaker.components.<componente>]`.
+#
+# Estas cinco entradas são as que o código realmente consulta: `studio` (app
+# ocioso), `notebook`, `training` (warm pool), `processing` e `endpoint`
+# (capacidade sem tráfego). Faltando a seção, toda cifra modelada de SageMaker
+# fica fora do portfólio — o gate de pricing exige procedência da seção que
+# sustenta a fórmula.
+#
+# `pick = "min"` pelo mesmo motivo do S3: aqui a tarifa mede um custo que a
+# recomendação promete eliminar, e a menor subestima a economia. Errar
+# prometendo menos é o lado seguro.
+#
+# ATENÇÃO — o valor de `component` é o palpite menos seguro deste arquivo. A
+# Price List do SageMaker já renomeou esses rótulos. Antes do primeiro refresh:
+#
+#   julius pricing inspect --service AmazonSageMaker --region sa-east-1 \
+#       --attributes productFamily,component,instanceName
+#
+# e ajuste os `match` para o que aparecer. Se não casar, nada é escrito e a
+# seção não é marcada como conferida — o erro aparece, não vira tarifa errada.
+
+[sagemaker.studio]
+service = "AmazonSageMaker"
+match = { productFamily = "ML Instance", component = "Studio Notebook" }
+expand = "instanceName"
+pick = "min"
+
+[sagemaker.notebook]
+service = "AmazonSageMaker"
+match = { productFamily = "ML Instance", component = "Notebook" }
+expand = "instanceName"
+pick = "min"
+
+[sagemaker.training]
+service = "AmazonSageMaker"
+match = { productFamily = "ML Instance", component = "Training" }
+expand = "instanceName"
+pick = "min"
+
+[sagemaker.processing]
+service = "AmazonSageMaker"
+match = { productFamily = "ML Instance", component = "Processing" }
+expand = "instanceName"
+pick = "min"
+
+[sagemaker.endpoint]
+service = "AmazonSageMaker"
+match = { productFamily = "ML Instance", component = "Hosting" }
+expand = "instanceName"
 pick = "min"
