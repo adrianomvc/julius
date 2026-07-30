@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 from datetime import datetime, timedelta, timezone
 
+from verified_pricing import verified_config
+
 from julius.collection.collectors.athena.actors import resolve_actor
 from julius.collection.collectors.athena.catalog import (
     has_partition_predicate,
@@ -556,6 +558,7 @@ class _RichS3:
 
 
 def test_requested_rules_are_grouped_by_pattern_and_actor():
+    config = verified_config("athena")
     now = datetime(2026, 7, 24, 15, tzinfo=timezone.utc)
     sql = (
         "SELECT * FROM db.wide_csv w "
@@ -601,7 +604,7 @@ def test_requested_rules_are_grouped_by_pattern_and_actor():
         athena_actor_usage=collected.actors,
         athena_coverage=collected.coverage,
     )
-    detected = athena_detector.detect(account, DEFAULT_CONFIG, "rules-test")
+    detected = athena_detector.detect(account, config, "rules-test")
     rule_ids = {opportunity.rule_id for opportunity in detected}
     assert {
         "ATHENA-SELECT-STAR-WIDE",
@@ -623,7 +626,7 @@ def test_requested_rules_are_grouped_by_pattern_and_actor():
         if opportunity.estimation.saving_quality == "modeled_rule":
             assert opportunity.confidence_label == "Baixa"
 
-    analyzed = analyze_account(account, scan_id="grouping-test")
+    analyzed = analyze_account(account, config=config, scan_id="grouping-test")
     athena_opportunities = [
         opportunity
         for opportunity in analyzed.opportunities

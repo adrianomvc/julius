@@ -20,6 +20,7 @@ from julius.findings.signal import Signal
 _DOC_PAUSE = "https://docs.aws.amazon.com/redshift/latest/mgmt/managing-cluster-operations.html"
 _DOC_RESIZE = "https://docs.aws.amazon.com/redshift/latest/mgmt/managing-cluster-operations.html#elastic-resize"
 _DOC_SERVERLESS = "https://docs.aws.amazon.com/redshift/latest/mgmt/serverless-capacity.html"
+_DOC_ADVISOR = "https://docs.aws.amazon.com/redshift/latest/dg/advisor.html"
 
 #: Sem histórico de query, toda economia aqui é investigação, não número.
 _UNMEASURED = "histórico de query não coletado: SVV_*/STL_* exigem acesso de banco"
@@ -273,6 +274,55 @@ def signals(account: Account, config: Config) -> list[Signal]:
                         "distribuição das tabelas mais lidas",
                     ],
                     doc_links=[_DOC_RESIZE],
+                )
+            )
+        for recommendation in cluster.advisor_recommendations:
+            out.append(
+                Signal(
+                    kind="config",
+                    rule_id="REDSHIFT-ADVISOR-UNAPPLIED",
+                    asset_type="redshift_cluster",
+                    asset_name=cluster.name,
+                    observation=(
+                        "O Redshift Advisor publicou a recomendação "
+                        f"'{recommendation.get('type') or 'não classificada'}': "
+                        f"{recommendation.get('text') or recommendation.get('action')}"
+                    ),
+                    question=(
+                        "A recomendação ainda é aplicável e qual benchmark "
+                        "comprova o benefício sem regressão?"
+                    ),
+                    missing_evidence=[
+                        "contrafactual financeiro",
+                        "validação do owner e benchmark pós-mudança",
+                    ],
+                    doc_links=[_DOC_ADVISOR],
+                )
+            )
+        if cluster.kind == "serverless" and cluster.max_rpu is None:
+            out.append(
+                Signal(
+                    kind="config",
+                    rule_id="REDSHIFT-SERVERLESS-MAX-CAPACITY-MISSING",
+                    asset_type="redshift_cluster",
+                    asset_name=cluster.name,
+                    observation="Workgroup Serverless sem MaxCapacity observada.",
+                    question="Qual limite protege a conta sem estrangular o pico legítimo?",
+                    missing_evidence=["p95/p99 de RPU e fila por horário"],
+                    doc_links=[_DOC_SERVERLESS],
+                )
+            )
+        if cluster.kind == "serverless" and not cluster.serverless_usage_limits:
+            out.append(
+                Signal(
+                    kind="config",
+                    rule_id="REDSHIFT-SERVERLESS-RPU-HOURS-LIMIT-MISSING",
+                    asset_type="redshift_cluster",
+                    asset_name=cluster.name,
+                    observation="Nenhum limite de uso Serverless foi coletado.",
+                    question="Qual limite de RPU-hours deve alertar ou bloquear excesso?",
+                    missing_evidence=["perfil mensal de consumo e sazonalidade"],
+                    doc_links=[_DOC_SERVERLESS],
                 )
             )
     return out

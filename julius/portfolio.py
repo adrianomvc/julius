@@ -53,7 +53,7 @@ def _identified(a: Analysis) -> float:
     return sum(
         o.portfolio_gain.monthly_expected
         for o in a.opportunities
-        if not o.estimated_gain.is_strategic
+        if o.include_in_portfolio
     )
 
 
@@ -61,7 +61,7 @@ def _high_conf(a: Analysis) -> float:
     return sum(
         o.portfolio_gain.monthly_expected
         for o in a.opportunities
-        if not o.estimated_gain.is_strategic and o.confidence >= 0.80
+        if o.include_in_portfolio and o.confidence >= 0.80
     )
 
 
@@ -99,7 +99,12 @@ def analyze_portfolio(
                 identified_monthly=round(_identified(a), 2),
                 high_confidence_monthly=round(_high_conf(a), 2),
                 realizable_year=round(
-                    sum(o.portfolio_gain.realizable_year for o in a.opportunities), 2
+                    sum(
+                        o.portfolio_gain.realizable_year
+                        for o in a.opportunities
+                        if o.include_in_portfolio
+                    ),
+                    2,
                 ),
                 opportunities=len(a.opportunities),
                 actionability_rate=a.kpis.actionability_rate,

@@ -14,7 +14,7 @@ from dataclasses import dataclass
 from datetime import date
 from typing import Any
 
-from julius.config import JULIUS_VERSION, KNOWLEDGE_VERSION
+from julius.config import JULIUS_VERSION, KNOWLEDGE_VERSION, KNOWLEDGE_VERSIONS
 from julius.findings.evidence import Evidence
 from julius.findings.finding import Finding
 from julius.findings.opportunity import Estimation, Opportunity
@@ -50,6 +50,29 @@ def build(
 ) -> Opportunity:
     config = ctx.config
     estimation.currency = config.pricing.currency
+    explicit_pricing_dependencies = bool(estimation.pricing_dependencies)
+    dependencies = estimation.pricing_dependencies or _pricing_dependencies(
+        finding.asset_type
+    )
+    estimation.pricing_dependencies = dependencies
+    if (
+        estimation.saving_quality
+        in {"modeled", "modeled_rule", "modeled_evidence", "allocated_partial"}
+        and not estimation.is_strategic
+        and (
+            explicit_pricing_dependencies
+            or estimation.baseline_quality.startswith("modeled")
+        )
+        and dependencies
+        and not config.pricing.dependencies_are_current(
+            dependencies,
+            today=ctx.today,
+        )
+    ):
+        estimation.saving_quality = "unavailable"
+        estimation.assumptions.append(
+            "cifra bloqueada: preço ausente, não verificado ou vencido"
+        )
 
     confidence, conf_label = _confidence(evidence, estimation, config)
     coverage = conf_mod.coverage_ratio(
@@ -108,14 +131,21 @@ def build(
         owner_source=owner_source,
         owner_confidence=owner_conf,
         rule_version=finding.rule_version,
-        knowledge_version=KNOWLEDGE_VERSION,
+        knowledge_version=_knowledge_version(finding.asset_type),
         julius_version=JULIUS_VERSION,
         scan_id=ctx.scan_id,
         source_process=finding.source_process,
-        blocked=recommendation.blocked,
+        blocked=(
+            recommendation.blocked
+            or estimation.saving_quality == "unavailable"
+            or (
+                estimation.estimated_saving <= 0
+                and not estimation.is_strategic
+            )
+        ),
     )
     prioritizer.assign(
-        opportunity, risk=recommendation.risk, blocked=recommendation.blocked
+        opportunity, risk=recommendation.risk, blocked=opportunity.blocked
     )
     return opportunity
 
@@ -151,3 +181,34 @@ def _missing(evidence: Evidence, estimation: Estimation) -> list[str]:
 
 def _digest(asset_name: str) -> str:
     return hashlib.sha1(asset_name.encode("utf-8")).hexdigest()[:8]
+
+
+def _knowledge_version(asset_type: str) -> str:
+    prefixes = {
+        "glue": "glue",
+        "athena": "athena",
+        "state_machine": "stepfunctions",
+        "sagemaker": "sagemaker",
+        "redshift": "redshift",
+        "s3": "s3",
+    }
+    for prefix, service in prefixes.items():
+        if asset_type == prefix or asset_type.startswith(prefix + "_"):
+            return KNOWLEDGE_VERSIONS[service]
+    return KNOWLEDGE_VERSION
+
+
+def _pricing_dependencies(asset_type: str) -> tuple[str, ...]:
+    mapping = {
+        "glue": "glue",
+        "athena": "athena",
+        "state_machine": "stepfunctions",
+        "sagemaker": "sagemaker",
+        "s3": "s3",
+    }
+    for prefix, section in mapping.items():
+        if asset_type == prefix or asset_type.startswith(prefix + "_"):
+            return (section,)
+    # Redshift determinístico atual usa Cost Explorer medido; não há tabela
+    # modelada de Redshift nesta entrega.
+    return ()

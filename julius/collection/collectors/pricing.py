@@ -34,6 +34,7 @@ class PriceItem:
     usd_per_unit: float
     unit: str
     description: str
+    effective_date: str = ""
 
     def matches(self, criteria: dict[str, str]) -> bool:
         return all(
@@ -133,6 +134,7 @@ def _parse(raw: Any, service_code: str) -> list[PriceItem]:
                     usd_per_unit=amount,
                     unit=str(dimension.get("unit") or ""),
                     description=str(dimension.get("description") or ""),
+                    effective_date=str(term.get("effectiveDate") or ""),
                 )
             )
     return out

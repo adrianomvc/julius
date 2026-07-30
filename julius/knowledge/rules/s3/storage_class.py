@@ -278,12 +278,13 @@ def _dias_sem_leitura(
         if dias is not None:
             source = prefixo.access_source or "catalog_read_history"
             if (
-                source != "catalog_read_history"
-                and dias >= config.thresholds.s3_cold_after_days
+                dias >= config.thresholds.s3_cold_after_days
                 and prefixo.read_coverage_days
                 < config.thresholds.s3_cold_after_days
             ):
                 return None, source, "insufficient_coverage"
+            if prefixo.access_quality in {"partial", "unavailable"}:
+                return None, source, prefixo.access_quality
             return (
                 dias,
                 source,
@@ -360,7 +361,11 @@ def _alvo(candidato: Candidato, config: Config) -> tuple[str, str] | None:
         # O dado precisa estar parado por mais tempo que o mínimo de retenção
         # cobrado pela classe: mover antes disso paga o período inteiro assim
         # mesmo, e a economia vira prejuízo se alguém reler no meio.
-        if dias >= minimo and dias >= retencao.get(chave, minimo):
+        if (
+            dias >= minimo
+            and dias >= retencao.get(chave, minimo)
+            and candidato.prefixo.read_coverage_days >= minimo
+        ):
             escolhido = (chave, rotulo)
     return escolhido
 
@@ -376,7 +381,13 @@ def _estimation(
     chave, rotulo = alvo
     pricing = config.pricing
     delta_gb = pricing.s3_storage_delta(chave)
-    if delta_gb is None:
+    copy_cost = pricing.s3_request_cost(
+        f"copy_{chave}", candidato.objetos_quentes
+    )
+    retrieval_probe = pricing.s3_retrieval_cost(
+        chave, bytes_read=0, requests=0
+    )
+    if delta_gb is None or copy_cost is None or retrieval_probe is None:
         return Estimation(
             method="s3_storage_class_transition_v2",
             baseline_cost=0.0,
@@ -384,17 +395,17 @@ def _estimation(
             estimated_saving=0.0,
             assumptions=[
                 f"tarifa de S3 ausente na tabela {pricing.region}",
-                "rode `julius pricing refresh` para quantificar",
+                "armazenamento, PUT/COPY e retrieval precisam estar verificados",
+                "rode `julius pricing refresh --only s3` para quantificar",
             ],
             saving_quality="unavailable",
+            pricing_dependencies=("s3",),
         )
 
     gb = candidato.bytes_quentes / _GB
     bytes_alvo = _bytes_faturaveis(candidato, chave, config)
     gb_alvo = bytes_alvo / _GB
-    transicao = pricing.s3_request_cost(
-        "lifecycle_transition", candidato.objetos_quentes
-    ) or 0.0
+    transicao = copy_cost
     standard_rate = pricing.s3_storage_gb_month.get("standard") or 0.0
     target_rate = pricing.s3_storage_gb_month.get(chave) or 0.0
     baseline_modelado = standard_rate * gb
@@ -475,6 +486,7 @@ def _estimation(
         first_month_net_saving=round(primeiro_mes, 2),
         break_even_months=break_even,
         maximum_profitable_reads=max_reads,
+        pricing_dependencies=("s3",),
     )
 
 
@@ -542,6 +554,10 @@ def _oportunidade(
     prefixo = candidato.prefixo
     gb = candidato.bytes_quentes / _GB
     parcial = not prefixo.listing_complete
+    versionado = any(
+        bucket.name == prefixo.bucket and bucket.versioning_enabled is True
+        for bucket in (getattr(account, "s3_buckets", None) or ())
+    )
     est = _estimation(account, candidato, alvo, config)
 
     opportunity = build(
@@ -566,8 +582,8 @@ def _oportunidade(
             action=f"Mover os objetos deste prefixo para {rotulo}",
             how_to_apply=(
                 f"Reescrever os objetos com StorageClass={rotulo} via CopyObject "
-                "(ou uma regra de lifecycle, onde ela puder ser configurada). "
-                "O Julius não executa a transição — a ação é do time dono do "
+                "(multipart CopyObject para objetos acima do limite da operação "
+                "simples). O Julius não executa a cópia — a ação é do time dono do "
                 "prefixo, que confirma antes que nenhum consumidor relê estes "
                 "dados fora da janela observada."
             ),
@@ -580,11 +596,21 @@ def _oportunidade(
                 "mínimo de retenção da classe alvo é cobrado mesmo se o objeto for apagado antes",
                 "a leitura observada cobre só a janela de análise",
                 *(["listagem parcial: o volume real pode ser maior"] if parcial else []),
+                *(
+                    [
+                        "bucket versionado: CopyObject cria uma nova versão e "
+                        "mantém a anterior como versão não corrente"
+                    ]
+                    if versionado
+                    else []
+                ),
             ],
             docs=[_DOC_STORAGE_CLASS, _DOC_COPY],
             blocked=(
                 est.saving_quality == "unavailable"
                 or chave == "glacier_flexible"
+                or parcial
+                or versionado
             ),
         ),
         Evidence(
@@ -627,10 +653,10 @@ def _oportunidade(
     )
     faltando = []
     if parcial:
-        faltando.append("listagem completa do prefixo: o volume medido é piso")
-    if candidato.fonte_de_leitura != "server_access_logs":
+        faltando.append("listagem completa do prefixo: cifra parcial não entra no portfólio")
+    if versionado:
         faltando.append(
-            "leitura por objeto: a evidência atual é do catálogo, não do bucket"
+            "custo e retenção das versões não correntes criadas pelo CopyObject"
         )
     if (
         prefixo.read_requests_window is None

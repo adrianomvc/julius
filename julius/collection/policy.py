@@ -30,6 +30,7 @@ _COMMON = frozenset(
         "stepfunctions",
         "sagemaker",
         "s3_evidence",
+        "redshift",
         "ownership",
     }
 )
@@ -38,12 +39,12 @@ _POLICIES = {
     CONSUMER_DATAMESH: ScopePolicy(
         profile=CONSUMER_DATAMESH,
         enabled_capabilities=_COMMON,
-        s3_mode="evidence_only",
+        s3_mode="storage_class_only",
     ),
     FULL_ANALYSIS: ScopePolicy(
         profile=FULL_ANALYSIS,
         enabled_capabilities=_COMMON
-        | frozenset({"glue_crawlers", "glue_databrew", "redshift"}),
+        | frozenset({"glue_crawlers", "glue_databrew"}),
         s3_mode="proposal",
     ),
 }

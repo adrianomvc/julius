@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import tomllib
 from dataclasses import dataclass, field
+from datetime import date, datetime
 from functools import cache
 from pathlib import Path
 
@@ -59,6 +60,8 @@ class Pricing:
     # O relatório mostra isso ao lado de qualquer número modelado.
     verified: bool = False
     effective_date: str = ""
+    verified_at: str = ""
+    verification: dict[str, dict[str, str | bool]] = field(default_factory=dict)
     sources: tuple[str, ...] = ()
     # USD/DPU-hora. Fallback versionado; a cobrança permanece no Cost Explorer.
     glue_dpu_hour: float = 0.44
@@ -137,6 +140,16 @@ class Pricing:
             version=str(table.get("version", "")),
             verified=bool(table.get("verified", False)),
             effective_date=str(table.get("effective_date", "")),
+            verified_at=str(table.get("verified_at", "")),
+            verification={
+                str(section): {
+                    str(key): value
+                    for key, value in metadata.items()
+                    if isinstance(value, (str, bool))
+                }
+                for section, metadata in (table.get("verification") or {}).items()
+                if isinstance(metadata, dict)
+            },
             sources=tuple(str(item) for item in table.get("sources", ())),
             glue_dpu_hour=float(glue["dpu_hour"]),
             glue_flex_dpu_hour=float(glue["flex_dpu_hour"]),
@@ -162,6 +175,39 @@ class Pricing:
                 if isinstance(rates, dict)
             },
         )
+
+    def dependencies_are_current(
+        self,
+        dependencies: tuple[str, ...],
+        *,
+        today: date | None = None,
+        max_age_days: int = 90,
+    ) -> bool:
+        """Confirma procedência e validade das seções usadas por uma fórmula."""
+        reference = today or date.today()
+        for section in dependencies:
+            metadata = self.verification.get(section)
+            if self.verification and metadata is None:
+                return False
+            verified = (
+                bool(metadata.get("verified"))
+                if metadata is not None
+                else self.verified
+            )
+            checked_at = (
+                str(metadata.get("verified_at") or "")
+                if metadata is not None
+                else self.verified_at or self.effective_date
+            )
+            if not verified or not checked_at:
+                return False
+            try:
+                checked = datetime.fromisoformat(checked_at).date()
+            except ValueError:
+                return False
+            if (reference - checked).days > max_age_days:
+                return False
+        return True
 
     def glue_rate(self, execution_class: str = "STANDARD") -> float:
         return (

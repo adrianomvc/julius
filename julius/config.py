@@ -50,6 +50,14 @@ from julius.knowledge.thresholds import Thresholds
 # Versões usadas nas oportunidades (auditoria/calibração).
 JULIUS_VERSION = "0.6.0"
 KNOWLEDGE_VERSION = "aws-glue-guidance-2026-07"
+KNOWLEDGE_VERSIONS = {
+    "glue": "glue-knowledge-2026-07",
+    "athena": "athena-knowledge-2026-07",
+    "stepfunctions": "stepfunctions-knowledge-2026-07",
+    "sagemaker": "sagemaker-knowledge-2026-07",
+    "redshift": "redshift-knowledge-2026-07",
+    "s3": "s3-knowledge-2026-07",
+}
 ATHENA_RECOVERY_VERSION = "athena-recovery-1.0"
 GLUE_COST_VERSION = "glue-cost-allocation-1.0"
 
@@ -155,6 +163,7 @@ __all__ = [
     "IMPL_OFFSET_BY_DIFFICULTY",
     "JULIUS_VERSION",
     "KNOWLEDGE_VERSION",
+    "KNOWLEDGE_VERSIONS",
     "MIN_DAYS_FOR_FORECAST",
     "UNATTRIBUTED_GLUE_BUCKETS",
     "Config",

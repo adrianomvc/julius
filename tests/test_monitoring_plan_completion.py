@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 from datetime import datetime, timezone
 
+from verified_pricing import verified_config
+
 from julius.collection.collectors.athena.aggregate import aggregate_queries
 from julius.collection.collectors.athena.evidence import AthenaExecutionEvidence
 from julius.collection.collectors.s3_cost import collect_s3_costs
@@ -159,6 +161,7 @@ def test_glue_bookmark_only_values_measured_reprocessing():
 
 
 def test_glue_rightsizing_stays_potential_until_benchmark_is_validated():
+    config = verified_config("glue")
     job = GlueJob(
         name="rightsizing",
         worker_type="G.1X",
@@ -179,7 +182,7 @@ def test_glue_rightsizing_stays_potential_until_benchmark_is_validated():
 
     candidate = next(
         item
-        for item in glue_jobs.detect(account, DEFAULT_CONFIG, "scan")
+        for item in glue_jobs.detect(account, config, "scan")
         if item.rule_id == "GLUE-OVERPROVISIONED"
     )
     assert candidate.blocked is True
@@ -191,7 +194,7 @@ def test_glue_rightsizing_stays_potential_until_benchmark_is_validated():
     job.rightsize_output_validated = True
     validated = next(
         item
-        for item in glue_jobs.detect(account, DEFAULT_CONFIG, "scan")
+        for item in glue_jobs.detect(account, config, "scan")
         if item.rule_id == "GLUE-OVERPROVISIONED"
     )
     assert validated.blocked is False

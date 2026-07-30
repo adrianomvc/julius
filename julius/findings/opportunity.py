@@ -68,6 +68,9 @@ class Estimation:
     # Ganho não financeiro (migração, governança): existe economia de risco ou
     # de esforço, mas não um número em USD a somar no portfólio.
     is_strategic: bool = False
+    # Seções da tabela versionada necessárias para sustentar a cifra modelada.
+    # Economia medida diretamente não depende deste campo.
+    pricing_dependencies: tuple[str, ...] = ()
 
 
 @dataclass
@@ -157,6 +160,28 @@ class Opportunity:
         """Valor usado em ranking e totais, sem apagar o potencial técnico."""
         return self.calibrated_gain or self.estimated_gain
 
+    @property
+    def portfolio_exclusion_reasons(self) -> tuple[str, ...]:
+        """Razões determinísticas que impedem somar a cifra ao portfólio."""
+        reasons: list[str] = []
+        if self.blocked:
+            reasons.append("blocked")
+        if self.estimated_gain.is_strategic:
+            reasons.append("strategic")
+        if self.estimation is None or self.estimation.saving_quality in {
+            "unavailable",
+            "potential",
+        }:
+            reasons.append("saving_not_validated")
+        if self.portfolio_gain.monthly_expected <= 0:
+            reasons.append("nonpositive_saving")
+        return tuple(reasons)
+
+    @property
+    def include_in_portfolio(self) -> bool:
+        """Único gate usado por ranking, KPIs e totais financeiros."""
+        return not self.portfolio_exclusion_reasons
+
     def fingerprint(self, scope: str = "default") -> str:
         raw = f"{self.account}|{self.asset_type}:{self.asset_name}|{self.rule_id}|{scope}"
         digest = hashlib.sha1(raw.encode("utf-8")).hexdigest()[:8]
@@ -174,4 +199,9 @@ class Opportunity:
         return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:16]
 
     def to_dict(self) -> dict:
-        return asdict(self)
+        payload = asdict(self)
+        payload["include_in_portfolio"] = self.include_in_portfolio
+        payload["portfolio_exclusion_reasons"] = list(
+            self.portfolio_exclusion_reasons
+        )
+        return payload

@@ -92,6 +92,8 @@ class OpportunityVM:
     process_monthly_fmt: str
     window_end: str
     traceability: str
+    include_in_portfolio: bool
+    portfolio_exclusion_reasons: list[str]
     ai_diagnosis: str = ""
     ai_recommendation: str = ""
     ai_implementation_steps: list[str] = field(default_factory=list)
@@ -206,7 +208,7 @@ def _opp_vm(o: Opportunity, currency: str) -> OpportunityVM:
         # a linha com vocabulário interno.
         asset=o.asset_name,
         asset_type=o.asset_type,
-        monthly=0.0 if g.is_strategic or saving_unavailable else g.monthly_expected,
+        monthly=g.monthly_expected if o.include_in_portfolio else 0.0,
         origin=o.origin,
         category_label=cat_label,
         category_fg=cat_fg,
@@ -328,6 +330,8 @@ def _opp_vm(o: Opportunity, currency: str) -> OpportunityVM:
         ),
         window_end=o.window_end or "—",
         traceability="; ".join(trace_parts) or "sem IDs de execução disponíveis",
+        include_in_portfolio=o.include_in_portfolio,
+        portfolio_exclusion_reasons=list(o.portfolio_exclusion_reasons),
     )
 
 
@@ -425,7 +429,7 @@ class ReportViewModel:
 
 def _recommendation(do_now: list[Opportunity], currency: str) -> str:
     picks = sorted(
-        [o for o in do_now if o.actionable and not o.estimated_gain.is_strategic],
+        [o for o in do_now if o.actionable and o.include_in_portfolio],
         key=lambda o: o.execution_priority,
         reverse=True,
     )[:2]
@@ -470,7 +474,7 @@ def _services(account: Account, opportunities: list[Opportunity]) -> tuple[list[
     saving_by_service: dict[str, float] = {}
     saving_currency_by_service: dict[str, str] = {}
     for o in opportunities:
-        if o.estimated_gain.is_strategic:
+        if not o.include_in_portfolio:
             continue
         svc = service_of.get(o.asset_type)
         if svc:
@@ -865,14 +869,18 @@ def build(
     identified = sum(
         o.portfolio_gain.monthly_expected
         for o in opportunities
-        if not o.estimated_gain.is_strategic
+        if o.include_in_portfolio
     )
     high_conf = sum(
         o.portfolio_gain.monthly_expected
         for o in opportunities
-        if not o.estimated_gain.is_strategic and o.confidence >= _HIGH_CONF
+        if o.include_in_portfolio and o.confidence >= _HIGH_CONF
     )
-    realizable_year = sum(o.portfolio_gain.realizable_year for o in opportunities)
+    realizable_year = sum(
+        o.portfolio_gain.realizable_year
+        for o in opportunities
+        if o.include_in_portfolio
+    )
 
     do_now = [o for o in opportunities if o.bucket == "fazer_agora"]
     plan = [o for o in opportunities if o.bucket == "planejar"]
@@ -901,7 +909,7 @@ def build(
     saving_currencies = {
         o.estimation.currency
         for o in opportunities
-        if o.estimation is not None and not o.estimated_gain.is_strategic
+        if o.estimation is not None and o.include_in_portfolio
     }
     saving_currency = next(iter(saving_currencies), "USD")
     account_saving_comparable = (

@@ -33,7 +33,7 @@ def _monthly(o: Opportunity) -> float:
 
 
 def compute(opportunities: list[Opportunity]) -> Pareto:
-    quant = [o for o in opportunities if not o.estimated_gain.is_strategic and _monthly(o) > 0]
+    quant = [o for o in opportunities if o.include_in_portfolio]
     monthly_total = sum(_monthly(o) for o in quant)
     p = Pareto(monthly_total=round(monthly_total, 2))
     if monthly_total <= 0:

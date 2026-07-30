@@ -37,6 +37,7 @@ class Resolution:
     unit: str = ""
     candidates: int = 0
     problem: str = ""
+    effective_date: str = ""
 
     @property
     def ok(self) -> bool:
@@ -88,6 +89,7 @@ def resolve(
                     value=value,
                     unit=matches[0].unit,
                     candidates=len(prices),
+                    effective_date=matches[0].effective_date,
                 )
             )
     return out
@@ -119,6 +121,25 @@ def carried_sections(
     }
 
 
+def carried_verification(
+    region: str, *, tables: Path = TABLES
+) -> dict[str, dict[str, str | bool]]:
+    """Metadados de conferência permanecem ligados à seção que foi verificada."""
+    path = tables / f"{region}.toml"
+    if not path.is_file():
+        return {}
+    table = tomllib.loads(path.read_text(encoding="utf-8"))
+    return {
+        str(section): {
+            str(key): value
+            for key, value in metadata.items()
+            if isinstance(value, (str, bool))
+        }
+        for section, metadata in (table.get("verification") or {}).items()
+        if isinstance(metadata, dict)
+    }
+
+
 def render_table(
     region: str,
     resolutions: list[Resolution],
@@ -128,6 +149,8 @@ def render_table(
     sagemaker_components: dict[str, dict[str, float]] | None = None,
     sagemaker_default: float,
     carry: dict[str, dict[str, float]] | None = None,
+    verification: dict[str, dict[str, str | bool]] | None = None,
+    refreshed_sections: set[str] | None = None,
 ) -> str:
     """Escreve o TOML da região, já marcado como conferido."""
     by_section: dict[str, dict[str, float]] = {
@@ -137,6 +160,12 @@ def render_table(
         if item.value is not None:
             by_section.setdefault(item.section, {})[item.key] = item.value
 
+    provider_dates = sorted(
+        item.effective_date[:10]
+        for item in resolutions
+        if item.effective_date
+    )
+    provider_effective = provider_dates[0] if provider_dates else ""
     lines = [
         "# Gerado por `julius pricing refresh` a partir da Price List API.",
         "# Revise o diff antes de commitar: mudança de tarifa muda toda",
@@ -146,12 +175,27 @@ def render_table(
         'currency = "USD"',
         f'version = "pricelist-{today.isoformat()}"',
         "verified = true",
-        f'effective_date = "{today.isoformat()}"',
+        f'effective_date = "{provider_effective}"',
+        f'verified_at = "{today.isoformat()}"',
         "sources = [",
         '    "https://docs.aws.amazon.com/awsaccountbilling/latest/aboutv2/'
         'using-price-list-query-api.html",',
         "]",
     ]
+    section_verification = {
+        name: dict(metadata) for name, metadata in (verification or {}).items()
+    }
+    for section in refreshed_sections or set(by_section):
+        section_verification[section] = {
+            "verified": True,
+            "verified_at": today.isoformat(),
+        }
+    for section, metadata in sorted(section_verification.items()):
+        lines.extend(["", f"[verification.{section}]"])
+        lines.append(
+            f"verified = {'true' if bool(metadata.get('verified')) else 'false'}"
+        )
+        lines.append(f'verified_at = "{metadata.get("verified_at", "")}"')
     # As seções saem do que o mapa resolveu, não de uma lista escrita aqui: uma
     # lista fixa faria a seção nova do `mapping.toml` resolver, casar e ser
     # descartada na hora de escrever — sem erro, sem aviso, sem tarifa.
@@ -249,6 +293,8 @@ def refresh_region(
         ),
         sagemaker_default=float(getattr(keep, "sagemaker_default_hourly", 0.18)),
         carry=carried_sections(region, set(mapping), tables=tables),
+        verification=carried_verification(region, tables=tables),
+        refreshed_sections=set(mapping),
     )
     target = tables / f"{region}.toml"
     target.write_text(text, encoding="utf-8")

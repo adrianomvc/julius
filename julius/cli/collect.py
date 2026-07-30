@@ -70,7 +70,10 @@ def collect(
         None,
         "--max-scan-cost",
         min=0.0,
-        help="Orçamento estimado em USD; fontes opcionais param ao atingir o teto.",
+        help=(
+            "Orçamento estimado (soft limit) em USD; impede novas fontes "
+            "opcionais, mas uma fonte iniciada pode ultrapassá-lo."
+        ),
     ),
     glue_databases: str = typer.Option(
         "",

@@ -55,7 +55,7 @@ def _baseline(job: GlueJob, pricing) -> tuple[float, str, str]:
 
 
 def autoscaling_saving(job: GlueJob, config: Config) -> Estimation:
-    """Auto Scaling remove workers ociosos: saving ∝ (1 − util/alvo)."""
+    """Potencial de Auto Scaling; só financeiro após benchmark comparável."""
     pricing = config.pricing
     util = (
         job.avg_worker_utilization
@@ -69,6 +69,7 @@ def autoscaling_saving(job: GlueJob, config: Config) -> Estimation:
     ratio = max(0.0, min(0.6, 1 - util / config.thresholds.utilization_target))
     baseline, source, quality = _baseline(job, pricing)
     saving = baseline * ratio
+    validated = _capacity_benchmark_validated(job)
     return Estimation(
         method="glue_autoscaling_v1",
         baseline_cost=round(baseline, 2),
@@ -83,6 +84,8 @@ def autoscaling_saving(job: GlueJob, config: Config) -> Estimation:
         pricing_region=pricing.region,
         estimation_version=pricing.version,
         baseline_quality=quality,
+        saving_quality="modeled_evidence" if validated else "potential",
+        is_strategic=not validated,
     )
 
 
@@ -226,38 +229,65 @@ _DOWNGRADE = {
 }
 
 
-def timeout_guardrail_saving(
-    job: GlueJob, config: Config, hangs_per_month: float = 0.3, detection_horizon_min: float = 240.0
-) -> Estimation:
-    """Timeout muito acima da duração média: um job travado cobra DPU-hora até o
-    timeout. Guardrail conservador — limita a janela desperdiçada ao horizonte
-    realista de detecção (um job pendurado é notado em ~4h, não nas 48h do timeout)."""
+def timeout_guardrail_saving(job: GlueJob, config: Config) -> Estimation:
+    """Só quantifica timeouts que realmente ocorreram na janela."""
     pricing = config.pricing
     exec_min = (job.p95_execution_sec or job.avg_execution_sec) / 60.0
-    total_dpu = job.configured_dpu
     rate, source, quality = billing_rate(job, pricing)
-    wasted_min = min(max(0.0, job.timeout_min - exec_min), detection_horizon_min)
-    wasted_per_hang = wasted_min / 60.0 * total_dpu * rate
-    saving = wasted_per_hang * hangs_per_month
+    timeout_runs = int(job.failure_categories.get("timeout", 0))
+    failed_runs = max(0, int(job.failed_runs_in_window or 0))
+    if timeout_runs <= 0:
+        return Estimation(
+            method="glue_timeout_guardrail_v2",
+            baseline_cost=0.0,
+            projected_cost=0.0,
+            estimated_saving=0.0,
+            assumptions=[
+                f"timeout {job.timeout_min} min vs. duração p95 {exec_min:.0f} min",
+                "nenhuma execução atingiu timeout na janela; valor é risco evitado",
+            ],
+            baseline_quality=quality,
+            saving_quality="unavailable",
+            is_strategic=True,
+        )
+    if job.monthly_failed_cost is not None and failed_runs > 0:
+        saving = job.monthly_failed_cost * timeout_runs / failed_runs
+        quality = (
+            "allocated"
+            if job.failure_cost_quality == "reconciled"
+            else "allocated_partial"
+        )
+        source = "custo de falhas rateado pela proporção de timeouts"
+    else:
+        timeout_hours = (
+            job.total_failed_dpu_hours_window
+            * job.monthly_factor
+            * timeout_runs
+            / max(1, failed_runs or timeout_runs)
+        )
+        saving = timeout_hours * rate
+        source = f"{timeout_hours:.2f} DPU-h de timeouts × tarifa"
     return Estimation(
-        method="glue_timeout_guardrail_v1",
-        baseline_cost=round(wasted_per_hang, 2),
+        method="glue_timeout_guardrail_v2",
+        baseline_cost=round(saving, 2),
         projected_cost=0.0,
         estimated_saving=round(saving, 2),
         assumptions=[
             f"timeout {job.timeout_min} min vs. duração média {exec_min:.0f} min",
-            f"~{hangs_per_month:.1f} execução travada/mês, janela limitada a {detection_horizon_min:.0f} min",
-            "alinhar o timeout corta a cobrança de um job pendurado mais cedo",
+            f"{timeout_runs} execução(ões) atingiram timeout na janela",
             source,
         ],
         pricing_region=pricing.region,
         estimation_version=pricing.version,
         baseline_quality=quality,
+        saving_quality=(
+            "measured" if quality.startswith("allocated") else "modeled_evidence"
+        ),
     )
 
 
 def worker_type_downgrade_saving(job: GlueJob, config: Config) -> tuple[Estimation, str]:
-    """Worker type grande (G.4X/G.8X) com CPU baixa → um type menor bastaria."""
+    """Candidato a worker menor; cifra só após benchmark comparável."""
     pricing = config.pricing
     # `worker_type` é opcional no modelo (jobs em MaxCapacity não têm), mas a
     # regra só chega aqui com um type conhecido; o fallback mantém isso explícito.
@@ -268,6 +298,7 @@ def worker_type_downgrade_saving(job: GlueJob, config: Config) -> tuple[Estimati
     baseline, source, quality = _baseline(job, pricing)
     ratio = (cur_dpu - new_dpu) / cur_dpu if cur_dpu else 0
     saving = baseline * ratio
+    validated = _capacity_benchmark_validated(job)
     est = Estimation(
         method="glue_worker_type_downgrade_v1",
         baseline_cost=round(baseline, 2),
@@ -275,15 +306,25 @@ def worker_type_downgrade_saving(job: GlueJob, config: Config) -> tuple[Estimati
         estimated_saving=round(saving, 2),
         assumptions=[
             f"worker type {job.worker_type} ({cur_dpu} DPU) → {new_type} ({new_dpu} DPU)",
-            f"CPU média {(job.avg_cpu_load or 0):.0%} não justifica o type maior",
+            f"CPU média {(job.avg_cpu_load or 0):.0%}; hipótese a validar",
             "mesmo paralelismo (nº de workers) mantido",
             source,
         ],
         pricing_region=pricing.region,
         estimation_version=pricing.version,
         baseline_quality=quality,
+        saving_quality="modeled_evidence" if validated else "potential",
+        is_strategic=not validated,
     )
     return est, new_type
+
+
+def _capacity_benchmark_validated(job: GlueJob) -> bool:
+    return bool(
+        job.rightsize_test_runs >= 3
+        and job.rightsize_output_validated
+        and job.rightsize_tested_workers is not None
+    )
 
 
 def failure_waste_saving(job: GlueJob, config: Config) -> Estimation:

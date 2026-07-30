@@ -281,9 +281,13 @@ class HistoryStore:
         identified = sum(
             o.portfolio_gain.monthly_expected
             for o in opportunities
-            if not o.estimated_gain.is_strategic
+            if o.include_in_portfolio
         )
-        realizable = sum(o.portfolio_gain.realizable_year for o in opportunities)
+        realizable = sum(
+            o.portfolio_gain.realizable_year
+            for o in opportunities
+            if o.include_in_portfolio
+        )
 
         rows = [
             [

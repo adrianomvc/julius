@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
+from verified_pricing import verified_config
+
 from julius.collection.collectors import redshift, sagemaker
 from julius.collection.models import (
     Account,
@@ -394,6 +396,7 @@ def test_idempotency_becomes_a_question_for_the_contextual_analysis():
 
 
 def test_a_polling_loop_without_counted_waits_claims_no_saving():
+    config = verified_config("stepfunctions")
     """A ASL prova a estrutura; só o histórico prova o custo."""
     account = Account(
         account_id="123456789012",
@@ -406,7 +409,7 @@ def test_a_polling_loop_without_counted_waits_claims_no_saving():
         ],
     )
 
-    found = stepfunctions_rules.detect(account, DEFAULT_CONFIG, "scan")
+    found = stepfunctions_rules.detect(account, config, "scan")
     polling = next(o for o in found if o.rule_id == "SFN-POLLING-LOOP")
 
     assert polling.blocked is True
@@ -415,7 +418,7 @@ def test_a_polling_loop_without_counted_waits_claims_no_saving():
 
     account.state_machines[0].poll_extra_transitions = 40
     account.state_machines[0].avg_state_transitions = 52
-    found = stepfunctions_rules.detect(account, DEFAULT_CONFIG, "scan")
+    found = stepfunctions_rules.detect(account, config, "scan")
     polling = next(o for o in found if o.rule_id == "SFN-POLLING-LOOP")
 
     assert polling.blocked is False

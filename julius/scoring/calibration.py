@@ -27,7 +27,7 @@ def apply_calibrations(
             minimum_samples=minimum_samples,
             opportunity=opportunity,
         )
-        if calibration is None or opportunity.estimated_gain.is_strategic:
+        if calibration is None or not opportunity.include_in_portfolio:
             continue
         _apply(opportunity, calibration, config)
 
