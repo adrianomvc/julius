@@ -140,6 +140,13 @@ class AthenaCoverage:
     # configurado, que é a informação que a regra precisa.
     workgroup_output_locations: dict[str, str] = field(default_factory=dict)
     workgroup_scan_cutoffs: dict[str, int | None] = field(default_factory=dict)
+    #: Por workgroup, de onde vieram os IDs de execução: `listing` quando o
+    #: `ListQueryExecutions` respondeu, `output_location` quando foi preciso
+    #: recuperá-los dos resultados gravados no S3. O alcance dos dois não é o
+    #: mesmo — o segundo só enxerga query que gravou resultado e ainda não foi
+    #: apagada por lifecycle —, então ler cobertura sem saber a origem é
+    #: comparar medições diferentes.
+    execution_source: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass

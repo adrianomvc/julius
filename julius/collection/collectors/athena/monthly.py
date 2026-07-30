@@ -60,7 +60,12 @@ def collect_analysis(
     telemetry = AthenaTelemetry(coverage)
 
     evidence = _collect_executions(
-        athena_client, coverage, window, max_ids_per_workgroup, telemetry
+        athena_client,
+        coverage,
+        window,
+        max_ids_per_workgroup,
+        telemetry,
+        s3_client=s3_client,
     )
     if evidence:
         coverage.oldest_submission = min(
@@ -101,6 +106,7 @@ def _collect_executions(
     window: AnalysisWindow,
     max_ids_per_workgroup: int | None,
     telemetry: AthenaTelemetry,
+    s3_client=None,
 ) -> list[AthenaExecutionEvidence]:
     telemetry.used("Athena API")
     workgroups, configs = executions_step.workgroups(
@@ -108,15 +114,29 @@ def _collect_executions(
     )
     evidence: list[AthenaExecutionEvidence] = []
     for workgroup in workgroups:
+        origem = "listing"
         ids, truncated = executions_step.execution_ids(
             athena_client,
             workgroup,
             max_ids=max_ids_per_workgroup,
             telemetry=telemetry,
         )
+        if ids is None:
+            # `ListQueryExecutions` é permissão à parte do `BatchGet`. Negá-la
+            # zerava o workgroup inteiro, embora os IDs estejam nos nomes dos
+            # resultados gravados e o `ProcessedBytes` venha da própria API.
+            origem = "output_location"
+            ids, truncated = executions_step.execution_ids_from_results(
+                s3_client,
+                coverage.workgroup_output_locations.get(workgroup, ""),
+                modified_after=window.start,
+                max_ids=max_ids_per_workgroup,
+                telemetry=telemetry,
+            )
         coverage.truncated = coverage.truncated or truncated
         if ids is None:
             continue
+        coverage.execution_source[workgroup] = origem
         coverage.workgroups_covered += 1
         for raw in executions_step.query_executions(
             athena_client, ids, telemetry

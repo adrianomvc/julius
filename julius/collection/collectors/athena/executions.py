@@ -14,6 +14,7 @@ from julius.collection.collectors.athena.evidence import (
     billable_bytes,
     fingerprints,
 )
+from julius.collection.collectors.s3_evidence import list_objects, parse_location
 from julius.collection.models import AthenaCoverage
 
 try:
@@ -91,6 +92,69 @@ def execution_ids(client, workgroup: str, *, max_ids: int | None, telemetry):
     except Exception as exc:
         telemetry.failed("Athena API", exc, detail=f"{workgroup}: list_query_executions")
         return None, False
+
+
+#: O Athena nomeia o resultado de cada query pelo próprio `QueryExecutionId`:
+#: `<id>.csv` e `<id>.csv.metadata` para SELECT, `<id>.txt` para DDL, às vezes
+#: sob subpasta de data. É por isso que os IDs sobrevivem à perda do
+#: `ListQueryExecutions` — eles estão nos nomes dos objetos.
+_RESULT_KEY = re.compile(
+    r"(?:^|/)([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})"
+    r"(?:\.[A-Za-z]+)*$"
+)
+
+
+def execution_ids_from_results(
+    s3_client,
+    location: str,
+    *,
+    modified_after=None,
+    max_ids: int | None,
+    telemetry,
+) -> tuple[list[str] | None, bool]:
+    """IDs recuperados do output location, quando a listagem é negada.
+
+    `ListQueryExecutions` é permissão à parte de `BatchGetQueryExecution`, e
+    negá-la zerava a fonte inteira: sem IDs não há o que buscar, e o Athena da
+    conta aparecia como se ninguém o usasse. Mas o `ProcessedBytes` de cada query
+    vem da resposta da própria API, não do CloudWatch — então basta recuperar os
+    IDs por outro caminho para a medição voltar.
+
+    O alcance é diferente e precisa ser dito: só aparece aqui a query que gravou
+    resultado, o bucket pode ter lifecycle apagando resultado antigo, e a
+    listagem custa requests de LIST. Por isso o resultado é marcado como origem
+    própria em vez de se passar pela listagem oficial.
+    """
+    if s3_client is None or not location:
+        return None, False
+    alvo = parse_location(location)
+    if alvo is None:
+        return None, False
+    bucket, prefix = alvo
+    objetos, completa = list_objects(
+        s3_client,
+        bucket,
+        prefix,
+        modified_after=modified_after,
+        max_objects=max_ids,
+    )
+    if not objetos and not completa:
+        telemetry.unavailable(
+            "Athena API",
+            category="permission_denied",
+            detail=f"{location}: listagem do output location não completou",
+        )
+        return None, False
+
+    vistos: dict[str, None] = {}
+    for item in objetos:
+        encontrado = _RESULT_KEY.search(str(item.get("Key") or ""))
+        if encontrado:
+            vistos.setdefault(encontrado.group(1), None)
+        if max_ids is not None and len(vistos) >= max_ids:
+            return list(vistos)[:max_ids], True
+    # Listagem cortada significa "pode haver mais execuções", não "não havia".
+    return list(vistos), not completa
 
 
 def query_executions(client, ids: list[str], telemetry):
