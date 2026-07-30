@@ -58,7 +58,7 @@ def opportunities(
     typer.echo(f"Recomendação: {a.vm.recommendation}\n")
     typer.echo(f"{'Exec':>4} {'Estrat':>6}  {'Bucket':<20} {'US$/mês':>9}  Oportunidade")
     for o in a.opportunities:
-        gain = o.estimated_gain.monthly_expected
+        gain = o.portfolio_gain.monthly_expected
         gain_s = f"{gain:,.2f}" if not o.estimated_gain.is_strategic else "estrat."
         typer.echo(
             f"{o.execution_priority:>4} {o.strategic_priority:>6}  "
@@ -76,6 +76,11 @@ def scan(
     artifacts_manifest: str = typer.Option(
         "", "--artifacts-manifest", help="Manifesto read-only de scripts Glue."
     ),
+    cadence: str = typer.Option(
+        "",
+        "--cadence",
+        help="weekly ou monthly; vazio preserva a cadência gravada no dataset.",
+    ),
 ) -> None:
     """Detecta, persiste o histórico e grava report.json."""
     with HistoryStore(history_db) as history:
@@ -84,6 +89,7 @@ def scan(
             store=BacklogStore(store) if store else None,
             history=history,
             artifacts_manifest=artifacts_manifest or None,
+            cadence=cadence or None,
         )
         history.export_parquet(parquet_dir)
     out = Path(output)
@@ -108,6 +114,11 @@ def portfolio(
     store: str = typer.Option(_DEFAULT_STORE, "--store", help="Backlog persistente (histórico)."),
     history_db: str = typer.Option(_DEFAULT_HISTORY, "--history-db", help="Histórico DuckDB."),
     parquet_dir: str = typer.Option(_DEFAULT_PARQUET, "--parquet-dir"),
+    cadence: str = typer.Option(
+        "",
+        "--cadence",
+        help="weekly ou monthly; vazio preserva a cadência dos datasets.",
+    ),
 ) -> None:
     """Roda o Julius em várias contas e agrega o portfólio (multi-conta)."""
     inputs = discover_inputs(input_dir)
@@ -118,6 +129,7 @@ def portfolio(
             inputs,
             store=BacklogStore(store) if store else None,
             history=history,
+            cadence=cadence or None,
         )
         history.export_parquet(parquet_dir)
 
@@ -140,6 +152,9 @@ def portfolio(
         "total_identified_monthly": p.total_identified_monthly,
         "total_realizable_year": p.total_realizable_year,
         "accounts": [asdict(r) for r in p.rollups],
+        "source_coverage": p.source_coverage,
+        "rule_coverage": p.rule_coverage,
+        "calibration_report": p.calibration_report,
     }
     (out / "portfolio_index.json").write_text(
         json.dumps(index, ensure_ascii=False, indent=2), encoding="utf-8"

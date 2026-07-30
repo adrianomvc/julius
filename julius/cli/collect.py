@@ -43,10 +43,34 @@ def collect(
             "cadastro de contas e depois pelo --sso-profile."
         ),
     ),
+    cadence: str = typer.Option(
+        "weekly",
+        "--cadence",
+        help="weekly usa 30 dias móveis; monthly usa um mês-calendário completo.",
+    ),
+    period: str = typer.Option(
+        "",
+        "--period",
+        help="Mês YYYY-MM para --cadence monthly; vazio usa o último mês completo.",
+    ),
     accounts_config: str = typer.Option(
         "~/.julius-accounts.json",
         "--accounts-config",
         help="Cadastro que relaciona nome lógico, Account ID e perfil SSO.",
+    ),
+    scope_profile: str = typer.Option(
+        "",
+        "--scope-profile",
+        help=(
+            "Perfil de escopo: consumer_datamesh ou full_analysis. "
+            "Vazio usa o cadastro; sem cadastro preserva full_analysis."
+        ),
+    ),
+    max_scan_cost: float | None = typer.Option(
+        None,
+        "--max-scan-cost",
+        min=0.0,
+        help="Orçamento estimado em USD; fontes opcionais param ao atingir o teto.",
     ),
     glue_databases: str = typer.Option(
         "",
@@ -77,9 +101,24 @@ def collect(
     from julius.collection.health.recorder import RequiredCollectionError
     from julius.collection.normalizers.dump import account_to_dataset
     from julius.collection.orchestrator import collect_account
+    from julius.collection.policy import policy_for_profile
     from julius.collection.sagemaker_history import carry_consistent_scans
     from julius.collection.scope import CatalogScope
-    from julius.collection.targets import resolve_account_name
+    from julius.collection.targets import resolve_account_name, resolve_scope_profile
+    from julius.collection.window import AnalysisWindow
+
+    if cadence not in {"weekly", "monthly"}:
+        raise typer.BadParameter("--cadence deve ser weekly ou monthly")
+    try:
+        analysis_window = (
+            AnalysisWindow.calendar_month(period)
+            if cadence == "monthly" and period
+            else AnalysisWindow.previous_calendar_month()
+            if cadence == "monthly"
+            else AnalysisWindow.trailing(days=lookback_days)
+        )
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
 
     session = make_session(sso_profile or None, "sa-east-1")
     resolved_account_name = resolve_account_name(
@@ -94,6 +133,16 @@ def collect(
         ),
     )
     try:
+        policy = policy_for_profile(
+            resolve_scope_profile(
+                explicit_profile=scope_profile,
+                sso_profile=sso_profile,
+                config_path=accounts_config,
+            )
+        )
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    try:
         account = collect_account(
             session,
             config=DEFAULT_CONFIG,
@@ -106,6 +155,10 @@ def collect(
             catalog_scope=scope,
             s3_full_listing=s3_full_listing,
             sagemaker_full_metrics=sagemaker_full_metrics,
+            scope_policy=policy,
+            max_scan_cost_usd=max_scan_cost,
+            window=analysis_window,
+            cadence=cadence,
         )
     except RequiredCollectionError as exc:
         raise typer.BadParameter(str(exc)) from exc
@@ -123,7 +176,8 @@ def collect(
     )
     typer.echo(
         f"Saúde da coleta: {account.collection_status} · "
-        f"{len(account.collection_health)} fontes registradas"
+        f"{len(account.collection_health)} fontes registradas · "
+        f"escopo {account.scope_profile}"
     )
     for line in slowest_sources(account.collection_health):
         typer.echo(line)

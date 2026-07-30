@@ -31,7 +31,7 @@ def compare(
 
     for fingerprint, opportunity in current_by_fp.items():
         old = previous_by_fp.get(fingerprint)
-        current_gain = opportunity.estimated_gain.monthly_expected
+        current_gain = opportunity.portfolio_gain.monthly_expected
         if old is None:
             events.append(
                 _event("new_opportunity", fingerprint, opportunity, current_value=current_gain)
@@ -90,7 +90,7 @@ def compare(
                         "reopened",
                         opportunity.fingerprint(),
                         opportunity,
-                        current_value=opportunity.estimated_gain.monthly_expected,
+                        current_value=opportunity.portfolio_gain.monthly_expected,
                     )
                 )
     return events

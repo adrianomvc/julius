@@ -41,6 +41,9 @@ OPERACOES_PERMITIDAS = {
     # Não lê nada que `get_metric_statistics` já não lesse — muda quantas idas à
     # AWS as mesmas onze métricas por job custam.
     "get_metric_data",
+    # Descobre as séries de integrações de serviço para somar falhas/timeouts;
+    # só lê metadados de métricas, limitado pelo coletor a 100 recursos.
+    "list_metrics",
     # Athena: histórico e configuração declarada.
     "batch_get_query_execution",
     "get_query_execution",

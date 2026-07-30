@@ -29,6 +29,7 @@ from julius.collection.models.assets import (
 )
 from julius.collection.models.athena import (
     AthenaActorUsage,
+    AthenaCapacityReservation,
     AthenaCoverage,
     AthenaQuery,
 )
@@ -64,6 +65,7 @@ __all__ = [
     "Account",
     "ActorEvent",
     "AthenaActorUsage",
+    "AthenaCapacityReservation",
     "AthenaCoverage",
     "AthenaQuery",
     "CollectionHealth",

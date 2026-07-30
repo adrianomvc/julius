@@ -6,6 +6,7 @@ import json
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
+from julius.collection.policy import CONSUMER_DATAMESH, policy_for_profile
 from julius.collection.session import make_session
 
 _AWS_REGION = "sa-east-1"
@@ -22,6 +23,7 @@ class AccountTarget:
     expected_account_id: str
     sso_profile: str
     enabled: bool
+    scope_profile: str = CONSUMER_DATAMESH
 
 
 @dataclass(frozen=True)
@@ -41,28 +43,38 @@ def load_account_targets(
     if not file_path.exists():
         raise FileNotFoundError(f"cadastro de contas não encontrado: {file_path}")
     raw = json.loads(file_path.read_text(encoding="utf-8"))
-    if not isinstance(raw, dict) or raw.get("schema_version") != "1.0":
-        raise AccountTargetError("schema_version do cadastro de contas deve ser 1.0")
+    if not isinstance(raw, dict) or raw.get("schema_version") not in {"1.0", "1.1"}:
+        raise AccountTargetError("schema_version do cadastro de contas deve ser 1.0 ou 1.1")
     items = raw.get("accounts")
     if not isinstance(items, list):
         raise AccountTargetError("accounts deve ser uma lista")
-    expected_fields = {"name", "expected_account_id", "sso_profile", "enabled"}
+    required_fields = {"name", "expected_account_id", "sso_profile", "enabled"}
+    allowed_fields = required_fields | {"scope_profile"}
     targets = []
     names: set[str] = set()
     profiles: set[str] = set()
     for item in items:
-        if not isinstance(item, dict) or set(item) != expected_fields:
+        if (
+            not isinstance(item, dict)
+            or not required_fields.issubset(item)
+            or not set(item).issubset(allowed_fields)
+        ):
             raise AccountTargetError(
                 "conta possui campos ausentes ou não permitidos"
             )
         if not isinstance(item["enabled"], bool):
             raise AccountTargetError("enabled deve ser booleano")
-        values = {key: item[key] for key in expected_fields - {"enabled"}}
+        values = {key: item[key] for key in required_fields - {"enabled"}}
         if not all(isinstance(value, str) for value in values.values()):
             raise AccountTargetError("campos da conta devem ser texto")
         name = item["name"].strip()
         account_id = item["expected_account_id"].strip()
         sso_profile = item["sso_profile"].strip()
+        scope_profile = str(item.get("scope_profile") or CONSUMER_DATAMESH).strip()
+        try:
+            policy_for_profile(scope_profile)
+        except ValueError as exc:
+            raise AccountTargetError(str(exc)) from exc
         if not name or name in names:
             raise AccountTargetError(f"nome de conta vazio ou duplicado: {name}")
         if not (account_id.isdigit() and len(account_id) == 12):
@@ -79,6 +91,7 @@ def load_account_targets(
                 expected_account_id=account_id,
                 sso_profile=sso_profile,
                 enabled=item["enabled"],
+                scope_profile=scope_profile,
             )
         )
     enabled = [target for target in targets if target.enabled]
@@ -108,6 +121,24 @@ def resolve_account_name(
             if target.sso_profile == profile:
                 return target.name
     return profile
+
+
+def resolve_scope_profile(
+    *,
+    explicit_profile: str = "",
+    sso_profile: str = "",
+    config_path: str | Path = DEFAULT_ACCOUNT_TARGETS_PATH,
+) -> str:
+    """CLI explícito vence cadastro; conta cadastrada antiga assume Consumer."""
+    if explicit_profile.strip():
+        return policy_for_profile(explicit_profile).profile
+    profile = sso_profile.strip()
+    path = Path(config_path).expanduser()
+    if profile and path.exists():
+        for target in load_account_targets(path, require_enabled=False):
+            if target.sso_profile == profile:
+                return target.scope_profile
+    return policy_for_profile(None).profile
 
 
 def verify_account_targets(

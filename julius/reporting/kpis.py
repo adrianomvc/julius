@@ -142,12 +142,12 @@ def compute_kpis(
     by_origin = _precision_by_origin(opportunities, labels)
 
     identified_monthly = sum(
-        opportunity.estimated_gain.monthly_expected
+        opportunity.portfolio_gain.monthly_expected
         for opportunity in opportunities
         if not opportunity.estimated_gain.is_strategic
     )
     committed_monthly = sum(
-        opportunity.estimated_gain.monthly_expected
+        opportunity.portfolio_gain.monthly_expected
         for opportunity in opportunities
         if not opportunity.estimated_gain.is_strategic
         and opportunity.status in {"accepted", "planned", "implemented", "validated"}

@@ -62,7 +62,7 @@ def build_agent_context(
     from julius.analysis.guardrails import PROMPT_VERSION
 
     return AgentContext(
-        schema_version="1.2",
+        schema_version="1.3",
         prompt_version=PROMPT_VERSION,
         account={
             "id": analysis.account.account_id,

@@ -108,6 +108,8 @@ class Candidato:
 
 def detect(account: Account, config: Config, scan_id: str) -> list[Opportunity]:
     """Só vira oportunidade quando dá para provar que o dado não é lido."""
+    if getattr(account, "s3_mode", "proposal") == "evidence_only":
+        return []
     out: list[Opportunity] = []
     for candidato in _candidatos(account, config):
         if not candidato.tem_evidencia_de_leitura:
@@ -150,11 +152,36 @@ def detect(account: Account, config: Config, scan_id: str) -> list[Opportunity]:
 
 def signals(account: Account, config: Config) -> list[Signal]:
     """Sem evidência de leitura, o achado é pergunta — não economia."""
+    if getattr(account, "s3_mode", "proposal") == "evidence_only":
+        return [_evidence_only_signal(item) for item in _candidatos(account, config)]
     return [
         _sinal(candidato, config)
         for candidato in _candidatos(account, config)
         if not candidato.tem_evidencia_de_leitura
     ]
+
+
+def _evidence_only_signal(candidato: Candidato) -> Signal:
+    prefixo = candidato.prefixo
+    return Signal(
+        kind="inventory_integrity",
+        rule_id=RULE_ID,
+        asset_type="s3_prefix",
+        asset_name=prefixo.location,
+        observation=(
+            f"{candidato.bytes_quentes / _GB:.1f} GB permanecem em classe quente "
+            f"sob '{prefixo.location}'."
+        ),
+        question=(
+            "O padrão de leitura/escrita indica ineficiência no processo produtor "
+            "ou consumidor que deve ser corrigida sem alterar o S3 diretamente?"
+        ),
+        missing_evidence=[
+            "processo produtor/consumidor responsável",
+            "padrão de acesso e requisito de retenção",
+        ],
+        doc_links=[_DOC_STORAGE_CLASS],
+    )
 
 
 # ---------------------------------------------------------------------------

@@ -15,6 +15,7 @@ import boto3
 from julius.collection.collectors.last_read import apply_last_read
 from julius.collection.health import CollectionRecorder, RequiredCollectionError
 from julius.collection.models import Account
+from julius.collection.policy import ScopePolicy, policy_for_profile
 from julius.collection.scope import CatalogScope
 from julius.collection.session import make_client
 from julius.collection.settings import ANALYSIS_WINDOW_DAYS
@@ -36,7 +37,11 @@ def collect_account(
     catalog_scope: CatalogScope | None = None,
     s3_full_listing: bool = False,
     sagemaker_full_metrics: bool = False,
+    scope_policy: ScopePolicy | None = None,
+    max_scan_cost_usd: float | None = None,
     now: datetime | None = None,
+    window: AnalysisWindow | None = None,
+    cadence: str = "weekly",
 ) -> Account:
     """Coleta uma conta. `config` chega de cima e não tem default aqui.
 
@@ -47,14 +52,21 @@ def collect_account(
     health = CollectionRecorder()
     # Duas janelas, construídas uma vez, ambas em UTC. Nenhum coletor volta a
     # decidir sozinho qual período está olhando.
-    window = AnalysisWindow.trailing(days=lookback_days, now=now)
+    window = window or AnalysisWindow.trailing(days=lookback_days, now=now)
     billing = BillingMonth.current(now=now)
 
     ident = _verified_identity(session, health, account_id)
+    policy = scope_policy or policy_for_profile(None)
     account = Account(
         account_id=ident,
+        scope_profile=policy.profile,
+        s3_mode=policy.s3_mode,
         region=session.region_name or "us-east-1",
         period=window.label,
+        cadence=cadence,
+        financial_period=(
+            window.start_date.strftime("%Y-%m") if cadence == "monthly" else ""
+        ),
         lookback_days=window.days,
         generated_at=window.end.date().isoformat(),
         window_start=window.start_date.isoformat(),
@@ -67,6 +79,9 @@ def collect_account(
         billing=billing,
         account=account,
         config=config,
+        scope_policy=policy,
+        telemetry=account.run_telemetry,
+        max_scan_cost_usd=max_scan_cost_usd,
         touches_table=touches_table,
         athena_workgroup=athena_workgroup,
         athena_output=athena_output,
@@ -97,6 +112,7 @@ def collect_account(
     _record_read_evidence(account, health)
 
     account.collection_health = health.entries
+    account.run_telemetry.estimate(config.pricing)
     return account
 
 

@@ -37,6 +37,9 @@ class OpportunityVM:
     category_fg: str
     category_bg: str
     monthly_fmt: str
+    technical_fmt: str
+    calibrated_fmt: str
+    calibration_note: str
     potential_fmt: str
     gain_class: str
     baseline_fmt: str
@@ -180,7 +183,8 @@ def _opp_vm(o: Opportunity, currency: str) -> OpportunityVM:
     diff_fg, diff_bg = fmt.difficulty_color(o.difficulty_score)
     conf_fg, conf_bg = fmt.confidence_color(o.confidence_label)
     bucket_fg, bucket_bg = fmt.BUCKET_COLORS.get(o.bucket, ("#5b6169", "#eef0ea"))
-    g = o.estimated_gain
+    technical = o.estimated_gain
+    g = o.portfolio_gain
     estimation = o.estimation
     saving_quality = estimation.saving_quality if estimation else "unavailable"
     baseline_quality = estimation.baseline_quality if estimation else "unavailable"
@@ -210,6 +214,8 @@ def _opp_vm(o: Opportunity, currency: str) -> OpportunityVM:
         monthly_fmt=(
             "Indisponível"
             if saving_unavailable
+            else fmt.money(g.monthly_expected, currency)
+            if o.calibrated_gain is not None
             else fmt.money(
                 estimation.estimated_saving if estimation else 0, currency
             )
@@ -217,6 +223,25 @@ def _opp_vm(o: Opportunity, currency: str) -> OpportunityVM:
             else fmt.money(g.monthly_expected, currency)
             if not g.is_strategic
             else "Estratégico"
+        ),
+        technical_fmt=(
+            "—"
+            if technical.is_strategic
+            else fmt.money(technical.monthly_expected, currency)
+        ),
+        calibrated_fmt=(
+            fmt.money(o.calibrated_gain.monthly_expected, currency)
+            if o.calibrated_gain is not None
+            else "Sem amostra suficiente"
+        ),
+        calibration_note=(
+            (
+                f"{o.calibration.sample_count} casos · fator "
+                f"{o.calibration.factor_expected:.3f} · "
+                f"{o.calibration.confidence} · {o.calibration.fallback_level}"
+            )
+            if o.calibration is not None
+            else ""
         ),
         potential_fmt=(
             fmt.money(estimation.estimated_saving, currency)
@@ -325,6 +350,7 @@ class ReportViewModel:
 
     total_cost_fmt: str
     identified_fmt: str
+    technical_identified_fmt: str
     high_conf_fmt: str
     realizable_year_fmt: str
     recommendation: str
@@ -388,6 +414,7 @@ class ReportViewModel:
     focus_ids: list[str] = field(default_factory=list)
     ai_signal_verdicts: list[dict] = field(default_factory=list)
     ai_uncovered_findings: list[dict] = field(default_factory=list)
+    ai_investigations: list[dict] = field(default_factory=list)
     athena_coverage: dict = field(default_factory=dict)
     athena_queries: list[dict] = field(default_factory=list)
     athena_actors: list[dict] = field(default_factory=list)
@@ -408,7 +435,7 @@ def _recommendation(do_now: list[Opportunity], currency: str) -> str:
             "nas oportunidades de maior potencial."
         )
     names = " e ".join(o.asset_name for o in picks)
-    combined = sum(o.estimated_gain.monthly_expected for o in picks)
+    combined = sum(o.portfolio_gain.monthly_expected for o in picks)
     return (
         f"Começar por {names} — mudanças isoladas, baixa dificuldade, economia combinada estimada de "
         f"{fmt.money(combined, currency)}/mês. Estimativa a validar após a mudança."
@@ -447,7 +474,7 @@ def _services(account: Account, opportunities: list[Opportunity]) -> tuple[list[
             continue
         svc = service_of.get(o.asset_type)
         if svc:
-            saving_by_service[svc] = saving_by_service.get(svc, 0.0) + o.estimated_gain.monthly_expected
+            saving_by_service[svc] = saving_by_service.get(svc, 0.0) + o.portfolio_gain.monthly_expected
             if o.estimation is not None:
                 saving_currency_by_service[svc] = o.estimation.currency
 
@@ -647,7 +674,7 @@ def _pareto_bar(pareto: Pareto, currency: str) -> list[dict]:
     total = pareto.monthly_total or 1.0
     segments: list[dict] = []
     for i, o in enumerate(pareto.financial_focus):
-        g = o.estimated_gain.monthly_expected
+        g = o.portfolio_gain.monthly_expected
         segments.append(
             {
                 "w": f"{g / total * 100:.1f}%",
@@ -830,17 +857,22 @@ def build(
 
     pareto: Pareto = compute_pareto(opportunities)
 
-    identified = sum(
+    technical_identified = sum(
         o.estimated_gain.monthly_expected
         for o in opportunities
         if not o.estimated_gain.is_strategic
     )
+    identified = sum(
+        o.portfolio_gain.monthly_expected
+        for o in opportunities
+        if not o.estimated_gain.is_strategic
+    )
     high_conf = sum(
-        o.estimated_gain.monthly_expected
+        o.portfolio_gain.monthly_expected
         for o in opportunities
         if not o.estimated_gain.is_strategic and o.confidence >= _HIGH_CONF
     )
-    realizable_year = sum(o.estimated_gain.realizable_year for o in opportunities)
+    realizable_year = sum(o.portfolio_gain.realizable_year for o in opportunities)
 
     do_now = [o for o in opportunities if o.bucket == "fazer_agora"]
     plan = [o for o in opportunities if o.bucket == "planejar"]
@@ -887,6 +919,9 @@ def build(
         currency=account_currency,
         total_cost_fmt=fmt.money(account.billing_cost_mtd, account_currency),
         identified_fmt=fmt.money(identified, saving_currency),
+        technical_identified_fmt=fmt.money(
+            technical_identified, saving_currency
+        ),
         high_conf_fmt=fmt.money(high_conf, saving_currency),
         realizable_year_fmt=fmt.money(realizable_year, saving_currency),
         recommendation=_recommendation(do_now, saving_currency),

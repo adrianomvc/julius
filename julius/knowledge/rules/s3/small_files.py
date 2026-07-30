@@ -33,6 +33,7 @@ from julius.findings.evidence import Evidence
 from julius.findings.finding import Finding
 from julius.findings.opportunity import Opportunity
 from julius.findings.recommendation import Recommendation
+from julius.findings.signal import Signal
 from julius.knowledge.rules.s3.request_cost import (
     request_estimation,
     request_evidence,
@@ -57,6 +58,45 @@ def detect(account: Account, config: Config, scan_id: str) -> list[Opportunity]:
         for prefixo in getattr(account, "s3_prefixes", None) or ()
         if _e_tabela_com_arquivo_pequeno(prefixo, config)
         and _nome_da_tabela(prefixo) not in ja_cobertas
+        and (
+            getattr(account, "s3_mode", "proposal") != "evidence_only"
+            or _processo_identificado(account, prefixo)
+        )
+    ]
+
+
+def _processo_identificado(account: Account, prefixo: S3Prefix) -> bool:
+    nome = _nome_da_tabela(prefixo)
+    if not nome:
+        return False
+    return any(
+        str(table.name).strip().lower() == nome
+        and bool(table.written_by or table.used_by_accounts)
+        for table in getattr(account, "tables", ()) or ()
+    )
+
+
+def signals(account: Account, config: Config) -> list[Signal]:
+    """No Consumer, arquivo pequeno sem processo conhecido é apenas evidência."""
+    if getattr(account, "s3_mode", "proposal") != "evidence_only":
+        return []
+    return [
+        Signal(
+            kind="inventory_integrity",
+            rule_id=RULE_ID,
+            asset_type="s3_prefix",
+            asset_name=prefixo.location,
+            observation=(
+                f"{prefixo.object_count} objetos com média de "
+                f"{(prefixo.average_object_bytes or 0) / _MB:.1f} MiB."
+            ),
+            question="Qual job ou consumidor deve compactar esses arquivos na origem?",
+            missing_evidence=["processo produtor ou consumidor da tabela"],
+            doc_links=[_DOC_PERFORMANCE, _DOC_COMPACTION],
+        )
+        for prefixo in getattr(account, "s3_prefixes", ()) or ()
+        if _e_tabela_com_arquivo_pequeno(prefixo, config)
+        and not _processo_identificado(account, prefixo)
     ]
 
 

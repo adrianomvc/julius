@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 import typer
 
 from julius.cli._shared import (
@@ -186,6 +188,11 @@ def validate_command(
     baseline_failure_rate: float | None = typer.Option(None, "--baseline-failure-rate"),
     after_failure_rate: float | None = typer.Option(None, "--after-failure-rate"),
     notes: str = typer.Option("", "--notes"),
+    output_equivalent: bool = typer.Option(
+        False,
+        "--output-equivalent",
+        help="Confirma que a saída funcional permaneceu equivalente.",
+    ),
     store: str = typer.Option(_DEFAULT_STORE, "--store"),
     history_db: str = typer.Option(_DEFAULT_HISTORY, "--history-db"),
     parquet_dir: str = typer.Option(_DEFAULT_PARQUET, "--parquet-dir"),
@@ -211,16 +218,28 @@ def validate_command(
         after_failure_rate=after_failure_rate,
         actor=actor,
         notes=notes,
+        output_equivalent=output_equivalent,
     )
     with HistoryStore(history_db) as history:
-        history.record_validation(result)
-        event = backlog.transition(
+        stable, stable_reason = history.validation_window_status(
             opportunity.fingerprint(),
-            "validated",
-            actor=actor,
-            reason=notes or "benefício realizado medido",
+            analysis.account.financial_period,
         )
-        history.record_lifecycle_event(event)
+        if analysis.account.cadence != "monthly":
+            stable = False
+            stable_reason = "validação financeira oficial exige --cadence monthly"
+        if result.eligible_for_calibration and not stable:
+            result = replace(result, eligible_for_calibration=False)
+        history.record_validation(result)
+        event = None
+        if result.eligible_for_calibration:
+            event = backlog.transition(
+                opportunity.fingerprint(),
+                "validated",
+                actor=actor,
+                reason=notes or "benefício realizado normalizado e validado",
+            )
+            history.record_lifecycle_event(event)
         calibration = history.calibration_for(opportunity.rule_id)
         history.export_parquet(parquet_dir)
     typer.echo(
@@ -233,6 +252,12 @@ def validate_command(
             f"Calibração {opportunity.rule_id}: fator {calibration.factor:.3f} "
             f"({calibration.sample_count} amostras)"
         )
+    if not result.eligible_for_calibration:
+        typer.echo(
+            "Comparação registrada como pendente: informe volumes comparáveis, "
+            "--output-equivalent e preserve desempenho/falhas para validar."
+        )
+        typer.echo(f"Janela financeira: {stable_reason}")
 
 
 def _opportunity_by_id(analysis, opportunity_id: str):

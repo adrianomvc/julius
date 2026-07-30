@@ -23,11 +23,12 @@ from __future__ import annotations
 
 import json
 from collections.abc import Sequence
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Protocol
 
+from julius.findings.investigation import AIEstimationProposal, AIRecommendation
 from julius.findings.signal import Signal
 
 
@@ -43,6 +44,8 @@ class Verdict(Protocol):
     asset_name: str
     verdict: str
     rationale: str
+    recommendation: AIRecommendation | None
+    estimation_proposal: AIEstimationProposal | None
 
 #: `needs_evidence` mantém o sinal no pacote porque a pergunta segue de pé.
 #: `confirmed` também, mas só até a promoção acontecer: a partir daí quem
@@ -67,6 +70,9 @@ class SignalDecision:
     prompt_version: str
     decided_at: str
     promoted: bool = False
+    status: str = "open"
+    recommendation: AIRecommendation | None = None
+    estimation_proposal: AIEstimationProposal | None = None
 
 
 @dataclass
@@ -122,6 +128,8 @@ class SignalLedger:
                 continue
             fingerprint = signal.fingerprint(account)
             previous = store.get(fingerprint) or {}
+            recommendation = getattr(verdict, "recommendation", None)
+            proposal = getattr(verdict, "estimation_proposal", None)
             store[fingerprint] = {
                 "account": account,
                 "rule_id": signal.rule_id,
@@ -137,6 +145,19 @@ class SignalLedger:
                 # promoção já feita; o achado promovido tem vida própria no
                 # backlog a partir daí.
                 "promoted": bool(previous.get("promoted")),
+                "status": (
+                    "candidate"
+                    if verdict.verdict == "confirmed"
+                    else "needs_evidence"
+                    if verdict.verdict == "needs_evidence"
+                    else "rejected"
+                ),
+                "recommendation": (
+                    asdict(recommendation) if recommendation is not None else None
+                ),
+                "estimation_proposal": (
+                    asdict(proposal) if proposal is not None else None
+                ),
             }
             recorded += 1
         self._save(store)
@@ -152,9 +173,7 @@ class SignalLedger:
                 result.open.append(signal)
                 continue
             verdict = str(entry.get("verdict") or "")
-            if verdict in _KEEPS_OPEN or (
-                verdict == "confirmed" and not entry.get("promoted")
-            ):
+            if verdict in _KEEPS_OPEN:
                 result.open.append(signal)
                 continue
             if str(entry.get("evidence_hash") or "") != signal.evidence_signature():
@@ -206,4 +225,15 @@ def _decision(fingerprint: str, entry: dict) -> SignalDecision:
         prompt_version=str(entry.get("prompt_version") or ""),
         decided_at=str(entry.get("decided_at") or ""),
         promoted=bool(entry.get("promoted")),
+        status=str(entry.get("status") or "open"),
+        recommendation=(
+            AIRecommendation(**entry["recommendation"])
+            if isinstance(entry.get("recommendation"), dict)
+            else None
+        ),
+        estimation_proposal=(
+            AIEstimationProposal(**entry["estimation_proposal"])
+            if isinstance(entry.get("estimation_proposal"), dict)
+            else None
+        ),
     )

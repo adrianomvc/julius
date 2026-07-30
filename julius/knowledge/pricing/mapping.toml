@@ -55,6 +55,11 @@ service = "AWSStepFunctions"
 match = { group = "SFN-ExpressWorkflows-Requests" }
 pick = "min"
 
+[stepfunctions.express_per_gb_second]
+service = "AWSStepFunctions"
+match = { group = "SFN-ExpressWorkflows-Duration" }
+pick = "min"
+
 # S3 — a única seção cuja tarifa é usada para COMPARAR duas opções, e não para
 # modelar um custo. O rateio do Cost Explorer diz quanto o armazenamento custa
 # hoje; ele não diz quanto custaria em Glacier. Recomendar transição de classe

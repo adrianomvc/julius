@@ -29,7 +29,7 @@ class Pareto:
 
 
 def _monthly(o: Opportunity) -> float:
-    return o.estimated_gain.monthly_expected
+    return o.portfolio_gain.monthly_expected
 
 
 def compute(opportunities: list[Opportunity]) -> Pareto:

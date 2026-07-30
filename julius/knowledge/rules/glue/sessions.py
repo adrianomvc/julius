@@ -26,26 +26,25 @@ def detect(account: Account, config: Config, scan_id: str) -> list[Opportunity]:
         if not (idle_high and actually_idle):
             continue
         est = sess_est.idle_saving(s, config)
-        target_dpu = max(th.session_min_dpu, min(s.dpu, th.session_min_dpu))
         out.append(
             build(
                 Finding(
                     asset_type="glue_session",
                     asset_name=s.session_id,
-                    rule_id="GLUE-IS-IDLE",
-                    rule_version="1.0.0",
+                    rule_id="GLUE-IS-IDLE-TIMEOUT",
+                    rule_version="2.0.0",
                     title="Sessão interativa ociosa",
                     why=(
                         f"Sessões ficam READY ociosas ~{s.idle_hours_per_day:.1f}h/dia; "
-                        f"idle_timeout={s.idle_timeout_min} min (default) e DPU={s.dpu}."
+                        f"idle_timeout={s.idle_timeout_min} min."
                     ),
                 ),
                 Recommendation(
                     difficulty=1,
-                    action="Reduzir idle_timeout e a DPU da sessão",
+                    action="Reduzir somente o idle_timeout da sessão",
                     how_to_apply=(
-                        f"Ajustar %idle_timeout para 60 min (era {s.idle_timeout_min}) "
-                        f"e revisar DPU {s.dpu}→{target_dpu}."
+                        f"Ajustar %idle_timeout para 60 min "
+                        f"(era {s.idle_timeout_min})."
                     ),
                     how_to_validate="Medir tempo READY ocioso e DPU-h por sessão na próxima semana.",
                     risks=["perder estado da sessão em uso ativo"],
@@ -55,7 +54,7 @@ def detect(account: Account, config: Config, scan_id: str) -> list[Opportunity]:
                     items=[
                         f"idle_timeout={s.idle_timeout_min} min (default)",
                         f"média {s.idle_hours_per_day:.1f}h READY ocioso/dia",
-                        f"DPU={s.dpu} (mín. útil {th.session_min_dpu})",
+                        f"DPU={s.dpu} mantida no contrafactual",
                     ],
                     sources=["Glue GetSession", "CloudWatch"],
                     observed_runs=max(s.observed_runs, s.active_days_per_month),

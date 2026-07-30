@@ -43,6 +43,7 @@ class StateMachine:
     """Step Functions state machine."""
 
     name: str
+    arn: str = ""
     type: str = "STANDARD"                 # STANDARD | EXPRESS
     executions_per_month: int = 0
     # `None` = histórico não amostrado. Zero seria uma afirmação — a de que a
@@ -69,6 +70,24 @@ class StateMachine:
     # Falso quando `ListExecutions` foi negado: `executions_per_month` e
     # `avg_duration_sec` são zero por falta de leitura, não por falta de uso.
     execution_history_available: bool = True
+    # Contrafactual opcional, preenchido apenas por benchmark externo aprovado.
+    # O Julius nunca executa esse benchmark nem inventa memória a partir da ASL.
+    express_benchmark_duration_ms: int | None = None
+    express_benchmark_memory_mb: int | None = None
+    failed_executions: int = 0
+    timed_out_executions: int = 0
+    aborted_executions: int = 0
+    throttled_events: int = 0
+    redriven_executions: int = 0
+    open_executions_max: int = 0
+    distributed_map_backlog: int = 0
+    service_integration_failures: int = 0
+    duration_p95_ms: float | None = None
+    avg_failed_state_transitions: int | None = None
+    avg_retry_transitions: int | None = None
+    cw_failed_executions: int = 0
+    cw_timed_out_executions: int = 0
+    cw_aborted_executions: int = 0
 
 
 @dataclass

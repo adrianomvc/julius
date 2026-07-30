@@ -3,7 +3,7 @@ ciclo de vida/diff → persistência → KPIs → view model."""
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from datetime import date
 from pathlib import Path
 from typing import Any
@@ -19,12 +19,13 @@ from julius.collection.models import Account, CollectionHealth, PreviousResult
 from julius.collection.normalizers import load_account
 from julius.config import DEFAULT_CONFIG, Config
 from julius.findings.grouping import group_by_asset
+from julius.findings.investigation import ContextualEstimate, Investigation
 from julius.findings.lifecycle import transition
 from julius.findings.opportunity import Opportunity
-from julius.findings.promotion import promote
 from julius.findings.signal import Signal
 from julius.governance import compute_candidates
 from julius.graph import ProcessGraph, build_process_graph, enrich_opportunities
+from julius.knowledge.contextual_estimation import evaluate_proposal
 from julius.knowledge.managed_processes import is_managed, managed_asset_names
 from julius.knowledge.recurrence import (
     consumption_dpu_hours,
@@ -70,6 +71,7 @@ class Analysis:
     # Hipóteses que nenhuma regra fecha sozinha; não entram no backlog nem no
     # ranking, seguem para a análise contextual.
     signals: list[Signal] = field(default_factory=list)
+    investigations: list[Investigation] = field(default_factory=list)
 
 
 def analyze(
@@ -83,8 +85,15 @@ def analyze(
     scan_id: str | None = None,
     artifacts_manifest: str | Path | None = None,
     ledger: SignalLedger | None = None,
+    cadence: str | None = None,
 ) -> Analysis:
     account = load_account(input_path)
+    if cadence is not None:
+        if cadence not in {"weekly", "monthly"}:
+            raise ValueError("cadence deve ser weekly ou monthly")
+        account.cadence = cadence
+        if cadence == "monthly" and not account.financial_period:
+            account.financial_period = account.window_start[:7]
     code_artifacts = (
         load_glue_artifacts(artifacts_manifest, account.account_id)
         if artifacts_manifest
@@ -171,12 +180,15 @@ def analyze_account(
         ]
         opportunities += code_opportunities
         signals += code_signals
-    # O que a análise contextual já julgou não volta a ser perguntado, e o que
-    # ela sustentou vira achado rastreável em vez de morrer numa linha de
-    # relatório.
+    protected_signal_keys = {
+        (signal.asset_type, signal.asset_name, signal.rule_id) for signal in signals
+    }
+    investigations: list[Investigation] = []
+    # O que a análise contextual já julgou passa para uma fila de investigação
+    # separada. Confirmação contextual não cria dinheiro nem backlog.
     if ledger is not None:
-        opportunities += _promote_confirmed(
-            ledger, signals, account.account_id, config, scan_id
+        investigations = _build_investigations(
+            ledger, signals, account, config
         )
         signals = ledger.suppress(signals, account.account_id).open
     # Processo da plataforma sai daqui, e não da coleta: ele continua no
@@ -209,6 +221,21 @@ def analyze_account(
     apply_conservative_caps(account, opportunities, config, today=today)
     if history is not None:
         apply_calibrations(opportunities, history, config)
+        signals.extend(
+            Signal(
+                kind="trend",
+                rule_id="EFFICIENCY-REGRESSION",
+                asset_type=f"{item['service']}_process",
+                asset_name=item["process"],
+                observation=(
+                    f"{item['metric']} subiu {item['change']:.1%}: "
+                    f"{item['previous']} → {item['current']} {item['unit']}."
+                ),
+                question="O volume ou resultado útil caiu enquanto o custo unitário subiu?",
+                missing_evidence=["volume útil comparável e mudança de demanda"],
+            )
+            for item in history.efficiency_regressions(account)
+        )
     # Ordena por prioridade de execução, com desempate determinístico.
     opportunities.sort(key=lambda o: (o.execution_priority, *tiebreak_key(o)), reverse=True)
 
@@ -216,11 +243,21 @@ def analyze_account(
     reconciliation = Reconciliation()
     # Persistência: preserva status, reabre por evidência e detecta desaparecidas.
     if store is not None:
+        from julius.knowledge.rules import disabled_rule_ids
+
         reconciliation = store.reconcile(
             opportunities,
             scan_id,
             today,
             account_id=account.account_id,
+            ignored_rule_ids=disabled_rule_ids(account),
+            protected_signal_keys=frozenset(
+                protected_signal_keys
+                | {
+                    (signal.asset_type, signal.asset_name, signal.rule_id)
+                    for signal in signals
+                }
+            ),
         )
 
     events = compare(previous, opportunities, reconciliation)
@@ -288,6 +325,7 @@ def analyze_account(
         # Declara os ativos derivados junto: quem lê o manifesto precisa poder
         # explicar por que um prefixo S3 específico não aparece no relatório.
         managed_processes=sorted(gerenciados),
+        opportunity_count=len(opportunities),
     )
     vm = build_vm(account, opportunities, manifest)
     vm.diff_events = [
@@ -316,6 +354,28 @@ def analyze_account(
         )
         if value is not None
     ]
+    vm.ai_investigations = [
+        {
+            "fingerprint": item.fingerprint,
+            "rule_id": item.rule_id,
+            "asset_type": item.asset_type,
+            "asset_name": item.asset_name,
+            "status": item.status,
+            "rationale": item.rationale,
+            "recommendation": (
+                asdict(item.recommendation) if item.recommendation else None
+            ),
+            "estimation_proposal": (
+                asdict(item.proposal) if item.proposal else None
+            ),
+            "contextual_estimate": (
+                asdict(item.estimate) if item.estimate else None
+            ),
+            "include_in_portfolio": False,
+            "classification": "ai_estimate",
+        }
+        for item in investigations
+    ]
     return Analysis(
         account=account,
         opportunities=opportunities,
@@ -326,6 +386,7 @@ def analyze_account(
         events=events,
         reconciliation=reconciliation,
         signals=signals,
+        investigations=investigations,
     )
 
 
@@ -468,40 +529,58 @@ def _non_recurrent_signal(asset_type: str, process: Any, minimo: int) -> Signal:
     )
 
 
-def _promote_confirmed(
+def _build_investigations(
     ledger: SignalLedger,
     signals: list[Signal],
-    account_id: str,
+    account: Account,
     config: Config,
-    scan_id: str,
-) -> list[Opportunity]:
-    """Confirmados que ainda não estavam no backlog entram nele agora.
-
-    A promoção acontece uma vez por sinal: `mark_promoted` fecha a porta, e a
-    partir daí o achado tem vida própria — se ele desaparecer do inventário,
-    quem decide é a reconciliação do backlog, não um novo veredito.
-    """
-    pending = {item.fingerprint: item for item in ledger.pending_promotions(account_id)}
-    if not pending:
-        return []
-    promoted: list[Opportunity] = []
-    done: list[str] = []
-    for signal in signals:
-        decision = pending.get(signal.fingerprint(account_id))
-        if decision is None:
+) -> list[Investigation]:
+    by_fingerprint = {
+        signal.fingerprint(account.account_id): signal for signal in signals
+    }
+    out = []
+    for decision in ledger.decisions_for(account.account_id):
+        signal = by_fingerprint.get(decision.fingerprint)
+        if signal is None or decision.verdict == "rejected":
             continue
-        promoted.append(
-            promote(
-                signal,
-                decision.rationale,
-                account=account_id,
-                config=config,
-                scan_id=scan_id,
+        estimate = None
+        status = decision.status
+        if decision.estimation_proposal is not None:
+            try:
+                estimate = evaluate_proposal(
+                    account, signal, decision.estimation_proposal, config
+                )
+                status = (
+                    "candidate"
+                    if estimate.status == "estimated"
+                    else "needs_evidence"
+                )
+            except ValueError as exc:
+                estimate = ContextualEstimate(
+                    method=decision.estimation_proposal.method,
+                    status="rejected",
+                    missing_evidence=[str(exc)],
+                )
+                status = "rejected"
+        out.append(
+            Investigation(
+                fingerprint=decision.fingerprint,
+                account=decision.account,
+                rule_id=decision.rule_id,
+                asset_type=decision.asset_type,
+                asset_name=decision.asset_name,
+                status=status,
+                rationale=decision.rationale,
+                recommendation=decision.recommendation,
+                proposal=decision.estimation_proposal,
+                estimate=estimate,
+                evidence_hash=decision.evidence_hash,
+                scan_id=decision.scan_id,
+                prompt_version=decision.prompt_version,
+                decided_at=decision.decided_at,
             )
         )
-        done.append(decision.fingerprint)
-    ledger.mark_promoted(done)
-    return promoted
+    return out
 
 
 def _merge_validations(account: Account, rows: list[dict]) -> None:

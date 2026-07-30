@@ -13,6 +13,7 @@ from julius.collection.models import (
     Account,
     ActorEvent,
     AthenaActorUsage,
+    AthenaCapacityReservation,
     AthenaCoverage,
     AthenaQuery,
     CollectionHealth,
@@ -53,6 +54,7 @@ from julius.collection.models import (
     Table,
 )
 from julius.collection.settings import ANALYSIS_WINDOW_DAYS, DATASET_SCHEMA_VERSION
+from julius.collection.telemetry import ApiCallStat, RunTelemetry
 
 
 def _pick(d: dict, cls):
@@ -127,8 +129,12 @@ def load_account(path: str | Path) -> Account:
     if version != DATASET_SCHEMA_VERSION:
         raise UnsupportedDatasetVersionError(version)
     window = raw.get("window") or {}
+    scope = raw.get("scope") or {}
     account = Account(
         account_id=raw["account"],
+        # Dataset anterior à política mantém a cobertura histórica completa.
+        scope_profile=str(scope.get("profile") or "full_analysis"),
+        s3_mode=str(scope.get("s3_mode") or "proposal"),
         region=raw.get("region", "sa-east-1"),
         period=raw.get("period", ""),
         lookback_days=raw.get("lookback_days", ANALYSIS_WINDOW_DAYS),
@@ -166,6 +172,19 @@ def load_account(path: str | Path) -> Account:
         _pick(p, ProcessCost) for p in raw.get("process_costs", [])
     ]
     account.athena_queries = [_pick(q, AthenaQuery) for q in raw.get("athena_queries", [])]
+    account.athena_capacity_reservations = [
+        _pick(r, AthenaCapacityReservation)
+        for r in raw.get("athena_capacity_reservations", [])
+    ]
+    telemetry = raw.get("run_telemetry") or {}
+    account.run_telemetry = RunTelemetry(
+        api_calls={
+            key: _pick(value, ApiCallStat)
+            for key, value in (telemetry.get("api_calls") or {}).items()
+        },
+        estimated_cost_usd=float(telemetry.get("estimated_cost_usd") or 0),
+        unpriced_operations=list(telemetry.get("unpriced_operations") or []),
+    )
     if raw.get("athena_coverage"):
         account.athena_coverage = _pick(raw["athena_coverage"], AthenaCoverage)
     if raw.get("glue_cost_coverage"):
@@ -176,6 +195,19 @@ def load_account(path: str | Path) -> Account:
         _pick(a, AthenaActorUsage) for a in raw.get("athena_actor_usage", [])
     ]
     account.state_machines = [_pick(s, StateMachine) for s in raw.get("state_machines", [])]
+    stepfunctions_operational = raw.get("stepfunctions_operational") or {}
+    account.stepfunctions_map_backlog = int(
+        stepfunctions_operational.get("map_backlog") or 0
+    )
+    account.stepfunctions_open_executions = int(
+        stepfunctions_operational.get("open_executions") or 0
+    )
+    account.stepfunctions_service_integration_failures = int(
+        stepfunctions_operational.get("service_integration_failures") or 0
+    )
+    account.stepfunctions_service_integration_timeouts = int(
+        stepfunctions_operational.get("service_integration_timeouts") or 0
+    )
     account.sagemaker_apps = [_pick(a, SageMakerApp) for a in raw.get("sagemaker_apps", [])]
     account.sagemaker_spaces = [
         _pick(s, SageMakerSpace) for s in raw.get("sagemaker_spaces", [])

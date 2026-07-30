@@ -57,6 +57,8 @@ _RULE_BY_KIND = {
 
 
 def detect(account: Account, config: Config, scan_id: str) -> list[Opportunity]:
+    if getattr(account, "s3_mode", "proposal") == "evidence_only":
+        return []
     out: list[Opportunity] = []
     custo_por_byte = _storage_cost_per_byte(account)
     for prefixo in getattr(account, "s3_prefixes", []):
@@ -293,6 +295,45 @@ def _estimation_por_bytes(
 def signals(account: Account, config: Config) -> list[Signal]:
     """O que o tamanho mostra e não decide."""
     out: list[Signal] = []
+    if getattr(account, "s3_mode", "proposal") == "evidence_only":
+        for prefixo in getattr(account, "s3_prefixes", []):
+            if prefixo.kind in _RULE_BY_KIND and _tem_lixo(prefixo, config):
+                rule_id, _, _, doc = _RULE_BY_KIND[prefixo.kind]
+                out.append(
+                    Signal(
+                        kind="inventory_integrity",
+                        rule_id=rule_id,
+                        asset_type="s3_prefix",
+                        asset_name=prefixo.location,
+                        observation=(
+                            f"{prefixo.stale_object_count} objetos antigos somam "
+                            f"{(prefixo.stale_bytes or 0) / _GB:.2f} GB."
+                        ),
+                        question=(
+                            "Qual processo produtor deixou este resíduo e como "
+                            "corrigir seu encerramento ou retenção na origem?"
+                        ),
+                        missing_evidence=["processo produtor e política de retenção"],
+                        doc_links=[doc],
+                    )
+                )
+        for upload in getattr(account, "s3_multipart", []):
+            if _multipart_relevante(upload, config):
+                out.append(
+                    Signal(
+                        kind="inventory_integrity",
+                        rule_id="S3-INCOMPLETE-MULTIPART",
+                        asset_type="s3_bucket",
+                        asset_name=upload.bucket,
+                        observation=(
+                            f"{upload.upload_count} uploads multipart permanecem "
+                            f"abertos; o mais antigo há {upload.oldest_age_days} dias."
+                        ),
+                        question="Qual produtor não finaliza corretamente seus uploads?",
+                        missing_evidence=["processo produtor do upload"],
+                        doc_links=[_DOC_MULTIPART],
+                    )
+                )
     for bucket in getattr(account, "s3_buckets", []):
         if bucket.versioning_enabled:
             out.append(

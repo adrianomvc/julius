@@ -21,6 +21,8 @@ from julius.findings.lifecycle import LifecycleEvent, transition
 from julius.findings.opportunity import Opportunity
 from julius.scoring import priority as prioritizer
 
+_LEGACY_RULE_IDS = {"GLUE-IS-IDLE-TIMEOUT": "GLUE-IS-IDLE"}
+
 
 @dataclass
 class Reconciliation:
@@ -56,6 +58,8 @@ class BacklogStore:
         scan_id: str,
         today: date | None = None,
         account_id: str | None = None,
+        ignored_rule_ids: frozenset[str] = frozenset(),
+        protected_signal_keys: frozenset[tuple[str, str, str]] = frozenset(),
     ) -> Reconciliation:
         """Atualiza first_seen/last_seen (in place) e devolve o diff. Persiste o backlog."""
         today = today or date.today()
@@ -68,6 +72,21 @@ class BacklogStore:
             fp = o.fingerprint()
             seen.add(fp)
             prev = store.get(fp)
+            if prev is None and o.rule_id in _LEGACY_RULE_IDS:
+                legacy_rule = _LEGACY_RULE_IDS[o.rule_id]
+                legacy_fp = next(
+                    (
+                        key
+                        for key, entry in store.items()
+                        if entry.get("account") == o.account
+                        and entry.get("asset_type") == o.asset_type
+                        and entry.get("asset_name") == o.asset_name
+                        and entry.get("rule_id") == legacy_rule
+                    ),
+                    None,
+                )
+                if legacy_fp is not None:
+                    prev = store.pop(legacy_fp)
             if prev:
                 o.first_seen = prev.get("first_seen", stamp)
                 previous_status = prev.get("status", o.status)
@@ -102,7 +121,7 @@ class BacklogStore:
                 ):
                     rec.suppressed.append(fp)
                 previous_gain = float(prev.get("monthly_expected") or 0.0)
-                current_gain = o.estimated_gain.monthly_expected
+                current_gain = o.portfolio_gain.monthly_expected
                 if previous_gain > 0 and current_gain > previous_gain * 1.2:
                     ratio = min(1.5, current_gain / previous_gain)
                     o.urgency = max(o.urgency, float(prev.get("urgency") or 1.0) * ratio)
@@ -121,7 +140,8 @@ class BacklogStore:
                 "first_seen": o.first_seen,
                 "last_seen": stamp,
                 "last_scan_id": scan_id,
-                "monthly_expected": o.estimated_gain.monthly_expected,
+                "monthly_expected": o.portfolio_gain.monthly_expected,
+                "technical_monthly_expected": o.estimated_gain.monthly_expected,
                 "status": o.status,
                 "urgency": o.urgency,
                 "evidence_hash": o.evidence_signature(),
@@ -133,6 +153,14 @@ class BacklogStore:
             accounts.add(account_id)
         for fp, entry in list(store.items()):
             if fp not in seen and entry.get("account") in accounts:
+                if entry.get("rule_id") in ignored_rule_ids:
+                    continue
+                if (
+                    str(entry.get("asset_type") or ""),
+                    str(entry.get("asset_name") or ""),
+                    str(entry.get("rule_id") or ""),
+                ) in protected_signal_keys:
+                    continue
                 if entry.get("status") not in (
                     "resolved",
                     "expired",

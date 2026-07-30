@@ -71,6 +71,7 @@ class Pricing:
     # Step Functions: USD/state transition (Standard) e USD/request (Express).
     sfn_standard_per_transition: float = 0.000025
     sfn_express_per_request: float = 0.000001
+    sfn_express_per_gb_second: float = 0.00001667
     # Mantido apenas para ler tabelas antigas. Não é usado como fallback:
     # preço ausente bloqueia a cifra da recomendação.
     sagemaker_default_hourly: float = 0.18
@@ -144,6 +145,9 @@ class Pricing:
             athena_per_tb_usd=float(athena["per_tb"]),
             sfn_standard_per_transition=float(sfn["standard_per_transition"]),
             sfn_express_per_request=float(sfn["express_per_request"]),
+            sfn_express_per_gb_second=float(
+                sfn.get("express_per_gb_second", 0.00001667)
+            ),
             sagemaker_default_hourly=float(sagemaker.get("default_hourly", 0.18)),
             sagemaker_instances={
                 str(name): float(value)

@@ -25,6 +25,20 @@ class EstimatedGain:
     is_strategic: bool = False  # ganho não financeiro (ex.: migração)
 
 
+@dataclass(frozen=True)
+class CalibrationMetadata:
+    """Como o histórico transformou o potencial técnico em expectativa."""
+
+    factor_low: float
+    factor_expected: float
+    factor_high: float
+    sample_count: int
+    median_error: float
+    confidence: str
+    segment: str
+    fallback_level: str
+
+
 @dataclass
 class Estimation:
     """Registro auditável do cálculo financeiro (por detector, versionado)."""
@@ -101,6 +115,11 @@ class Opportunity:
     downstream_consumers: int = 0
     process_criticality: float = 0.0
     calibration_factor: float = 1.0
+    # `estimated_gain` é sempre a estimativa técnica original. A calibração
+    # vive separada para que auditoria e validação nunca aprendam sobre um
+    # número que já foi alterado pelo próprio aprendizado.
+    calibrated_gain: EstimatedGain | None = None
+    calibration: CalibrationMetadata | None = None
 
     # Evidência / cobertura.
     evidence_coverage: float = 0.0
@@ -132,6 +151,11 @@ class Opportunity:
     status: str = "detected"
     first_seen: str = ""
     last_seen: str = ""
+
+    @property
+    def portfolio_gain(self) -> EstimatedGain:
+        """Valor usado em ranking e totais, sem apagar o potencial técnico."""
+        return self.calibrated_gain or self.estimated_gain
 
     def fingerprint(self, scope: str = "default") -> str:
         raw = f"{self.account}|{self.asset_type}:{self.asset_name}|{self.rule_id}|{scope}"

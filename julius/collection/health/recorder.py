@@ -120,6 +120,21 @@ class CollectionRecorder:
             )
         )
 
+    def not_applicable(self, source: str, *, reason: str) -> None:
+        """Registra fonte fora do perfil sem tratá-la como falha de cobertura."""
+        now = datetime.now(timezone.utc).isoformat()
+        self.entries.append(
+            CollectionHealth(
+                source=source,
+                status="not_applicable",
+                affects_status=False,
+                started_at=now,
+                completed_at=now,
+                error_category="out_of_scope",
+                impact=reason,
+            )
+        )
+
 
 def error_category(exc: Exception) -> str:
     """Mapeia exceções para categorias estáveis sem persistir mensagens."""

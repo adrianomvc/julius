@@ -361,31 +361,22 @@ def _state_machine(**overrides) -> StateMachine:
 
 
 def test_express_candidate_no_longer_dies_on_an_uncollected_field():
-    """`idempotent` nunca foi preenchido pelo coletor: a regra não disparava."""
+    """Sem benchmark/idempotência o candidato fica como sinal sem economia."""
     account = Account(
         account_id="123456789012", state_machines=[_state_machine(idempotent=None)]
     )
 
     found = stepfunctions_rules.detect(account, DEFAULT_CONFIG, "scan")
-    express = next(o for o in found if o.rule_id == "SFN-STANDARD-TO-EXPRESS")
+    signals = stepfunctions_rules.signals(account, DEFAULT_CONFIG)
+    assert not any(o.rule_id == "SFN-STANDARD-TO-EXPRESS" for o in found)
+    express = next(s for s in signals if s.rule_id == "SFN-STANDARD-TO-EXPRESS")
+    assert any("idempotência" in item for item in express.missing_evidence)
+    assert any("benchmark" in item for item in express.missing_evidence)
 
-    assert express.estimated_gain.monthly_expected >= 0
-    assert express.estimation is not None
-    assert express.estimation.baseline_cost > 0, "transições medidas dão baseline"
-    # Migrar sem alguém afirmar idempotência continua proibido.
-    assert express.blocked is True
-    assert any("at-least-once" in item for item in express.missing_evidence)
-
-    # E uma afirmação explícita de idempotência libera a mesma oportunidade.
+    # Idempotência sozinha ainda não inventa duração/memória do Express.
     account.state_machines[0].idempotent = True
     found = stepfunctions_rules.detect(account, DEFAULT_CONFIG, "scan")
-    express = next(o for o in found if o.rule_id == "SFN-STANDARD-TO-EXPRESS")
-    assert express.blocked is False
-    assert not any("at-least-once" in item for item in express.missing_evidence)
-    assert not stepfunctions_rules.signals(account, DEFAULT_CONFIG) or not any(
-        s.rule_id == "SFN-EXPRESS-IDEMPOTENCY"
-        for s in stepfunctions_rules.signals(account, DEFAULT_CONFIG)
-    )
+    assert not any(o.rule_id == "SFN-STANDARD-TO-EXPRESS" for o in found)
 
 
 def test_idempotency_becomes_a_question_for_the_contextual_analysis():
@@ -394,7 +385,7 @@ def test_idempotency_becomes_a_question_for_the_contextual_analysis():
     )
 
     signals = stepfunctions_rules.signals(account, DEFAULT_CONFIG)
-    idempotency = next(s for s in signals if s.rule_id == "SFN-EXPRESS-IDEMPOTENCY")
+    idempotency = next(s for s in signals if s.rule_id == "SFN-STANDARD-TO-EXPRESS")
 
     assert idempotency.kind == "config"
     assert idempotency.asset_type == "state_machine"
