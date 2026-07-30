@@ -74,6 +74,10 @@ class Account:
     window_start: str = ""
     window_end: str = ""
     window_days: int = ANALYSIS_WINDOW_DAYS
+    #: Primeira coleta desta conta, com janela profunda. Fica no dataset porque
+    #: muda a leitura de tudo que depende de cobertura: uma cifra que apareceu no
+    #: bootstrap não amadureceu ao longo de três coletas, ela nasceu madura.
+    bootstrap: bool = False
     collection_health: list[CollectionHealth] = field(default_factory=list)
     run_telemetry: RunTelemetry = field(default_factory=RunTelemetry)
     services: list[ServiceCost] = field(default_factory=list)

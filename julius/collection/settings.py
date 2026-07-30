@@ -9,8 +9,53 @@ from __future__ import annotations
 
 # Janela de análise padrão, em dias UTC completos. É o período de tudo que é
 # comparado entre serviços. O teto prático é o histórico de execuções do
-# Athena, que a AWS retém por ~45 dias.
+# Athena, que a AWS retém por 45 dias.
 ANALYSIS_WINDOW_DAYS = 30
+
+# Profundidade pedida na primeira coleta de uma conta. Não é premissa de
+# retenção: é escolha de produto. Várias regras só produzem cifra com
+# maturidade — três coletas consistentes ou 90 dias de cobertura — e sem isso uma
+# conta nova espera de um a três meses de coletas semanais para o portfólio ter
+# número, mesmo quando a AWS já retém o histórico hoje.
+BOOTSTRAP_WINDOW_DAYS = 90
+
+# Onde a AWS retém **menos** que a janela pedida. Família fora deste mapa não
+# tem limite documentado abaixo de `BOOTSTRAP_WINDOW_DAYS`.
+#
+# Por que o teto importa: pedir mais dias do que o serviço retém não devolve
+# erro, devolve menos dado — e `coverage_days` dos modelos é preenchido com
+# `window.days`, a janela *pedida*. Sem o teto, o dataset afirmaria a cobertura
+# maior e inflaria em silêncio todos os gates de regra que leem cobertura.
+RETENTION_CEILING_DAYS: dict[str, int] = {
+    # A documentação da AWS se contradiz: a referência de `GetJobRun` diz 365
+    # dias, enquanto a visão geral da API de Job Runs e a do console dizem 90.
+    # Fica em 90 — pedir 365 contra um limite real de 90 produz exatamente a
+    # cobertura fantasma descrita acima. Explícito mesmo coincidindo com
+    # `BOOTSTRAP_WINDOW_DAYS`, para a contradição ficar registrada.
+    # https://docs.aws.amazon.com/glue/latest/dg/aws-glue-api-jobs-runs.html
+    "glue": 90,
+    # "Athena retains query history for 45 days" — e existe página dedicada a
+    # contornar isso exportando o histórico, o que confirma o limite.
+    # https://docs.aws.amazon.com/athena/latest/ug/querying-keeping-query-history.html
+    "athena": 45,
+    # Standard workflows retêm 90 dias, mas é **quota reduzível a 30** por conta
+    # e região, e não há como descobrir qual vale sem pedir o valor da quota.
+    # Fica no piso: regra bloqueada por falta de cobertura é recuperável na
+    # coleta seguinte, cobertura inflada corrompe a cifra sem avisar. Suba para
+    # 90 se a conta confirmou que mantém a quota padrão.
+    # https://docs.aws.amazon.com/step-functions/latest/dg/service-quotas.html
+    "stepfunctions": 30,
+    # Sem entrada para s3, sagemaker, redshift e billing: a telemetria deles vem
+    # do CloudWatch com período diário, disponível por 455 dias (o corte de 63
+    # dias vale para período de 5 minutos, não para o diário), e o Cost Explorer
+    # tem período próprio em `BillingMonth`.
+    # https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/cloudwatch_concepts.html
+}
+
+
+def retention_ceiling(family: str) -> int:
+    """Dias que a família consegue devolver, no máximo."""
+    return RETENTION_CEILING_DAYS.get(family, BOOTSTRAP_WINDOW_DAYS)
 
 # Um mês médio tem 365,25/12 = 30,44 dias. A medição acontece na janela, em
 # dias; quando um número precisa ser expresso "por mês" a conversão passa por

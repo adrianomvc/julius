@@ -81,6 +81,21 @@ class AnalysisWindow:
         previous_day = current - timedelta(days=1)
         return cls.calendar_month(previous_day.strftime("%Y-%m"))
 
+    def capped(self, max_days: int | None) -> AnalysisWindow:
+        """A mesma janela, encurtada ao que a fonte ainda consegue devolver.
+
+        Encurta pelo início e preserva o fim: o que a AWS retém é a parte
+        recente. Pedir mais dias do que a retenção do serviço **não** dá erro —
+        devolve menos dado, e como `coverage_days` dos modelos é preenchido com
+        `window.days` (a janela pedida, não a observada), o dataset passaria a
+        afirmar uma cobertura que não tem. É esse silêncio que o teto evita.
+        """
+        if max_days is None or max_days >= self.days:
+            return self
+        return AnalysisWindow(
+            start=self.end - timedelta(days=max_days), end=self.end, days=max_days
+        )
+
     @property
     def start_date(self) -> date:
         return self.start.date()

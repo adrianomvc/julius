@@ -10,6 +10,7 @@ import typer
 from julius.cli._shared import (
     app,
 )
+from julius.collection.bootstrap import resolve_depth
 from julius.collection.session import make_session
 from julius.config import ANALYSIS_WINDOW_DAYS, DEFAULT_CONFIG
 
@@ -99,6 +100,14 @@ def collect(
         ),
     ),
     output: str = typer.Option("data/collected/account.json", "--output", "-o"),
+    bootstrap: bool | None = typer.Option(
+        None,
+        "--bootstrap/--no-bootstrap",
+        help=(
+            "Janela profunda na primeira coleta da conta. Sem a flag, decide "
+            "pela existência do --output anterior. Ignorado em --cadence monthly."
+        ),
+    ),
 ) -> None:
     """Coleta em sa-east-1 com o perfil SSO selecionado e grava o dataset."""
     from julius.collection.health.recorder import RequiredCollectionError
@@ -112,13 +121,24 @@ def collect(
 
     if cadence not in {"weekly", "monthly"}:
         raise typer.BadParameter("--cadence deve ser weekly ou monthly")
+    if bootstrap and cadence == "monthly":
+        raise typer.BadParameter(
+            "--bootstrap não se aplica a --cadence monthly: o mês-calendário é "
+            "fechamento financeiro de um período específico, não janela móvel"
+        )
+    dias, usar_bootstrap = resolve_depth(
+        lookback_days=lookback_days,
+        cadence=cadence,
+        checkpoint=output,
+        explicit=bootstrap,
+    )
     try:
         analysis_window = (
             AnalysisWindow.calendar_month(period)
             if cadence == "monthly" and period
             else AnalysisWindow.previous_calendar_month()
             if cadence == "monthly"
-            else AnalysisWindow.trailing(days=lookback_days)
+            else AnalysisWindow.trailing(days=dias)
         )
     except ValueError as exc:
         raise typer.BadParameter(str(exc)) from exc
@@ -162,6 +182,7 @@ def collect(
             max_scan_cost_usd=max_scan_cost,
             window=analysis_window,
             cadence=cadence,
+            bootstrap=usar_bootstrap,
         )
     except RequiredCollectionError as exc:
         raise typer.BadParameter(str(exc)) from exc

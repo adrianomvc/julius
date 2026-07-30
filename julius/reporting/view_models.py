@@ -698,6 +698,19 @@ def _pareto_bar(pareto: Pareto, currency: str) -> list[dict]:
     return segments
 
 
+def _lookback(account: Account) -> str:
+    """A janela pedida, dizendo quando ela é de bootstrap.
+
+    Uma única linha não consegue mais descrever a coleta: o teto de retenção
+    recorta a janela por família, então fontes diferentes mediram períodos
+    diferentes. O quanto cada uma mediu está na tabela de saúde da coleta.
+    """
+    base = f"{account.lookback_days} dias"
+    if not account.bootstrap:
+        return base
+    return f"{base} (bootstrap; fonte com retenção menor mediu menos)"
+
+
 def _collection_health(account: Account) -> tuple[str, str, str, str, str, list[dict]]:
     status = account.collection_status
     status_style = {
@@ -738,6 +751,10 @@ def _collection_health(account: Account) -> tuple[str, str, str, str, str, list[
                     else "—"
                 ),
                 "data_through": item.data_through or "—",
+                # A janela é por fonte: o teto de retenção da família recorta o
+                # que a conta pediu. Sem esta coluna, ler a cobertura de duas
+                # fontes lado a lado compara períodos diferentes.
+                "window": f"{item.window_days} dias" if item.window_days else "—",
                 "duration": f"{item.duration_ms} ms",
                 "error_category": item.error_category or "—",
                 "impact": item.impact or "—",
@@ -921,7 +938,7 @@ def build(
         account_masked=_mask(account.account_id),
         region=account.region,
         period=account.period,
-        lookback=f"{account.lookback_days} dias",
+        lookback=_lookback(account),
         scan_id=manifest_val(manifest, "scan_id"),
         generated_at=account.generated_at,
         currency=account_currency,

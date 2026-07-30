@@ -42,6 +42,7 @@ def collect_account(
     now: datetime | None = None,
     window: AnalysisWindow | None = None,
     cadence: str = "weekly",
+    bootstrap: bool = False,
 ) -> Account:
     """Coleta uma conta. `config` chega de cima e não tem default aqui.
 
@@ -72,6 +73,7 @@ def collect_account(
         window_start=window.start_date.isoformat(),
         window_end=window.data_through.isoformat(),
         window_days=window.days,
+        bootstrap=bootstrap,
     )
     context = CollectionContext(
         session=session,
