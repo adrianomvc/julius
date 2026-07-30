@@ -104,6 +104,7 @@ def test_duckdb_history_reviews_and_parquet(tmp_path):
         "lifecycle_events.parquet",
         "runs.parquet",
         "opportunity_snapshots.parquet",
+        "process_efficiency_snapshots.parquet",
         "reviews.parquet",
         "validations.parquet",
     }

@@ -43,6 +43,10 @@ def account_to_dataset(account: Account) -> dict:
     return {
         "dataset_schema_version": DATASET_SCHEMA_VERSION,
         "account": account.account_id,
+        "scope": {
+            "profile": account.scope_profile,
+            "s3_mode": account.s3_mode,
+        },
         "region": account.region,
         "period": account.period,
         "lookback_days": account.lookback_days,
@@ -55,6 +59,7 @@ def account_to_dataset(account: Account) -> dict:
         "collection_health": [
             _clean(asdict(item)) for item in account.collection_health
         ],
+        "run_telemetry": asdict(account.run_telemetry),
         "currency": account.currency,
         "cost_explorer": {"services": [asdict(s) for s in account.services]},
         "glue_jobs": [_clean(asdict(j)) for j in account.glue_jobs],
@@ -64,12 +69,25 @@ def account_to_dataset(account: Account) -> dict:
         "databrew_jobs": [_clean(asdict(j)) for j in account.databrew_jobs],
         "process_costs": [_clean(asdict(p)) for p in account.process_costs],
         "athena_queries": [_clean(asdict(q)) for q in account.athena_queries],
+        "athena_capacity_reservations": [
+            _clean(asdict(r)) for r in account.athena_capacity_reservations
+        ],
         "athena_coverage": _clean(asdict(account.athena_coverage))
         if account.athena_coverage else None,
         "athena_actor_usage": [_clean(asdict(a)) for a in account.athena_actor_usage],
         "glue_cost_coverage": _clean(asdict(account.glue_cost_coverage))
         if account.glue_cost_coverage else None,
         "state_machines": [_clean(asdict(s)) for s in account.state_machines],
+        "stepfunctions_operational": {
+            "map_backlog": account.stepfunctions_map_backlog,
+            "open_executions": account.stepfunctions_open_executions,
+            "service_integration_failures": (
+                account.stepfunctions_service_integration_failures
+            ),
+            "service_integration_timeouts": (
+                account.stepfunctions_service_integration_timeouts
+            ),
+        },
         "sagemaker_apps": [_clean(asdict(a)) for a in account.sagemaker_apps],
         "sagemaker_spaces": [_clean(asdict(s)) for s in account.sagemaker_spaces],
         "sagemaker_domains": [_clean(asdict(d)) for d in account.sagemaker_domains],

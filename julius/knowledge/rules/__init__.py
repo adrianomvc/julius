@@ -18,8 +18,10 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from julius.collection.models import Account
+from julius.collection.policy import policy_for_profile
 from julius.findings.opportunity import Opportunity
 from julius.findings.signal import Signal
+from julius.knowledge.rules.athena import capacity as athena_capacity
 from julius.knowledge.rules.athena import queries as athena_queries
 from julius.knowledge.rules.cross_service import pipelines as cross_service_rules
 from julius.knowledge.rules.data import rules as data_rules
@@ -56,6 +58,8 @@ class RuleFamily:
     # de propósito: sinal não é achado, não recebe economia e não entra no
     # ranking — vai para a análise contextual julgar.
     signals: Callable[[Account, Any], list[Signal]] | None = None
+    required_capabilities: frozenset[str] = frozenset()
+    rule_ids: frozenset[str] = frozenset()
 
 
 REGISTRY: tuple[RuleFamily, ...] = (
@@ -65,6 +69,7 @@ REGISTRY: tuple[RuleFamily, ...] = (
         detect=glue_jobs.detect,
         requires=("glue_jobs",),
         signals=glue_jobs.signals,
+        required_capabilities=frozenset({"glue_jobs"}),
     ),
     RuleFamily(
         service="glue",
@@ -72,24 +77,50 @@ REGISTRY: tuple[RuleFamily, ...] = (
         detect=glue_sessions.detect,
         requires=("interactive_sessions",),
         signals=glue_sessions.signals,
+        required_capabilities=frozenset({"glue_interactive_sessions"}),
     ),
     RuleFamily(
         service="glue",
         name="crawlers",
         detect=glue_crawlers.detect,
         requires=("glue_crawlers",),
+        required_capabilities=frozenset({"glue_crawlers"}),
+        rule_ids=frozenset(
+            {
+                "GLUE-CRAWLER-FAILING",
+                "GLUE-CRAWLER-NO-CHANGES",
+                "GLUE-CRAWLER-FULL-RECRAWL",
+                "GLUE-CRAWLER-SCHEDULE-DISABLED",
+            }
+        ),
     ),
     RuleFamily(
         service="glue",
         name="databrew",
         detect=glue_databrew.detect,
         requires=("databrew_jobs",),
+        required_capabilities=frozenset({"glue_databrew"}),
+        rule_ids=frozenset(
+            {"DATABREW-FAILING-JOB", "DATABREW-SCHEDULE-RUN-MISMATCH"}
+        ),
     ),
     RuleFamily(
         service="athena",
         name="queries",
         detect=athena_queries.detect,
         requires=("athena_queries",),
+        required_capabilities=frozenset({"athena"}),
+    ),
+    RuleFamily(
+        service="athena",
+        name="provisioned_capacity",
+        detect=athena_capacity.detect,
+        # Família condicional: lista vazia significa que a conta não possui
+        # reservation, não que faltou inventário.
+        requires=(),
+        signals=athena_capacity.signals,
+        required_capabilities=frozenset({"athena"}),
+        rule_ids=frozenset({"ATHENA-CAPACITY-LOW-UTILIZATION"}),
     ),
     RuleFamily(
         service="stepfunctions",
@@ -97,6 +128,7 @@ REGISTRY: tuple[RuleFamily, ...] = (
         detect=stepfunctions_rules.detect,
         requires=("state_machines",),
         signals=stepfunctions_rules.signals,
+        required_capabilities=frozenset({"stepfunctions"}),
     ),
     RuleFamily(
         service="sagemaker",
@@ -114,6 +146,7 @@ REGISTRY: tuple[RuleFamily, ...] = (
             "sagemaker_monitoring_schedules",
         ),
         signals=sagemaker_rules.signals,
+        required_capabilities=frozenset({"sagemaker"}),
     ),
     RuleFamily(
         service="redshift",
@@ -121,6 +154,15 @@ REGISTRY: tuple[RuleFamily, ...] = (
         detect=redshift_rules.detect,
         requires=("redshift_clusters",),
         signals=redshift_rules.signals,
+        required_capabilities=frozenset({"redshift"}),
+        rule_ids=frozenset(
+            {
+                "REDSHIFT-IDLE-CLUSTER",
+                "REDSHIFT-OVERSIZED",
+                "REDSHIFT-IDLE-JUSTIFICATION",
+                "REDSHIFT-RESIZE-TARGET",
+            }
+        ),
     ),
     RuleFamily(
         service="s3",
@@ -129,6 +171,7 @@ REGISTRY: tuple[RuleFamily, ...] = (
         requires=("s3_buckets",),
         measures=("s3_buckets.object_count",),
         signals=s3_rules.signals,
+        required_capabilities=frozenset({"s3_evidence"}),
     ),
     RuleFamily(
         service="s3",
@@ -139,6 +182,8 @@ REGISTRY: tuple[RuleFamily, ...] = (
         # Athena leu na janela — e que por isso escapavam do `ATHENA-SMALL-FILES`.
         requires=("s3_prefixes",),
         measures=("s3_prefixes.average_object_bytes",),
+        signals=s3_small_files.signals,
+        required_capabilities=frozenset({"s3_evidence"}),
     ),
     RuleFamily(
         service="s3",
@@ -150,6 +195,7 @@ REGISTRY: tuple[RuleFamily, ...] = (
         requires=("s3_prefixes",),
         measures=("s3_prefixes.bytes_by_class", "tables.last_read_at"),
         signals=s3_storage_class.signals,
+        required_capabilities=frozenset({"s3_evidence"}),
     ),
     RuleFamily(
         service="cross_service",
@@ -157,6 +203,7 @@ REGISTRY: tuple[RuleFamily, ...] = (
         detect=cross_service_rules.detect,
         # Só existe olhando os dois lados: quem escreve e quem lê.
         requires=("glue_jobs", "athena_queries"),
+        required_capabilities=frozenset({"glue_jobs", "athena"}),
     ),
     RuleFamily(
         service="cross_service",
@@ -164,6 +211,7 @@ REGISTRY: tuple[RuleFamily, ...] = (
         detect=data_rules.detect,
         requires=("tables",),
         measures=("tables.touches_90d",),
+        required_capabilities=frozenset({"glue_catalog"}),
     ),
 )
 
@@ -172,6 +220,8 @@ def run_all(account: Account, config: Any, scan_id: str) -> list[Opportunity]:
     """Roda todas as famílias registradas, na ordem do registro."""
     found: list[Opportunity] = []
     for family in REGISTRY:
+        if not _enabled(account, family):
+            continue
         found += family.detect(account, config, scan_id)
     return found
 
@@ -180,6 +230,8 @@ def collect_signals(account: Account, config: Any) -> list[Signal]:
     """Reúne o que as famílias observaram sem conseguir concluir."""
     found: list[Signal] = []
     for family in REGISTRY:
+        if not _enabled(account, family):
+            continue
         if family.signals is not None:
             found += family.signals(account, config)
     return found
@@ -195,12 +247,39 @@ def families_without_evidence(account: Account) -> list[RuleFamily]:
     return [
         family
         for family in REGISTRY
-        if (
+        if _enabled(account, family)
+        and (
             family.requires
             and not any(getattr(account, name, None) for name in family.requires)
         )
         or any(_unmeasured(account, path) for path in family.measures)
     ]
+
+
+def _enabled(account: Account, family: RuleFamily) -> bool:
+    policy = policy_for_profile(getattr(account, "scope_profile", None))
+    return policy.allows(*family.required_capabilities)
+
+
+def disabled_rule_ids(account: Account) -> frozenset[str]:
+    """IDs que não podem desaparecer só porque o perfil suprimiu sua família."""
+    disabled = {
+        rule_id
+        for family in REGISTRY
+        if not _enabled(account, family)
+        for rule_id in family.rule_ids
+    }
+    if getattr(account, "s3_mode", "proposal") == "evidence_only":
+        disabled.update(
+            {
+                "S3-ATHENA-RESULTS-STALE",
+                "S3-SPARK-LOGS-STALE",
+                "S3-JOB-STAGING-LEFTOVER",
+                "S3-INCOMPLETE-MULTIPART",
+                "S3-STORAGE-CLASS-TRANSITION",
+            }
+        )
+    return frozenset(disabled)
 
 
 def missing_evidence(account: Account, family: RuleFamily) -> str:
@@ -229,6 +308,7 @@ __all__ = [
     "REGISTRY",
     "RuleFamily",
     "collect_signals",
+    "disabled_rule_ids",
     "families_without_evidence",
     "missing_evidence",
     "run_all",

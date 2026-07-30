@@ -8,23 +8,25 @@ from julius.findings.opportunity import Estimation
 
 
 def standard_to_express_saving(sm: StateMachine, config: Config) -> Estimation:
-    """Standard cobra por state transition; Express por request (~25× mais barato)
-    para cargas curtas, de alto volume e idempotentes.
+    """Compara transições Standard com requests + GB-s medidos no Express.
 
     Sem transições contadas no histórico não há baseline: a estimativa sai
     zerada e declara o que falta, em vez de multiplicar por um zero silencioso.
     """
     pricing = config.pricing
-    if sm.avg_state_transitions is None:
+    if (
+        sm.avg_state_transitions is None
+        or sm.express_benchmark_duration_ms is None
+        or sm.express_benchmark_memory_mb is None
+    ):
         return Estimation(
-            method="sfn_standard_to_express_v1",
+            method="sfn_standard_to_express_v2",
             baseline_cost=0.0,
             projected_cost=0.0,
             estimated_saving=0.0,
             assumptions=[
-                "histórico de execução não amostrado: transições por execução "
-                "desconhecidas",
-                "economia não quantificada sem contagem de transições",
+                "contrafactual Express incompleto",
+                "economia não quantificada sem transições, duração e memória de benchmark",
             ],
             pricing_region=pricing.region,
             estimation_version=pricing.version,
@@ -33,18 +35,26 @@ def standard_to_express_saving(sm: StateMachine, config: Config) -> Estimation:
     standard = (
         sm.executions_per_month * sm.avg_state_transitions * pricing.sfn_standard_per_transition
     )
-    express = sm.executions_per_month * pricing.sfn_express_per_request
+    # Express arredonda duração para blocos de 100 ms e memória para 64 MB.
+    billed_ms = max(100, ((sm.express_benchmark_duration_ms + 99) // 100) * 100)
+    billed_mb = max(64, ((sm.express_benchmark_memory_mb + 63) // 64) * 64)
+    gb_seconds = sm.executions_per_month * (billed_ms / 1000) * (billed_mb / 1024)
+    express = (
+        sm.executions_per_month * pricing.sfn_express_per_request
+        + gb_seconds * pricing.sfn_express_per_gb_second
+    )
     saving = max(0.0, standard - express)
     return Estimation(
-        method="sfn_standard_to_express_v1",
+        method="sfn_standard_to_express_v2",
         baseline_cost=round(standard, 2),
         projected_cost=round(express, 2),
         estimated_saving=round(saving, 2),
         assumptions=[
             f"{sm.executions_per_month} execuções/mês × {sm.avg_state_transitions} "
             f"transições medidas em {sm.sampled_executions} execuções amostradas",
-            f"duração média {sm.avg_duration_sec:.0f}s (< limite Express de 5 min)",
-            "idempotência ainda não confirmada: Express é at-least-once",
+            f"benchmark Express faturado em {billed_ms} ms e {billed_mb} MB",
+            f"{gb_seconds:.3f} GB-s/mês mais requests",
+            "idempotência confirmada separadamente: Express é at-least-once",
         ],
         pricing_region=pricing.region,
         estimation_version=pricing.version,

@@ -10,7 +10,9 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from julius.collection.policy import policy_for_profile
 from julius.config import DEFAULT_CONFIG, Config
+from julius.knowledge.rules import REGISTRY, families_without_evidence
 from julius.pipeline import Analysis, analyze
 from julius.state import BacklogStore, HistoryStore
 
@@ -34,6 +36,9 @@ class AccountRollup:
 class Portfolio:
     analyses: list[Analysis] = field(default_factory=list)
     rollups: list[AccountRollup] = field(default_factory=list)
+    source_coverage: dict[str, dict[str, str]] = field(default_factory=dict)
+    rule_coverage: dict[str, dict[str, str]] = field(default_factory=dict)
+    calibration_report: dict[str, dict] = field(default_factory=dict)
 
     @property
     def total_identified_monthly(self) -> float:
@@ -46,7 +51,7 @@ class Portfolio:
 
 def _identified(a: Analysis) -> float:
     return sum(
-        o.estimated_gain.monthly_expected
+        o.portfolio_gain.monthly_expected
         for o in a.opportunities
         if not o.estimated_gain.is_strategic
     )
@@ -54,7 +59,7 @@ def _identified(a: Analysis) -> float:
 
 def _high_conf(a: Analysis) -> float:
     return sum(
-        o.estimated_gain.monthly_expected
+        o.portfolio_gain.monthly_expected
         for o in a.opportunities
         if not o.estimated_gain.is_strategic and o.confidence >= 0.80
     )
@@ -66,11 +71,27 @@ def analyze_portfolio(
     *,
     store: BacklogStore | None = None,
     history: HistoryStore | None = None,
+    cadence: str | None = None,
 ) -> Portfolio:
     portfolio = Portfolio()
     for path in inputs:
-        a = analyze(path, config, store=store, history=history)
+        a = analyze(path, config, store=store, history=history, cadence=cadence)
         portfolio.analyses.append(a)
+        portfolio.source_coverage[a.account.account_id] = {
+            item.source: item.status for item in a.account.collection_health
+        }
+        missing = {family.name for family in families_without_evidence(a.account)}
+        policy = policy_for_profile(a.account.scope_profile)
+        portfolio.rule_coverage[a.account.account_id] = {
+            f"{family.service}:{family.name}": (
+                "out_of_scope"
+                if not policy.allows(*family.required_capabilities)
+                else "missing_evidence"
+                if family.name in missing
+                else "covered"
+            )
+            for family in REGISTRY
+        }
         portfolio.rollups.append(
             AccountRollup(
                 account=a.account.account_id,
@@ -78,7 +99,7 @@ def analyze_portfolio(
                 identified_monthly=round(_identified(a), 2),
                 high_confidence_monthly=round(_high_conf(a), 2),
                 realizable_year=round(
-                    sum(o.estimated_gain.realizable_year for o in a.opportunities), 2
+                    sum(o.portfolio_gain.realizable_year for o in a.opportunities), 2
                 ),
                 opportunities=len(a.opportunities),
                 actionability_rate=a.kpis.actionability_rate,
@@ -88,6 +109,27 @@ def analyze_portfolio(
                 false_positives_at_10=a.kpis.false_positives_at_10,
             )
         )
+        if history is not None:
+            for rule_id in {item.rule_id for item in a.opportunities}:
+                sample = next(
+                    item for item in a.opportunities if item.rule_id == rule_id
+                )
+                factor = history.calibration_for(rule_id, opportunity=sample)
+                if factor is not None:
+                    portfolio.calibration_report[rule_id] = {
+                        "sample_count": factor.sample_count,
+                        "predicted_total": factor.predicted_total,
+                        "realized_total": factor.realized_total,
+                        "factor": factor.factor,
+                        "mean_precision": factor.mean_precision,
+                        "factor_low": factor.factor_low,
+                        "factor_high": factor.factor_high,
+                        "median_error": factor.median_error,
+                        "confidence": factor.confidence,
+                        "segment": factor.segment,
+                        "fallback_level": factor.fallback_level,
+                        "automatic_threshold_change": False,
+                    }
     # Portfólio ordenado por economia identificada (onde focar primeiro).
     order = {r.account: i for i, r in enumerate(
         sorted(portfolio.rollups, key=lambda r: r.identified_monthly, reverse=True)

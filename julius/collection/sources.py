@@ -13,7 +13,7 @@ jobs, e o grafo de processos precisa dos schedules.
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 from typing import Any
 
@@ -35,6 +35,7 @@ from julius.collection.collectors import (
     stepfunctions,
     touches,
 )
+from julius.collection.collectors.athena import capacity as athena_capacity
 from julius.collection.collectors.athena import monthly as athena
 from julius.collection.collectors.glue import cost as glue_cost
 from julius.collection.collectors.glue import crawlers as glue_crawlers
@@ -48,8 +49,10 @@ from julius.collection.collectors.glue import (
 from julius.collection.collectors.s3_evidence import MAX_LIST_PAGES
 from julius.collection.health import CollectionRecorder
 from julius.collection.models import Account, CollectionHealth
+from julius.collection.policy import ScopePolicy, policy_for_profile
 from julius.collection.scope import CatalogScope
 from julius.collection.session import S3_LISTING_WORKERS, make_client
+from julius.collection.telemetry import InstrumentedClient, RunTelemetry
 from julius.collection.window import AnalysisWindow, BillingMonth
 
 
@@ -65,6 +68,9 @@ class CollectionContext:
     # e da taxonomia de domínio, mas não conhece as classes que os definem —
     # é assim que a seta continua apontando só para baixo.
     config: Any
+    scope_policy: ScopePolicy = field(default_factory=lambda: policy_for_profile(None))
+    telemetry: RunTelemetry = field(default_factory=RunTelemetry)
+    max_scan_cost_usd: float | None = None
     glue_usage_markers: Sequence[tuple[str, str]] = ()
     allocatable_glue_buckets: frozenset[str] = frozenset()
     glue_cost_version: str = ""
@@ -101,6 +107,7 @@ class CollectionContext:
     # `gaps=ctx.gaps` e nunca sabe o nome da fonte em que está.
     gaps: list[str] = field(default_factory=list)
     _clients: dict[str, Any] = field(default_factory=dict, repr=False)
+    _response_cache: dict[str, Any] = field(default_factory=dict, repr=False)
 
     def client(self, service: str) -> Any:
         """Um cliente por serviço, criado uma vez.
@@ -110,7 +117,12 @@ class CollectionContext:
         fontes diferentes — trabalho repetido antes da primeira chamada AWS.
         """
         if service not in self._clients:
-            self._clients[service] = make_client(self.session, service)
+            self._clients[service] = InstrumentedClient(
+                make_client(self.session, service),
+                service,
+                self.telemetry,
+                self._response_cache,
+            )
         return self._clients[service]
 
 
@@ -123,6 +135,7 @@ class Source:
     impact: str
     next_action: str
     required: bool = False
+    required_capabilities: frozenset[str] = frozenset()
     # Onde o resultado aterrissa: um atributo do Account, ou uma função quando
     # a fonte enriquece algo já coletado em vez de devolver uma lista nova.
     into: str = ""
@@ -144,6 +157,31 @@ class Source:
 
 def run(source: Source, ctx: CollectionContext, recorder: CollectionRecorder) -> None:
     """Executa uma fonte e registra a saúde dela."""
+    if not ctx.scope_policy.allows(*source.required_capabilities):
+        recorder.not_applicable(
+            source.name,
+            reason=(
+                f"fora do perfil {ctx.scope_policy.profile}: requer "
+                f"{', '.join(sorted(source.required_capabilities))}"
+            ),
+        )
+        return
+    if (
+        ctx.max_scan_cost_usd is not None
+        and not source.required
+        and ctx.telemetry.estimate(ctx.config.pricing) >= ctx.max_scan_cost_usd
+    ):
+        recorder.unavailable(
+            source.name,
+            category="budget_exceeded",
+            impact=(
+                f"fonte opcional interrompida no orçamento de "
+                f"US$ {ctx.max_scan_cost_usd:.4f}"
+            ),
+            next_action="aumentar --max-scan-cost somente após revisar a telemetria",
+            affects_status=False,
+        )
+        return
     if source.enabled is not None and not source.enabled(ctx):
         recorder.unavailable(
             source.name,
@@ -176,6 +214,49 @@ def run(source: Source, ctx: CollectionContext, recorder: CollectionRecorder) ->
     if ctx.pending_health:
         recorder.entries.extend(ctx.pending_health)
         ctx.pending_health.clear()
+
+
+_SOURCE_CAPABILITIES: dict[str, frozenset[str]] = {
+    "Cost Explorer": frozenset({"billing"}),
+    "Glue Jobs": frozenset({"glue_jobs"}),
+    "Glue Scripts": frozenset({"glue_jobs"}),
+    "Spark Event Logs": frozenset({"glue_jobs", "s3_evidence"}),
+    "Glue Catalog": frozenset({"glue_catalog"}),
+    "Glue Crawlers": frozenset({"glue_crawlers"}),
+    "Glue Triggers": frozenset({"glue_jobs"}),
+    "Glue DataBrew": frozenset({"glue_databrew"}),
+    "CloudWatch Glue CPU": frozenset({"glue_jobs"}),
+    "CloudWatch Glue Observability": frozenset({"glue_jobs"}),
+    "Glue Interactive Sessions": frozenset({"glue_interactive_sessions"}),
+    "Glue Cost Explorer": frozenset({"glue_jobs", "billing"}),
+    "Athena Queries": frozenset({"athena"}),
+    "Athena Provisioned Capacity": frozenset({"athena"}),
+    "Amazon S3": frozenset({"s3_evidence"}),
+    "S3 Config": frozenset({"s3_evidence"}),
+    "S3 Prefixes": frozenset({"s3_evidence"}),
+    "S3 Access Evidence": frozenset({"s3_evidence"}),
+    "S3 Multipart Uploads": frozenset({"s3_evidence"}),
+    "S3 Cost Explorer": frozenset({"s3_evidence", "billing"}),
+    "SageMaker Studio": frozenset({"sagemaker"}),
+    "SageMaker Spaces": frozenset({"sagemaker"}),
+    "SageMaker Domains": frozenset({"sagemaker"}),
+    "SageMaker Endpoints": frozenset({"sagemaker"}),
+    "SageMaker Notebooks": frozenset({"sagemaker"}),
+    "SageMaker Jobs": frozenset({"sagemaker"}),
+    "SageMaker Feature Store": frozenset({"sagemaker"}),
+    "SageMaker Pipelines": frozenset({"sagemaker"}),
+    "SageMaker Model Monitor": frozenset({"sagemaker"}),
+    "SageMaker Inference Recommender": frozenset({"sagemaker"}),
+    "SageMaker Cost Explorer": frozenset({"sagemaker", "billing"}),
+    "SageMaker Savings Plans": frozenset({"sagemaker", "billing"}),
+    "Amazon Redshift": frozenset({"redshift"}),
+    "Redshift Cost Explorer": frozenset({"redshift", "billing"}),
+    "Step Functions": frozenset({"stepfunctions"}),
+    "EventBridge Schedules": frozenset({"stepfunctions"}),
+    "Table Touches": frozenset({"athena"}),
+    "DataWarm Mapping": frozenset({"glue_catalog"}),
+    "CloudTrail Ownership": frozenset({"ownership"}),
+}
 
 
 #: Ordem de gravidade: a categoria mais acionável é a que a fonte reporta.
@@ -271,6 +352,28 @@ def _apply_athena_analysis(ctx: CollectionContext, analysis: Any) -> None:
     ctx.account.athena_coverage = analysis.coverage
     if analysis.coverage.cost_metric:
         ctx.account.currency = analysis.coverage.currency or ctx.account.currency
+
+
+def _collect_stepfunctions(ctx: CollectionContext) -> list:
+    account_metrics: dict[str, int] = {}
+    machines = stepfunctions.collect_state_machines(
+        ctx.client("stepfunctions"),
+        cloudwatch_client=ctx.client("cloudwatch"),
+        account_metrics=account_metrics,
+        window=ctx.window,
+        gaps=ctx.gaps,
+    )
+    ctx.account.stepfunctions_map_backlog = account_metrics.get("map_backlog", 0)
+    ctx.account.stepfunctions_open_executions = account_metrics.get(
+        "open_executions", 0
+    )
+    ctx.account.stepfunctions_service_integration_failures = account_metrics.get(
+        "service_integration_failures", 0
+    )
+    ctx.account.stepfunctions_service_integration_timeouts = account_metrics.get(
+        "service_integration_timeouts", 0
+    )
+    return machines
 
 
 def _publish_athena_dependencies(
@@ -670,6 +773,23 @@ SOURCES: tuple[Source, ...] = (
         next_action="validar permissões read-only do Athena",
     ),
     Source(
+        name="Athena Provisioned Capacity",
+        collect=lambda ctx: athena_capacity.collect_capacity_reservations(
+            ctx.client("athena"),
+            ctx.client("cloudwatch"),
+            ctx.client("ce"),
+            window=ctx.window,
+            gaps=ctx.gaps,
+        ),
+        into="athena_capacity_reservations",
+        count=len,
+        impact="reservas de capacidade e sua utilização não são avaliadas",
+        next_action=(
+            "validar athena:List/GetCapacityReservation, "
+            "GetCapacityAssignmentConfiguration e CloudWatch read-only"
+        ),
+    ),
+    Source(
         # Depende de tabelas, jobs e workgroups: o escopo de S3 é derivado do
         # inventário, nunca descoberto com ListBuckets.
         name="Amazon S3",
@@ -1028,9 +1148,7 @@ SOURCES: tuple[Source, ...] = (
     ),
     Source(
         name="Step Functions",
-        collect=lambda ctx: stepfunctions.collect_state_machines(
-            ctx.client("stepfunctions"), window=ctx.window, gaps=ctx.gaps
-        ),
+        collect=_collect_stepfunctions,
         into="state_machines",
         count=len,
         impact=(
@@ -1101,4 +1219,16 @@ SOURCES: tuple[Source, ...] = (
         impact="responsáveis inferidos podem permanecer desconhecidos",
         next_action="validar cloudtrail:LookupEvents",
     ),
+)
+
+# A declaração fica próxima do registro sem repetir metadados em 38 blocos.
+# `replace` mantém Source imutável e um teste garante que toda fonte foi classificada.
+if {source.name for source in SOURCES} != set(_SOURCE_CAPABILITIES):
+    missing = {source.name for source in SOURCES} - set(_SOURCE_CAPABILITIES)
+    extra = set(_SOURCE_CAPABILITIES) - {source.name for source in SOURCES}
+    raise RuntimeError(f"capabilities de fontes inconsistentes: missing={missing}, extra={extra}")
+
+SOURCES = tuple(
+    replace(source, required_capabilities=_SOURCE_CAPABILITIES[source.name])
+    for source in SOURCES
 )

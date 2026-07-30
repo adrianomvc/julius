@@ -25,6 +25,7 @@ from julius.collection.models.assets import (
 )
 from julius.collection.models.athena import (
     AthenaActorUsage,
+    AthenaCapacityReservation,
     AthenaCoverage,
     AthenaQuery,
 )
@@ -52,6 +53,7 @@ from julius.collection.models.s3 import (
     S3Prefix,
 )
 from julius.collection.settings import ANALYSIS_WINDOW_DAYS
+from julius.collection.telemetry import RunTelemetry
 
 
 @dataclass
@@ -59,8 +61,12 @@ class Account:
     """Inventário de uma conta Consumer."""
 
     account_id: str
+    scope_profile: str = "full_analysis"
+    s3_mode: str = "proposal"
     region: str = "sa-east-1"
     period: str = ""
+    cadence: str = "weekly"
+    financial_period: str = ""
     lookback_days: int = ANALYSIS_WINDOW_DAYS
     generated_at: str = ""
     # Janela de análise sob a qual a conta foi coletada. Persistida no dataset
@@ -69,6 +75,7 @@ class Account:
     window_end: str = ""
     window_days: int = ANALYSIS_WINDOW_DAYS
     collection_health: list[CollectionHealth] = field(default_factory=list)
+    run_telemetry: RunTelemetry = field(default_factory=RunTelemetry)
     services: list[ServiceCost] = field(default_factory=list)
     glue_jobs: list[GlueJob] = field(default_factory=list)
     interactive_sessions: list[InteractiveSession] = field(default_factory=list)
@@ -77,7 +84,14 @@ class Account:
     databrew_jobs: list[DataBrewJob] = field(default_factory=list)
     process_costs: list[ProcessCost] = field(default_factory=list)
     athena_queries: list[AthenaQuery] = field(default_factory=list)
+    athena_capacity_reservations: list[AthenaCapacityReservation] = field(
+        default_factory=list
+    )
     state_machines: list[StateMachine] = field(default_factory=list)
+    stepfunctions_map_backlog: int = 0
+    stepfunctions_open_executions: int = 0
+    stepfunctions_service_integration_failures: int = 0
+    stepfunctions_service_integration_timeouts: int = 0
     sagemaker_apps: list[SageMakerApp] = field(default_factory=list)
     sagemaker_spaces: list[SageMakerSpace] = field(default_factory=list)
     sagemaker_domains: list[SageMakerDomain] = field(default_factory=list)

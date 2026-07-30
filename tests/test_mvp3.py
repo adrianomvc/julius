@@ -130,6 +130,53 @@ def test_validated_stays_suppressed_until_evidence_changes(tmp_path):
     assert changed.status == "detected"
 
 
+def test_out_of_scope_rule_does_not_expire_or_validate_backlog(tmp_path):
+    backlog = BacklogStore(tmp_path / "backlog.json")
+    opportunity = _opportunity()
+    backlog.reconcile([opportunity], "scan-1", account_id="consumer")
+    for status in ("reviewed", "accepted", "planned", "implemented"):
+        backlog.transition(
+            opportunity.fingerprint(),
+            status,
+            actor="owner",
+            reason=status,
+        )
+
+    rec = backlog.reconcile(
+        [],
+        "scan-2",
+        account_id="consumer",
+        ignored_rule_ids=frozenset({"RULE"}),
+    )
+
+    assert rec.disappeared == []
+    assert backlog.status_for(opportunity.fingerprint()) == "implemented"
+
+
+def test_rule_demoted_to_signal_does_not_expire_backlog(tmp_path):
+    backlog = BacklogStore(tmp_path / "backlog.json")
+    opportunity = _opportunity()
+    backlog.reconcile([opportunity], "scan-1", account_id="consumer")
+
+    rec = backlog.reconcile(
+        [],
+        "scan-2",
+        account_id="consumer",
+        protected_signal_keys=frozenset(
+            {
+                (
+                    opportunity.asset_type,
+                    opportunity.asset_name,
+                    opportunity.rule_id,
+                )
+            }
+        ),
+    )
+
+    assert rec.disappeared == []
+    assert backlog.status_for(opportunity.fingerprint()) == "detected"
+
+
 def test_two_runs_emit_worsened_and_disappeared_events(tmp_path):
     backlog = BacklogStore(tmp_path / "backlog.json")
     with HistoryStore(tmp_path / "history.duckdb") as history:
@@ -211,6 +258,9 @@ def test_three_validations_calibrate_future_estimate(tmp_path):
                 opportunity,
                 baseline_cost=100,
                 after_cost=20,
+                baseline_volume=1,
+                after_volume=1,
+                output_equivalent=True,
                 actor="finops",
                 validated_at=start + timedelta(days=index),
             )
@@ -223,6 +273,9 @@ def test_three_validations_calibrate_future_estimate(tmp_path):
 
         future = _opportunity("future", expected=100)
         apply_calibrations([future], history, DEFAULT_CONFIG)
-        assert future.estimated_gain.monthly_expected == 80
-        assert future.estimation.estimated_saving == 80
+        assert future.estimated_gain.monthly_expected == 100
+        assert future.calibrated_gain is not None
+        assert future.calibrated_gain.monthly_expected == 80
+        assert future.portfolio_gain.monthly_expected == 80
+        assert future.estimation.estimated_saving == 100
         assert future.calibration_factor == 0.8

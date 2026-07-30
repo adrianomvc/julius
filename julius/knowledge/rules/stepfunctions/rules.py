@@ -7,7 +7,7 @@ from julius.config import Config
 from julius.findings.build import RuleContext, build
 from julius.findings.evidence import Evidence
 from julius.findings.finding import Finding
-from julius.findings.opportunity import Opportunity
+from julius.findings.opportunity import Estimation, Opportunity
 from julius.findings.recommendation import Recommendation
 from julius.findings.signal import Signal
 from julius.knowledge.rules.stepfunctions import estimation as sfn_est
@@ -18,6 +18,9 @@ _DOC_EXPRESS = (
 _DOC_SYNC = "https://docs.aws.amazon.com/step-functions/latest/dg/connect-to-resource.html"
 _DOC_RETRY = (
     "https://docs.aws.amazon.com/step-functions/latest/dg/concepts-error-handling.html"
+)
+_DOC_MONITOR = (
+    "https://docs.aws.amazon.com/step-functions/latest/dg/procedure-cw-metrics.html"
 )
 
 
@@ -40,12 +43,99 @@ def detect(account: Account, config: Config, scan_id: str) -> list[Opportunity]:
     out: list[Opportunity] = []
     th = config.thresholds
     for sm in account.state_machines:
-        if _express_candidate(sm, th):
+        if (
+            _express_candidate(sm, th)
+            and sm.idempotent is True
+            and sm.express_benchmark_duration_ms is not None
+            and sm.express_benchmark_memory_mb is not None
+            and sm.avg_state_transitions is not None
+        ):
             out.append(_to_express(account, sm, config, scan_id))
 
         if sm.type == "STANDARD" and sm.has_polling_loop:
             out.append(_polling(account, sm, config, scan_id))
+        if sm.type == "STANDARD" and sm.failed_executions and sm.avg_failed_state_transitions:
+            out.append(_transition_waste(account, sm, config, scan_id, failed=True))
+        if (
+            sm.type == "STANDARD"
+            and sm.max_retry_attempts > 0
+            and sm.avg_retry_transitions
+        ):
+            out.append(_transition_waste(account, sm, config, scan_id, failed=False))
     return out
+
+
+def _transition_waste(
+    account: Account,
+    sm: StateMachine,
+    config: Config,
+    scan_id: str,
+    *,
+    failed: bool,
+) -> Opportunity:
+    if failed:
+        rule_id = "SFN-FAILED-TRANSITION-COST"
+        transitions = sm.failed_executions * (sm.avg_failed_state_transitions or 0)
+        title = "Falhas consomem transições cobradas"
+        action = "Corrigir a causa das execuções com falha"
+        why = (
+            f"{sm.failed_executions} falhas observadas, com média de "
+            f"{sm.avg_failed_state_transitions} transições até falhar."
+        )
+    else:
+        rule_id = "SFN-RETRY-WASTE"
+        transitions = sm.observed_runs * (sm.avg_retry_transitions or 0)
+        title = "Retries repetem transições cobradas"
+        action = "Corrigir a falha recorrente antes de ampliar retries"
+        why = (
+            f"{sm.avg_retry_transitions} transições repetidas por execução na "
+            f"amostra de {sm.sampled_executions} execuções."
+        )
+    cost = transitions * config.pricing.sfn_standard_per_transition
+    return build(
+        Finding(
+            asset_type="state_machine",
+            asset_name=sm.name,
+            rule_id=rule_id,
+            rule_version="1.0.0",
+            title=title,
+            why=why,
+        ),
+        Recommendation(
+            difficulty=2,
+            action=action,
+            how_to_apply=(
+                "Investigar a integração/Task responsável e validar a correção "
+                "em ambiente controlado; o Julius não altera a state machine."
+            ),
+            how_to_validate="Comparar falhas, retries e transições na janela seguinte.",
+            risks=["reduzir retry sem corrigir a causa pode diminuir resiliência"],
+            docs=[_DOC_RETRY, _DOC_MONITOR],
+        ),
+        Evidence(
+            items=[why, f"{transitions} transições evitáveis na amostra/janela"],
+            sources=["States ListExecutions", "States GetExecutionHistory"],
+            observed_runs=sm.sampled_executions,
+            coverage_days=sm.coverage_days,
+            has_optional_metrics=True,
+            owner_tag=sm.owner_tag,
+        ),
+        Estimation(
+            method=rule_id.lower().replace("-", "_") + "_v1",
+            baseline_cost=round(cost, 2),
+            projected_cost=0.0,
+            estimated_saving=round(cost, 2),
+            assumptions=[
+                "somente transições observadas no histórico amostrado",
+                "CloudWatch é contexto best-effort, não fonte do cálculo",
+            ],
+            pricing_region=config.pricing.region,
+            estimation_version=config.pricing.version,
+            baseline_quality="modeled",
+            saving_quality="measured",
+        ),
+        RuleContext(account=account.account_id, config=config, scan_id=scan_id),
+    )
 
 
 def _to_express(account: Account, sm: StateMachine, config: Config, scan_id: str) -> Opportunity:
@@ -59,8 +149,8 @@ def _to_express(account: Account, sm: StateMachine, config: Config, scan_id: str
             title="Standard Workflow candidato a Express",
             why=(
                 f"{sm.executions_per_month} execuções/mês curtas "
-                f"({sm.avg_duration_sec:.0f}s) — Express é ~25× mais barato, se a "
-                "carga tolerar semântica at-least-once."
+                f"({sm.avg_duration_sec:.0f}s). O contrafactual inclui requests, "
+                "duração e memória medidos em benchmark."
             ),
         ),
         Recommendation(
@@ -75,7 +165,7 @@ def _to_express(account: Account, sm: StateMachine, config: Config, scan_id: str
             # não sai da configuração. Quando a afirmação já existe — declarada
             # no dataset ou vinda de um veredito — ela vale; o que não vale é
             # tratar a ausência dela como permissão.
-            blocked=sm.idempotent is not True,
+            blocked=False,
         ),
         Evidence(
             items=[
@@ -104,11 +194,7 @@ def _to_express(account: Account, sm: StateMachine, config: Config, scan_id: str
             scan_id=scan_id,
         ),
     )
-    opportunity.missing_evidence = (
-        []
-        if sm.idempotent is True
-        else ["confirmação de que a carga tolera execução repetida (at-least-once)"]
-    )
+    opportunity.missing_evidence = []
     if sm.avg_state_transitions is None:
         opportunity.missing_evidence.append(
             "contagem de transições por execução no histórico"
@@ -190,11 +276,16 @@ def signals(account: Account, config: Config) -> list[Signal]:
     out: list[Signal] = []
     th = config.thresholds
     for sm in account.state_machines:
-        if _express_candidate(sm, th) and sm.idempotent is None:
+        if _express_candidate(sm, th) and (
+            sm.idempotent is not True
+            or sm.express_benchmark_duration_ms is None
+            or sm.express_benchmark_memory_mb is None
+            or sm.avg_state_transitions is None
+        ):
             out.append(
                 Signal(
                     kind="config",
-                    rule_id="SFN-EXPRESS-IDEMPOTENCY",
+                    rule_id="SFN-STANDARD-TO-EXPRESS",
                     asset_type="state_machine",
                     asset_name=sm.name,
                     observation=(
@@ -209,7 +300,22 @@ def signals(account: Account, config: Config) -> list[Signal]:
                         "reexecução do Express duplicaria?"
                     ),
                     missing_evidence=[
-                        "confirmação de idempotência dos Tasks com efeito colateral",
+                        *(
+                            ["confirmação de idempotência dos Tasks com efeito colateral"]
+                            if sm.idempotent is not True
+                            else []
+                        ),
+                        *(
+                            ["contagem de transições por execução"]
+                            if sm.avg_state_transitions is None
+                            else []
+                        ),
+                        *(
+                            ["benchmark externo de duração e memória do Express"]
+                            if sm.express_benchmark_duration_ms is None
+                            or sm.express_benchmark_memory_mb is None
+                            else []
+                        ),
                     ],
                     doc_links=[_DOC_EXPRESS],
                 )
@@ -235,6 +341,67 @@ def signals(account: Account, config: Config) -> list[Signal]:
                         "último retry",
                     ],
                     doc_links=[_DOC_RETRY],
+                )
+            )
+        operational = (
+            ("SFN-REDRIVE-REPROCESSING", sm.redriven_executions, "redrives"),
+            ("SFN-EXECUTION-THROTTLING", sm.throttled_events, "throttles"),
+            (
+                "SFN-STUCK-OPEN-EXECUTIONS",
+                sm.open_executions_max,
+                "execuções abertas no pico",
+            ),
+        )
+        for rule_id, value, label in operational:
+            if value <= 0:
+                continue
+            out.append(
+                Signal(
+                    kind="metric",
+                    rule_id=rule_id,
+                    asset_type="state_machine",
+                    asset_name=sm.name,
+                    observation=f"{value} {label} observados no CloudWatch.",
+                    question="Qual causa operacional está gerando reprocessamento ou espera?",
+                    missing_evidence=[
+                        "histórico de execução para atribuir transições e custo"
+                    ],
+                    doc_links=[_DOC_MONITOR],
+                )
+            )
+    for rule_id, value, label in (
+        (
+            "SFN-DISTRIBUTED-MAP-BACKLOG",
+            account.stepfunctions_map_backlog,
+            "Map Runs em backlog",
+        ),
+        (
+            "SFN-STUCK-OPEN-EXECUTIONS",
+            account.stepfunctions_open_executions,
+            "execuções abertas no pico da conta",
+        ),
+        (
+            "SFN-SERVICE-INTEGRATION-FAILURE",
+            account.stepfunctions_service_integration_failures,
+            "falhas em integrações de serviço",
+        ),
+        (
+            "SFN-SERVICE-INTEGRATION-TIMEOUT",
+            account.stepfunctions_service_integration_timeouts,
+            "timeouts em integrações de serviço",
+        ),
+    ):
+        if value:
+            out.append(
+                Signal(
+                    kind="metric",
+                    rule_id=rule_id,
+                    asset_type="aws_account",
+                    asset_name=account.account_id,
+                    observation=f"{value} {label}.",
+                    question="Quais state machines explicam este indicador da conta?",
+                    missing_evidence=["atribuição por execução/state machine"],
+                    doc_links=[_DOC_MONITOR],
                 )
             )
     return out

@@ -38,6 +38,7 @@ per_tb = 5.0
 [stepfunctions]
 standard_per_transition = 0.000025
 express_per_request = 0.000001
+express_per_gb_second = 0.00001667
 
 [sagemaker]
 default_hourly = 0.18

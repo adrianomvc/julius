@@ -140,3 +140,27 @@ class AthenaCoverage:
     # configurado, que é a informação que a regra precisa.
     workgroup_output_locations: dict[str, str] = field(default_factory=dict)
     workgroup_scan_cutoffs: dict[str, int | None] = field(default_factory=dict)
+
+
+@dataclass
+class AthenaCapacityReservation:
+    name: str
+    status: str = ""
+    target_dpus: int = 0
+    allocated_dpus_p95: float | None = None
+    consumed_dpus_p95: float | None = None
+    consumed_dpu_hours: float | None = None
+    query_queue_p95_ms: float | None = None
+    planning_p95_ms: float | None = None
+    engine_p95_ms: float | None = None
+    idle_hours: float | None = None
+    workgroups: list[str] = field(default_factory=list)
+    coverage_days: int = 0
+    allocated_cost: float | None = None
+    cost_quality: str = "unavailable"
+
+    @property
+    def utilization_p95(self) -> float | None:
+        if not self.target_dpus or self.consumed_dpus_p95 is None:
+            return None
+        return self.consumed_dpus_p95 / self.target_dpus

@@ -4,6 +4,7 @@
     "coverage": {},
     "executive_summary": "",
     "implementation_order": [],
+    "investigations": [],
     "recommendations": [],
     "signal_verdicts": [],
     "source": null,
@@ -171,8 +172,11 @@
       "asset_type": "glue_job",
       "blocked": false,
       "bucket": "monitorar",
+      "calibrated_gain": null,
+      "calibration": null,
       "calibration_factor": 1.0,
       "category": "cost_optimization",
+      "classification": "modeled_opportunity",
       "confidence": 0.86,
       "confidence_label": "Alta",
       "data_sources": [
@@ -292,8 +296,11 @@
       "asset_type": "athena_query",
       "blocked": false,
       "bucket": "monitorar",
+      "calibrated_gain": null,
+      "calibration": null,
       "calibration_factor": 1.0,
       "category": "cost_optimization",
+      "classification": "modeled_opportunity",
       "confidence": 0.5,
       "confidence_label": "Baixa",
       "data_sources": [
@@ -401,8 +408,11 @@
       "asset_type": "glue_service",
       "blocked": true,
       "bucket": "investigar_primeiro",
+      "calibrated_gain": null,
+      "calibration": null,
       "calibration_factor": 1.0,
       "category": "inventory_integrity",
+      "classification": "modeled_opportunity",
       "confidence": 0.45,
       "confidence_label": "Baixa",
       "data_sources": [
@@ -547,6 +557,7 @@
     "realizable_year": "US$ 82,07",
     "realization_rate": "—",
     "realized_monthly": "US$ 0",
-    "recommendation": "Ainda não há ação de baixo risco pronta — o próximo passo é coletar evidência nas oportunidades de maior potencial."
+    "recommendation": "Ainda não há ação de baixo risco pronta — o próximo passo é coletar evidência nas oportunidades de maior potencial.",
+    "technical_identified_monthly": "US$ 20,51"
   }
 }

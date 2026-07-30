@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from urllib.parse import urlparse
 
+from julius.findings.investigation import AIEstimationProposal, AIRecommendation
+
 #: Toda conclusão sobre um artefato precisa dizer qual artefato e onde. Sem
 #: isso não há como distinguir leitura do script de suposição sobre ele.
 _EVIDENCE_REF_SCHEMA: dict = {
@@ -54,6 +56,41 @@ DEVIN_OUTPUT_SCHEMA: dict = {
                     },
                     "rationale": {"type": "string"},
                     "evidence_ref": _EVIDENCE_REF_SCHEMA,
+                    "recommendation": {
+                        "type": ["object", "null"],
+                        "additionalProperties": False,
+                        "required": [
+                            "recommended_action",
+                            "why",
+                            "risks",
+                            "required_validation",
+                        ],
+                        "properties": {
+                            "recommended_action": {"type": "string"},
+                            "why": {"type": "string"},
+                            "risks": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                            },
+                            "required_validation": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                            },
+                        },
+                    },
+                    "estimation_proposal": {
+                        "type": ["object", "null"],
+                        "additionalProperties": False,
+                        "required": ["method", "target", "evidence_refs"],
+                        "properties": {
+                            "method": {"type": "string"},
+                            "target": {"type": "object"},
+                            "evidence_refs": {
+                                "type": "array",
+                                "items": _EVIDENCE_REF_SCHEMA,
+                            },
+                        },
+                    },
                 },
             },
         },
@@ -208,6 +245,8 @@ class SignalVerdict:
     verdict: str
     rationale: str
     evidence_ref: EvidenceRef
+    recommendation: AIRecommendation | None = None
+    estimation_proposal: AIEstimationProposal | None = None
 
 
 @dataclass(frozen=True)
@@ -423,9 +462,13 @@ def _parse_signal_verdicts(
         raise AgentOutputError("signal_verdicts inválida")
     parsed: list[SignalVerdict] = []
     seen: set[tuple[str, str]] = set()
-    expected_keys = {"rule_id", "asset_name", "verdict", "rationale", "evidence_ref"}
+    legacy_keys = {"rule_id", "asset_name", "verdict", "rationale", "evidence_ref"}
+    extended_keys = legacy_keys | {"recommendation", "estimation_proposal"}
     for raw in raw_verdicts:
-        if not isinstance(raw, dict) or set(raw) != expected_keys:
+        if not isinstance(raw, dict) or frozenset(raw) not in {
+            frozenset(legacy_keys),
+            frozenset(extended_keys),
+        }:
             raise AgentOutputError("campos do veredito ausentes ou não permitidos")
         rule_id = raw.get("rule_id")
         asset_name = raw.get("asset_name")
@@ -444,6 +487,14 @@ def _parse_signal_verdicts(
             raise AgentOutputError(f"veredito inválido para {rule_id}: {verdict}")
         if not isinstance(rationale, str) or not rationale.strip():
             raise AgentOutputError(f"veredito sem justificativa: {rule_id} em {asset_name}")
+        recommendation = _parse_ai_recommendation(raw.get("recommendation"))
+        proposal = _parse_estimation_proposal(
+            raw.get("estimation_proposal"), known_hashes
+        )
+        if verdict != "confirmed" and proposal is not None:
+            raise AgentOutputError(
+                f"estimativa contextual exige veredito confirmed: {rule_id}"
+            )
         seen.add(key)
         parsed.append(
             SignalVerdict(
@@ -457,6 +508,8 @@ def _parse_signal_verdicts(
                     f"veredito {rule_id}",
                     required_sha256=expected_signals.get(key),
                 ),
+                recommendation=recommendation,
+                estimation_proposal=proposal,
             )
         )
     if seen != set(expected_signals):
@@ -468,6 +521,58 @@ def _parse_signal_verdicts(
             + ", ".join(missing[:5])
         )
     return parsed
+
+
+def _parse_ai_recommendation(raw: object) -> AIRecommendation | None:
+    if raw is None:
+        return None
+    keys = {"recommended_action", "why", "risks", "required_validation"}
+    if not isinstance(raw, dict) or set(raw) != keys:
+        raise AgentOutputError("recomendação de sinal inválida")
+    action, why = raw.get("recommended_action"), raw.get("why")
+    risks, validation = raw.get("risks"), raw.get("required_validation")
+    if not isinstance(action, str) or not action.strip():
+        raise AgentOutputError("recommended_action de sinal ausente")
+    if not isinstance(why, str) or not why.strip():
+        raise AgentOutputError("why de sinal ausente")
+    if not isinstance(risks, list) or not all(isinstance(x, str) for x in risks):
+        raise AgentOutputError("risks de sinal inválido")
+    if not isinstance(validation, list) or not all(
+        isinstance(x, str) for x in validation
+    ):
+        raise AgentOutputError("required_validation de sinal inválido")
+    return AIRecommendation(action, why, list(risks), list(validation))
+
+
+def _parse_estimation_proposal(
+    raw: object, known_hashes: set[str]
+) -> AIEstimationProposal | None:
+    if raw is None:
+        return None
+    if not isinstance(raw, dict) or set(raw) != {
+        "method",
+        "target",
+        "evidence_refs",
+    }:
+        raise AgentOutputError("estimation_proposal inválida")
+    method, target, refs = raw.get("method"), raw.get("target"), raw.get("evidence_refs")
+    if not isinstance(method, str) or not method.strip():
+        raise AgentOutputError("método da estimativa contextual ausente")
+    if not isinstance(target, dict) or not all(
+        isinstance(key, str)
+        and isinstance(value, (str, int, float, bool))
+        for key, value in target.items()
+    ):
+        raise AgentOutputError("target da estimativa contextual inválido")
+    if not isinstance(refs, list):
+        raise AgentOutputError("evidence_refs da estimativa contextual inválida")
+    parsed_refs = []
+    for index, ref in enumerate(refs):
+        parsed = _parse_evidence_ref(
+            ref, known_hashes, f"estimation_proposal evidence_refs[{index}]"
+        )
+        parsed_refs.append({"sha256": parsed.sha256, "lines": parsed.lines})
+    return AIEstimationProposal(method, dict(target), parsed_refs)
 
 
 def _parse_uncovered_findings(

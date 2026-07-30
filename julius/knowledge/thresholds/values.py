@@ -64,6 +64,8 @@ class Thresholds:
     sfn_short_duration_sec: int = 300
     # Retry acima disso deixa de parecer resiliência e passa a merecer pergunta.
     sfn_retry_attempts_high: int = 3
+    athena_capacity_low_utilization_p95: float = 0.50
+    athena_capacity_queue_safe_ms: float = 1000.0
     # SageMaker: idle shutdown "alto" (min) e horas ociosas/dia relevantes.
     sm_idle_shutdown_high_min: int = 120
     sm_idle_hours_min: float = 1.0

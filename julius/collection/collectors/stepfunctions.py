@@ -16,6 +16,7 @@ transições é uma afirmação, e uma afirmação falsa.
 from __future__ import annotations
 
 import json
+from collections import Counter
 from datetime import datetime, timezone
 
 from julius.collection.collectors.paginate import safe_call, safe_pages
@@ -31,6 +32,8 @@ _MAX_SAMPLED_EXECUTIONS = 20
 def collect_state_machines(
     client,
     *,
+    cloudwatch_client=None,
+    account_metrics: dict[str, int] | None = None,
     window: AnalysisWindow,
     gaps: list[str] | None = None,
 ) -> list[StateMachine]:
@@ -67,10 +70,13 @@ def collect_state_machines(
             if item.get("stopDate") and item.get("startDate")
         ]
         loop_states = _polling_loop_states(definition)
-        transitions, extra = _sample_transitions(client, executions, loop_states)
+        transitions, extra, retry_extra, failed_transitions = _sample_transitions(
+            client, executions, loop_states
+        )
         machines.append(
             StateMachine(
                 name=summary["name"],
+                arn=arn,
                 type=detail.get("type", "STANDARD"),
                 executions_per_month=round(len(executions) / months),
                 avg_duration_sec=round(sum(durations) / len(durations), 1)
@@ -86,14 +92,36 @@ def collect_state_machines(
                 has_polling_loop=bool(loop_states),
                 definition_available=not falha_detalhe,
                 execution_history_available=not falha_execucoes,
+                # O coletor é read-only e não executa benchmark. Estes campos
+                # só podem ser enriquecidos depois por evidência externa.
+                express_benchmark_duration_ms=None,
+                express_benchmark_memory_mb=None,
+                failed_executions=sum(
+                    item.get("status") == "FAILED" for item in executions
+                ),
+                timed_out_executions=sum(
+                    item.get("status") == "TIMED_OUT" for item in executions
+                ),
+                aborted_executions=sum(
+                    item.get("status") == "ABORTED" for item in executions
+                ),
+                avg_failed_state_transitions=failed_transitions,
+                avg_retry_transitions=retry_extra,
+                open_executions_max=sum(
+                    item.get("status") == "RUNNING" for item in executions
+                ),
             )
         )
+    if cloudwatch_client is not None and machines:
+        _enrich_cloudwatch(cloudwatch_client, machines, window, gaps)
+        if account_metrics is not None:
+            _account_cloudwatch(cloudwatch_client, account_metrics, window, gaps)
     return machines
 
 
 def _sample_transitions(
     client, executions: list[dict], loop_states: set[str]
-) -> tuple[int | None, int | None]:
+) -> tuple[int | None, int | None, int | None, int | None]:
     """Média de transições por execução, e quantas delas vêm do loop de espera.
 
     Devolve `(None, None)` quando não houve o que amostrar: sem histórico não
@@ -103,6 +131,8 @@ def _sample_transitions(
     sample = executions[:_MAX_SAMPLED_EXECUTIONS]
     entered: list[int] = []
     loop_entered: list[int] = []
+    retry_entered: list[int] = []
+    failed_entered: list[int] = []
     for execution in sample:
         arn = execution.get("executionArn")
         if not arn:
@@ -120,13 +150,174 @@ def _sample_transitions(
             continue
         entered.append(len(states))
         loop_entered.append(sum(1 for name in states if name in loop_states))
+        counts = Counter(states)
+        retry_entered.append(sum(max(0, count - 1) for count in counts.values()))
+        if execution.get("status") in {"FAILED", "TIMED_OUT", "ABORTED"}:
+            failed_entered.append(len(states))
     if not entered:
-        return None, None
+        return None, None, None, None
     average = round(sum(entered) / len(entered))
     # As transições do loop só são "extras" além da primeira passagem: entrar
     # uma vez em cada estado do caminho é o trabalho, repetir é a espera.
     extra = round(sum(loop_entered) / len(loop_entered)) - len(loop_states)
-    return average, max(0, extra)
+    return (
+        average,
+        max(0, extra),
+        round(sum(retry_entered) / len(retry_entered)),
+        (
+            round(sum(failed_entered) / len(failed_entered))
+            if failed_entered
+            else None
+        ),
+    )
+
+
+_CW_METRICS = {
+    "ExecutionsFailed": ("cw_failed_executions", "Sum"),
+    "ExecutionsTimedOut": ("cw_timed_out_executions", "Sum"),
+    "ExecutionsAborted": ("cw_aborted_executions", "Sum"),
+    "ExecutionThrottled": ("throttled_events", "Sum"),
+    "ExecutionsRedriven": ("redriven_executions", "Sum"),
+    "ExecutionTime": ("duration_p95_ms", "p95"),
+}
+
+
+def _enrich_cloudwatch(client, machines, window, gaps) -> None:
+    """Métricas operacionais best-effort; não substituem o histórico financeiro."""
+    queries = []
+    targets = {}
+    for machine_index, machine in enumerate(machines):
+        for metric_index, (metric, (field, stat)) in enumerate(_CW_METRICS.items()):
+            query_id = f"m{machine_index}_{metric_index}"
+            queries.append(
+                {
+                    "Id": query_id,
+                    "MetricStat": {
+                        "Metric": {
+                            "Namespace": "AWS/States",
+                            "MetricName": metric,
+                            "Dimensions": [
+                                {"Name": "StateMachineArn", "Value": machine.arn}
+                            ],
+                        },
+                        "Period": 86400,
+                        "Stat": stat,
+                    },
+                    "ReturnData": True,
+                }
+            )
+            targets[query_id] = (machine, field, stat)
+    try:
+        for offset in range(0, len(queries), 500):
+            response = client.get_metric_data(
+                MetricDataQueries=queries[offset : offset + 500],
+                StartTime=window.start,
+                EndTime=window.end,
+                ScanBy="TimestampAscending",
+            )
+            for result in response.get("MetricDataResults", []):
+                target = targets.get(result.get("Id"))
+                values = result.get("Values") or []
+                if target is None or not values:
+                    continue
+                machine, field, stat = target
+                value = max(values) if stat in {"Maximum", "p95"} else sum(values)
+                setattr(
+                    machine,
+                    field,
+                    round(value, 2) if stat == "p95" else int(value),
+                )
+    except Exception as exc:
+        if gaps is not None:
+            gaps.append(f"cloudwatch_stepfunctions: {error_category(exc)}")
+
+
+def _account_cloudwatch(client, target, window, gaps) -> None:
+    """Métricas sem dimensão de state machine permanecem no nível da conta."""
+    for metric, field in (
+        ("ApproximateMapRunBacklogSize", "map_backlog"),
+        ("OpenExecutionCount", "open_executions"),
+    ):
+        try:
+            response = client.get_metric_statistics(
+                Namespace="AWS/States",
+                MetricName=metric,
+                StartTime=window.start,
+                EndTime=window.end,
+                Period=86400,
+                Statistics=["Maximum"],
+            )
+            values = [
+                int(point.get("Maximum") or 0)
+                for point in response.get("Datapoints", [])
+            ]
+            target[field] = max(values, default=0)
+        except Exception as exc:
+            if gaps is not None:
+                gaps.append(f"cloudwatch_stepfunctions_account: {error_category(exc)}")
+            return
+    if not hasattr(client, "list_metrics"):
+        return
+    for metric, field in (
+        ("ServiceIntegrationsFailed", "service_integration_failures"),
+        ("ServiceIntegrationsTimedOut", "service_integration_timeouts"),
+    ):
+        target[field] = _aggregate_dimensioned_metric(
+            client, metric, window, gaps
+        )
+
+
+def _aggregate_dimensioned_metric(client, metric_name, window, gaps) -> int:
+    """Soma até 100 recursos; a dimensão oficial é o ARN integrado, não a máquina."""
+    metrics: list[dict] = []
+    token = None
+    try:
+        while len(metrics) < 100:
+            kwargs = {"Namespace": "AWS/States", "MetricName": metric_name}
+            if token:
+                kwargs["NextToken"] = token
+            response = client.list_metrics(**kwargs)
+            metrics.extend(response.get("Metrics", []))
+            token = response.get("NextToken")
+            if not token:
+                break
+    except Exception as exc:
+        if gaps is not None:
+            gaps.append(f"cloudwatch_stepfunctions_integrations: {error_category(exc)}")
+        return 0
+    queries = [
+        {
+            "Id": f"i{index}",
+            "MetricStat": {
+                "Metric": metric,
+                "Period": 86400,
+                "Stat": "Sum",
+            },
+            "ReturnData": True,
+        }
+        for index, metric in enumerate(metrics[:100])
+    ]
+    if not queries:
+        return 0
+    try:
+        response = client.get_metric_data(
+            MetricDataQueries=queries,
+            StartTime=window.start,
+            EndTime=window.end,
+            ScanBy="TimestampAscending",
+        )
+    except Exception as exc:
+        if gaps is not None:
+            gaps.append(f"cloudwatch_stepfunctions_integrations: {error_category(exc)}")
+        return 0
+    if token and gaps is not None:
+        gaps.append("cloudwatch_stepfunctions_integrations: bounded_or_incomplete")
+    return round(
+        sum(
+            sum(result.get("Values") or [])
+            for result in response.get("MetricDataResults", [])
+        )
+    )
 
 
 def _execution_events(client, execution_arn: str) -> list[dict] | None:

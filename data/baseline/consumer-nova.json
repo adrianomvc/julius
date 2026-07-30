@@ -4,6 +4,7 @@
     "coverage": {},
     "executive_summary": "",
     "implementation_order": [],
+    "investigations": [],
     "recommendations": [],
     "signal_verdicts": [],
     "source": null,
@@ -128,7 +129,7 @@
         "asset": "explora-nova",
         "current": 30.49,
         "previous": null,
-        "rule_id": "GLUE-IS-IDLE",
+        "rule_id": "GLUE-IS-IDLE-TIMEOUT",
         "type": "new_opportunity"
       },
       {
@@ -160,8 +161,11 @@
       "asset_type": "glue_session",
       "blocked": false,
       "bucket": "monitorar",
+      "calibrated_gain": null,
+      "calibration": null,
       "calibration_factor": 1.0,
       "category": "cost_optimization",
+      "classification": "modeled_opportunity",
       "confidence": 0.86,
       "confidence_label": "Alta",
       "data_sources": [
@@ -214,7 +218,7 @@
       "evidence": [
         "idle_timeout=2880 min (default)",
         "média 2.1h READY ocioso/dia",
-        "DPU=5 (mín. útil 2)"
+        "DPU=5 mantida no contrafactual"
       ],
       "evidence_coverage": 1.0,
       "evidence_quality": "modeled",
@@ -231,14 +235,14 @@
       "finding": "Sessão interativa ociosa",
       "first_seen": "",
       "gain_score": 20,
-      "how_to_apply": "Ajustar %idle_timeout para 60 min (era 2880) e revisar DPU 5→2.",
+      "how_to_apply": "Ajustar %idle_timeout para 60 min (era 2880).",
       "how_to_validate": "Medir tempo READY ocioso e DPU-h por sessão na próxima semana.",
       "julius_version": "0.6.0",
       "knowledge_version": "aws-glue-guidance-2026-07",
       "last_seen": "",
       "missing_evidence": [],
       "next_action": null,
-      "opportunity_id": "GLUE-IS-IDLE-7c53df13",
+      "opportunity_id": "GLUE-IS-IDLE-TIMEOUT-7c53df13",
       "origin": "rule",
       "owner": "Squad Nova",
       "owner_confidence": 1.0,
@@ -248,18 +252,18 @@
       "process_cost_monthly": 0.0,
       "process_cost_window": 0.0,
       "process_criticality": 0.0,
-      "recommended_action": "Reduzir idle_timeout e a DPU da sessão",
+      "recommended_action": "Reduzir somente o idle_timeout da sessão",
       "risks": [
         "perder estado da sessão em uso ativo"
       ],
-      "rule_id": "GLUE-IS-IDLE",
-      "rule_version": "1.0.0",
+      "rule_id": "GLUE-IS-IDLE-TIMEOUT",
+      "rule_version": "2.0.0",
       "scan_id": "baseline",
       "source_process": null,
       "status": "detected",
       "strategic_priority": 10,
       "urgency": 1.0,
-      "why": "Sessões ficam READY ociosas ~2.1h/dia; idle_timeout=2880 min (default) e DPU=5.",
+      "why": "Sessões ficam READY ociosas ~2.1h/dia; idle_timeout=2880 min.",
       "window_end": "2026-07-23"
     },
     {
@@ -272,8 +276,11 @@
       "asset_type": "athena_query",
       "blocked": false,
       "bucket": "monitorar",
+      "calibrated_gain": null,
+      "calibration": null,
       "calibration_factor": 1.0,
       "category": "cost_optimization",
+      "classification": "modeled_opportunity",
       "confidence": 0.5,
       "confidence_label": "Baixa",
       "data_sources": [
@@ -374,8 +381,11 @@
       "asset_type": "glue_service",
       "blocked": true,
       "bucket": "investigar_primeiro",
+      "calibrated_gain": null,
+      "calibration": null,
       "calibration_factor": 1.0,
       "category": "inventory_integrity",
+      "classification": "modeled_opportunity",
       "confidence": 0.45,
       "confidence_label": "Baixa",
       "data_sources": [
@@ -519,6 +529,7 @@
     "realizable_year": "US$ 124,71",
     "realization_rate": "—",
     "realized_monthly": "US$ 0",
-    "recommendation": "Ainda não há ação de baixo risco pronta — o próximo passo é coletar evidência nas oportunidades de maior potencial."
+    "recommendation": "Ainda não há ação de baixo risco pronta — o próximo passo é coletar evidência nas oportunidades de maior potencial.",
+    "technical_identified_monthly": "US$ 31,18"
   }
 }

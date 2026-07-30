@@ -282,6 +282,18 @@ do armazenamento local gerenciado pelo AWS CLI.
 Copie [.julius-accounts.example.json](.julius-accounts.example.json) para
 `~/.julius-accounts.json`, informe somente o nome lógico e o Account ID
 esperado, associe o `sso_profile` e habilite somente as contas autorizadas.
+O schema 1.1 aceita `scope_profile`. Contas cadastradas sem o campo usam
+`consumer_datamesh`; datasets antigos sem metadado de escopo preservam
+`full_analysis`. A linha de comando pode sobrescrever com
+`--scope-profile consumer_datamesh|full_analysis`.
+
+No perfil Consumer, Crawlers, DataBrew e Redshift ficam `not_applicable` antes
+da criação de qualquer cliente AWS. S3 opera em `evidence_only`: resíduos,
+multipart e classe de armazenamento viram sinais sem economia; small files só
+vira oportunidade quando existe processo produtor ou consumidor identificado.
+O orçamento opcional `--max-scan-cost <USD>` interrompe fontes opcionais ao
+atingir o custo estimado. Chamadas, páginas, retries, throttles, cache hits,
+duração e operações ainda sem tarifa ficam no dataset e no run manifest.
 Antes da coleta:
 
 ```bash
@@ -394,14 +406,17 @@ bytes lidos na janela, cobertura e qualidade. IP, requester, e-mail, user-agent,
 linha bruta e chave do objeto não entram no dataset. Entrega best-effort ou
 listagem parcial aparece como lacuna e não vira “zero leitura”.
 
-A regra `S3-STORAGE-CLASS-TRANSITION` só recomenda sobre `table_location`, evita
+A regra `S3-STORAGE-CLASS-TRANSITION`, no perfil `full_analysis`, só recomenda
+sobre `table_location`, evita
 prefixos sobrepostos e respeita filtros de lifecycle. A estimativa v2 separa
 custo pontual de transição, economia recorrente, resultado do primeiro mês e
 break-even; aplica o tamanho mínimo faturável por objeto e usa a cobrança
 Standard do Cost Explorer como baseline quando ela está reconciliada. Glacier
 Flexible Retrieval permanece bloqueado até o time confirmar que o SLA aceita
 recuperação em horas. Toda transição é apenas recomendação para o time dono; o
-Julius não copia nem altera objetos.
+Julius não copia nem altera objetos. No perfil Consumer ela permanece sinal de
+evidência e a ação deve corrigir o processo produtor/consumidor, sem orientar
+alteração direta do S3.
 
 ## Validações adiadas para a máquina de trabalho
 
@@ -421,6 +436,28 @@ históricos temporários, sem acesso à AWS e sem avaliações humanas fictícia
 O histórico padrão fica em `data/state/julius.duckdb`; os Parquets ficam em
 `data/state/parquet/`. O backlog operacional permanece em
 `data/state/backlog.json`.
+
+### Sinais, estimativas contextuais e calibração
+
+Sinais continuam sendo hipóteses sem economia e fora do backlog financeiro. A
+análise contextual pode confirmar um sinal, recomendar uma validação e escolher
+um dos métodos permitidos para Glue Interactive Sessions, SageMaker Managed
+Spot Training ou Step Functions Express. A IA nunca fornece o valor financeiro:
+o Julius resolve o ativo, valida o alvo e executa a fórmula. O resultado fica na
+fila `ai_analysis.investigations`, sempre com
+`include_in_portfolio=false`, até existir evidência determinística suficiente.
+
+`estimated_gain` preserva o potencial técnico original.
+`calibrated_gain`, quando presente, é a expectativa aprendida com ao menos três
+benefícios normalizados por volume e validados. Ranking, Pareto e totais usam
+`portfolio_gain` (calibrado quando disponível), enquanto o relatório mantém
+bruto, calibrado e realizado lado a lado.
+
+Use `--cadence weekly` para a janela móvel de 30 dias completos. Use
+`--cadence monthly --period YYYY-MM` para um mês UTC completo; sem `--period`,
+o último mês fechado é usado. Comparações absolutas podem ser registradas, mas
+só treinam a calibração com volumes comparáveis, `--output-equivalent` e sem
+regressão relevante de desempenho ou falhas.
 
 ## Princípios
 - **Determinístico**: ganho, dificuldade, confiança, prioridade, IDs e buckets são

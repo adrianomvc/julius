@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from julius.analysis.context_builder import AgentContext
 
-PROMPT_VERSION = "1.6.0"
+PROMPT_VERSION = "1.7.0"
 
 #: As regras em si, separadas do texto que as apresenta — o validador de
 #: resposta verifica o resultado das mesmas restrições.
@@ -35,6 +35,10 @@ RULES = (
     "`signals` são hipóteses, não achados. Julgue cada uma contra o artefato "
     "completo — confirmed, rejected ou needs_evidence — e nunca lhes atribua "
     "economia. Todo sinal do pacote precisa de veredito.",
+    "Em um sinal confirmed você pode propor uma ação e um método de cálculo "
+    "permitido, mas não invente custo nem economia: o motor determinístico "
+    "resolve o ativo, valida o alvo e executa a fórmula. A estimativa contextual "
+    "nunca entra no portfólio.",
     "Registre em `uncovered_findings` o desperdício que você observou e que "
     "nenhuma rule_id do pacote cobre. Sem valor financeiro, sempre com "
     "evidence_ref apontando sha256 e linha de um artefato do pacote.",
@@ -183,6 +187,10 @@ Suas quatro tarefas, nesta ordem:
 
 1. Julgar cada item de `signals` contra o artefato completo — `confirmed`,
    `rejected` ou `needs_evidence`, com justificativa. Todos precisam de veredito.
+   Para `confirmed`, preencha opcionalmente `recommendation` e
+   `estimation_proposal`; para os demais use `null`. Os métodos piloto são
+   `glue_interactive_capacity_reduction_v1`,
+   `sagemaker_managed_spot_training_v1` e `sfn_standard_to_express_v1`.
 2. Enriquecer as oportunidades determinísticas: causa provável a partir da
    evidência citada, passos, dependências, conflitos e ordem de implementação.
 3. Escolher o lado quando a recomendação admite dois caminhos, dizendo quem

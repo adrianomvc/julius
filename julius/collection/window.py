@@ -57,6 +57,30 @@ class AnalysisWindow:
         end = reference.replace(hour=0, minute=0, second=0, microsecond=0)
         return cls(start=end - timedelta(days=days), end=end, days=days)
 
+    @classmethod
+    def calendar_month(cls, period: str) -> AnalysisWindow:
+        """Mês UTC completo em `YYYY-MM`, para o fechamento financeiro."""
+        try:
+            year_text, month_text = period.split("-", 1)
+            year, month = int(year_text), int(month_text)
+            start = datetime(year, month, 1, tzinfo=timezone.utc)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("period deve usar o formato YYYY-MM") from exc
+        if month == 12:
+            end = datetime(year + 1, 1, 1, tzinfo=timezone.utc)
+        else:
+            end = datetime(year, month + 1, 1, tzinfo=timezone.utc)
+        return cls(start=start, end=end, days=(end - start).days)
+
+    @classmethod
+    def previous_calendar_month(
+        cls, *, now: datetime | None = None
+    ) -> AnalysisWindow:
+        reference = utc_now(now)
+        current = reference.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        previous_day = current - timedelta(days=1)
+        return cls.calendar_month(previous_day.strftime("%Y-%m"))
+
     @property
     def start_date(self) -> date:
         return self.start.date()

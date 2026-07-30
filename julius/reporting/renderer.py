@@ -79,6 +79,7 @@ def render_json(vm: ReportViewModel, opportunities: list[Opportunity]) -> str:
         "summary": {
             "billing_cost_mtd": vm.total_cost_fmt,
             "identified_monthly": vm.identified_fmt,
+            "technical_identified_monthly": vm.technical_identified_fmt,
             "high_confidence_monthly": vm.high_conf_fmt,
             "realizable_year": vm.realizable_year_fmt,
             "pareto_pct": vm.pareto_pct,
@@ -101,6 +102,7 @@ def render_json(vm: ReportViewModel, opportunities: list[Opportunity]) -> str:
             "coverage": vm.ai_coverage,
             "signal_verdicts": vm.ai_signal_verdicts,
             "uncovered_findings": vm.ai_uncovered_findings,
+            "investigations": vm.ai_investigations,
         },
         "athena": {
             "coverage": vm.athena_coverage,
@@ -126,7 +128,17 @@ def render_json(vm: ReportViewModel, opportunities: list[Opportunity]) -> str:
             "sources": vm.collection_health,
         },
         "process_costs": vm.process_costs,
-        "opportunities": [asdict(o) for o in opportunities],
+        "opportunities": [
+            {
+                **asdict(o),
+                "classification": (
+                    "validated_opportunity"
+                    if o.status == "validated"
+                    else "modeled_opportunity"
+                ),
+            }
+            for o in opportunities
+        ],
     }
     return json.dumps(payload, ensure_ascii=False, indent=2)
 

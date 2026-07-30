@@ -294,7 +294,7 @@ def test_context_declares_its_own_coverage_and_the_silence_it_carries(context):
     """O recorte precisa ser visível: o que ficou fora não é o que não existe."""
     full = analyze(SAMPLE)
 
-    assert context.schema_version == "1.2"
+    assert context.schema_version == "1.3"
     assert context.prompt_version, "o julgamento precisa dizer de qual briefing veio"
     assert context.portfolio["analyzed"] == len(context.opportunities)
     assert context.portfolio["total_opportunities"] == len(full.opportunities)

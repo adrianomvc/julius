@@ -98,18 +98,14 @@ def test_needs_evidence_stays_in_the_package(tmp_path):
     assert ledger.suppress([signal], ACCOUNT).open == [signal]
 
 
-def test_a_confirmed_signal_stops_being_asked_once_it_is_promoted(tmp_path):
-    """Depois da promoção quem carrega o assunto é o achado, não a pergunta."""
+def test_a_confirmed_signal_moves_to_the_investigation_queue(tmp_path):
+    """A confirmação fecha a pergunta e abre uma investigação separada."""
     ledger = SignalLedger(tmp_path / "signals.json")
     signal = _signal()
     _record(ledger, signal, "confirmed")
 
-    # Antes de promover ele precisa continuar no pacote: é dali que a promoção
-    # tira o sinal que vai virar achado.
-    assert ledger.suppress([signal], ACCOUNT).open == [signal]
-
-    ledger.mark_promoted([signal.fingerprint(ACCOUNT)])
     assert ledger.suppress([signal], ACCOUNT).open == []
+    assert ledger.decisions_for(ACCOUNT)[0].status == "candidate"
 
 
 def test_a_verdict_about_an_unknown_signal_is_ignored(tmp_path):
@@ -234,9 +230,9 @@ def test_two_scans_the_second_one_asks_less_and_carries_more(tmp_path):
     assert len(second.signals) == len(first.signals) - 2
 
     promoted = [o for o in second.opportunities if o.origin == "ai_confirmed"]
-    assert len(promoted) == 1
-    assert promoted[0].asset_name == confirmed.asset_name
-    assert promoted[0].estimated_gain.monthly_expected == 0
+    assert promoted == []
+    assert len(second.investigations) == 1
+    assert second.investigations[0].asset_name == confirmed.asset_name
 
     # A promoção não pode mexer no dinheiro do portfólio.
     def total(analysis):
@@ -249,3 +245,4 @@ def test_two_scans_the_second_one_asks_less_and_carries_more(tmp_path):
     # E não se repete no terceiro scan.
     third = analyze(sample, ledger=ledger)
     assert len([o for o in third.opportunities if o.origin == "ai_confirmed"]) == 0
+    assert len(third.investigations) == 1

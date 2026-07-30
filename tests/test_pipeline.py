@@ -31,7 +31,7 @@ def test_detectors_cover_expected_rules():
         "GLUE-OVERPROVISIONED",
         "GLUE-VERSION-OLD",
         "GLUE-BOOKMARK-OFF",
-        "GLUE-IS-IDLE",
+        "GLUE-IS-IDLE-TIMEOUT",
         "ATHENA-NO-PARTITION-FILTER",
         "ATHENA-EXCESSIVE-SCAN",
         "ATHENA-RESULT-REUSE",
@@ -41,7 +41,6 @@ def test_detectors_cover_expected_rules():
         "GLUE-UNATTRIBUTED-COST",
         "DATA-UNUSED-OUTPUT",
         "DATA-LOW-USE-SINGLE-CONSUMER",
-        "SFN-STANDARD-TO-EXPRESS",
         "SFN-POLLING-LOOP",
         "SM-APP-IDLE",
     }
