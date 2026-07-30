@@ -298,6 +298,28 @@ O orçamento opcional `--max-scan-cost <USD>` é um limite estimado e interrompe
 novas fontes opcionais quando o custo acumulado o alcança; uma fonte já iniciada
 pode ultrapassá-lo. Chamadas, páginas, retries, throttles, cache hits,
 duração e operações ainda sem tarifa ficam no dataset e no run manifest.
+
+### Primeira coleta de uma conta
+
+Várias regras só produzem cifra com maturidade — três coletas consistentes, ou
+90 dias de cobertura. Com a janela fixa de 30 dias, uma conta nova esperava de um
+a três meses de coletas semanais para o portfólio ter número, mesmo com a AWS já
+retendo o histórico. A primeira coleta agora pede 90 dias; as seguintes voltam
+aos 30. O checkpoint é o próprio `--output` anterior, e
+`--bootstrap`/`--no-bootstrap` força ou recusa a decisão. `--cadence monthly`
+nunca é bootstrap: mês-calendário é fechamento de um período, não janela móvel.
+
+Cada família de fonte recorta essa janela no que a AWS ainda retém — 45 dias no
+Athena, 30 no Step Functions (a quota de 90 é reduzível por conta e o piso é o
+lado seguro), 90 no Glue. Pedir mais dias que a retenção **não** devolve erro:
+devolve menos dado, e como a cobertura registrada é a janela pedida, sem o teto o
+dataset afirmaria uma cobertura que não tem. O teto é por família, e não por
+fonte, porque uma fonte de custo precisa medir a mesma janela do inventário com
+que reconcilia. Quanto cada fonte mediu fica na saúde da coleta.
+
+A coleta profunda custa mais chamadas: paginação de histórico de job e listagem
+crescem com a janela. `--max-scan-cost` continua valendo.
+
 Antes da coleta:
 
 ```bash
