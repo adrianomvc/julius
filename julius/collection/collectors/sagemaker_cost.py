@@ -102,6 +102,15 @@ def allocate_costs(
         if bucket not in allocatable or amount <= 0:
             continue
         candidates = assets.get(bucket, [])
+        # Job sem base de rateio sai do denominador, e a cobrança dele é
+        # repartida entre os que ficaram — que passam a parecer mais caros do
+        # que são. A redistribuição é inevitável sem base; o silêncio não.
+        fora = _jobs_without_cost_base(account, bucket)
+        if fora:
+            coverage.gaps.append(
+                f"{bucket}: {len(fora)} job(s) sem base de rateio; a cobrança "
+                f"deles foi redistribuída entre os demais"
+            )
         if not candidates:
             coverage.gaps.append(f"{bucket}: cobrança sem ativo coletado")
             continue
@@ -318,6 +327,18 @@ def _job_weights(account: Account, kind: str) -> list[tuple[Any, float]]:
         if job.kind == kind
         and job.in_financial_window
         and job.instance_hours > 0
+    ]
+
+
+def _jobs_without_cost_base(account: Account, kind: str) -> list[str]:
+    """Jobs da janela que o rateio não consegue considerar, e por isso distorce.
+
+    `kind` é o nome do bucket de cobrança; só os buckets de job têm este caso.
+    """
+    return [
+        job.name
+        for job in account.sagemaker_jobs
+        if job.kind == kind and job.in_financial_window and job.instance_hours <= 0
     ]
 
 

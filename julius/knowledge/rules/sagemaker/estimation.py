@@ -207,9 +207,13 @@ def endpoint_idle_saving(
 def failed_job_cost(job: SageMakerJob, config: Config) -> Estimation:
     cost = job.allocated_cost if job.allocated_cost is not None else job.modeled_cost
     if cost is None or cost <= 0:
+        # O motivo vem do coletor: "describe negado", "sem tarifa para o tipo" e
+        # "não chegou a iniciar" pedem ações diferentes de quem lê, e viravam a
+        # mesma frase.
         return unavailable(
             f"sm_{job.kind}_failed_v1",
-            f"custo não atribuído ao job {job.name}",
+            job.cost_unavailable_reason
+            or f"custo não atribuído ao job {job.name}",
         )
     recurring = job.consistent_scans >= 2
     return Estimation(
