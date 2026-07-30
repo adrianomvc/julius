@@ -19,6 +19,8 @@ import json
 from collections import Counter
 from datetime import datetime, timezone
 
+from julius.collection.collectors import metrics
+from julius.collection.collectors.metrics import MetricQuery
 from julius.collection.collectors.paginate import safe_call, safe_pages
 from julius.collection.health.recorder import error_category
 from julius.collection.models import StateMachine
@@ -233,29 +235,28 @@ def _enrich_cloudwatch(client, machines, window, gaps) -> None:
 
 
 def _account_cloudwatch(client, target, window, gaps) -> None:
-    """Métricas sem dimensão de state machine permanecem no nível da conta."""
-    for metric, field in (
+    """Métricas sem dimensão de state machine permanecem no nível da conta.
+
+    Duas métricas, duas chamadas: o resíduo de `GetMetricStatistics` num arquivo
+    que já pedia o resto em lote.
+    """
+    campos = (
         ("ApproximateMapRunBacklogSize", "map_backlog"),
         ("OpenExecutionCount", "open_executions"),
-    ):
-        try:
-            response = client.get_metric_statistics(
-                Namespace="AWS/States",
-                MetricName=metric,
-                StartTime=window.start,
-                EndTime=window.end,
-                Period=86400,
-                Statistics=["Maximum"],
+    )
+    queries = [
+        MetricQuery(namespace="AWS/States", metric_name=metric, stat="Maximum")
+        for metric, _field in campos
+    ]
+    problems = metrics.collect(client, queries, start=window.start, end=window.end)
+    if problems:
+        if gaps is not None:
+            gaps.append(
+                f"cloudwatch_stepfunctions_account: {error_category(problems[0])}"
             )
-            values = [
-                int(point.get("Maximum") or 0)
-                for point in response.get("Datapoints", [])
-            ]
-            target[field] = max(values, default=0)
-        except Exception as exc:
-            if gaps is not None:
-                gaps.append(f"cloudwatch_stepfunctions_account: {error_category(exc)}")
-            return
+        return
+    for (_metric, field), query in zip(campos, queries, strict=True):
+        target[field] = max((int(valor) for valor in query.values), default=0)
     if not hasattr(client, "list_metrics"):
         return
     for metric, field in (

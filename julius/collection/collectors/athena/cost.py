@@ -7,7 +7,9 @@ from __future__ import annotations
 
 from collections import defaultdict
 
+from julius.collection.collectors import metrics
 from julius.collection.collectors.athena.evidence import AthenaExecutionEvidence
+from julius.collection.collectors.metrics import MetricQuery
 from julius.collection.currency import non_usd_gap, usd_amount
 from julius.collection.models import AthenaCoverage
 
@@ -21,24 +23,25 @@ def reconcile_cloudwatch(coverage, client, workgroups, start, end, telemetry):
         )
         return
     telemetry.used("Athena CloudWatch")
-    total = 0.0
-    complete = True
-    for workgroup in workgroups:
-        try:
-            response = client.get_metric_statistics(
-                Namespace="AWS/Athena",
-                MetricName="ProcessedBytes",
-                Dimensions=[{"Name": "WorkGroup", "Value": workgroup}],
-                StartTime=start,
-                EndTime=end,
-                Period=86400,
-                Statistics=["Sum"],
-            )
-            total += sum(float(point.get("Sum") or 0) for point in response.get("Datapoints", []))
-        except Exception as exc:
-            complete = False
-            telemetry.failed("Athena CloudWatch", exc, detail=f"{workgroup}")
-    if complete:
+    # Um workgroup por chamada era uma ida à AWS por workgroup; em lote é uma só.
+    # A reconciliação exige o total íntegro, então qualquer lote que falhe
+    # impede a escrita — o rateio parcial afirmaria um total que não foi medido.
+    queries = [
+        MetricQuery(
+            namespace="AWS/Athena",
+            metric_name="ProcessedBytes",
+            stat="Sum",
+            dimensions=(("WorkGroup", workgroup),),
+        )
+        for workgroup in workgroups
+    ]
+    problems = metrics.collect(client, queries, start=start, end=end)
+    for exc in problems:
+        telemetry.failed(
+            "Athena CloudWatch", exc, detail=f"{len(queries)} workgroup(s) em lote"
+        )
+    total = sum(sum(query.values) for query in queries)
+    if not problems:
         coverage.cloudwatch_bytes = int(total)
         if coverage.api_scanned_bytes:
             coverage.reconciliation_ratio = round(total / coverage.api_scanned_bytes, 4)

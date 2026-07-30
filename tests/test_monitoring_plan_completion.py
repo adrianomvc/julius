@@ -428,13 +428,27 @@ def test_sagemaker_cost_collection_consumes_all_cost_explorer_pages():
 
 
 class _CloudWatch:
+    """Responde `GetMetricData`, guardando as consultas de cada chamada."""
+
     def __init__(self):
         self.calls = []
 
-    def get_metric_statistics(self, **kwargs):
+    def get_metric_data(self, **kwargs):
         self.calls.append(kwargs)
-        statistic = kwargs["Statistics"][0]
-        return {"Datapoints": [{statistic: 1.0}]}
+        return {
+            "MetricDataResults": [
+                {"Id": query["Id"], "Values": [1.0]}
+                for query in kwargs["MetricDataQueries"]
+            ]
+        }
+
+    @property
+    def queries(self) -> list[dict]:
+        return [
+            query["MetricStat"]["Metric"]
+            for call in self.calls
+            for query in call["MetricDataQueries"]
+        ]
 
 
 def test_efs_storage_metric_uses_the_required_total_storage_class_dimension():
@@ -444,7 +458,31 @@ def test_efs_storage_metric_uses_the_required_total_storage_class_dimension():
         home_efs_file_system_id="fs-123",
     )
 
-    _apply_efs_metrics(client, domain, _window())
+    _apply_efs_metrics(client, [domain], _window())
 
-    storage = next(call for call in client.calls if call["MetricName"] == "StorageBytes")
+    storage = next(q for q in client.queries if q["MetricName"] == "StorageBytes")
     assert {"Name": "StorageClass", "Value": "Total"} in storage["Dimensions"]
+
+
+def test_efs_metrics_of_every_domain_fit_in_one_call():
+    """Eram cinco chamadas por domain; três domains custavam quinze."""
+    client = _CloudWatch()
+    domains = [
+        SageMakerDomain(domain_id=f"d-{i}", home_efs_file_system_id=f"fs-{i}")
+        for i in range(3)
+    ]
+
+    _apply_efs_metrics(client, domains, _window())
+
+    assert len(client.calls) == 1
+    assert len(client.queries) == 3 * 5
+
+
+def test_a_domain_without_efs_is_not_asked_about():
+    """Sem `FileSystemId` não há o que perguntar ao CloudWatch."""
+    client = _CloudWatch()
+    domains = [SageMakerDomain(domain_id="d-1", home_efs_file_system_id="")]
+
+    _apply_efs_metrics(client, domains, _window())
+
+    assert client.calls == []

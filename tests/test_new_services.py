@@ -63,23 +63,33 @@ class _Redshift:
 
 
 class _CloudWatch:
-    """CPU no chão e nenhuma conexão — o perfil de um cluster esquecido."""
+    """CPU no chão e nenhuma conexão — o perfil de um cluster esquecido.
+
+    Responde `GetMetricData` em lote, que é como o coletor pergunta: uma chamada
+    para as três métricas de todos os clusters, em vez de uma por métrica.
+    """
 
     def __init__(self, *, cpu=2.0, peak=6.0, connections=0.0):
         self.cpu, self.peak, self.connections = cpu, peak, connections
+        self.chamadas = 0
 
-    def get_metric_statistics(self, **kwargs):
-        metric, statistic = kwargs["MetricName"], kwargs["Statistics"][0]
-        if metric == "DatabaseConnections":
-            return {"Datapoints": [{"Average": self.connections}] * 30}
-        value = self.peak if statistic == "Maximum" else self.cpu
-        return {"Datapoints": [{statistic: value}] * 30}
+    def get_metric_data(self, **kwargs):
+        self.chamadas += 1
+        resultados = []
+        for query in kwargs["MetricDataQueries"]:
+            stat = query["MetricStat"]
+            metric, statistic = stat["Metric"]["MetricName"], stat["Stat"]
+            if metric == "DatabaseConnections":
+                valor = self.connections
+            else:
+                valor = self.peak if statistic == "Maximum" else self.cpu
+            resultados.append({"Id": query["Id"], "Values": [valor] * 30})
+        return {"MetricDataResults": resultados}
 
 
 def test_redshift_collects_control_plane_and_metrics():
-    clusters = redshift.collect_clusters(
-        _Redshift(), _CloudWatch(), window=WINDOW
-    )
+    cloudwatch = _CloudWatch()
+    clusters = redshift.collect_clusters(_Redshift(), cloudwatch, window=WINDOW)
 
     by_name = {cluster.name: cluster for cluster in clusters}
     assert by_name["analitico"].node_count == 4
@@ -87,6 +97,9 @@ def test_redshift_collects_control_plane_and_metrics():
     assert by_name["analitico"].avg_cpu_load == 0.02
     assert by_name["analitico"].observed_days == 30
     assert by_name["pausado"].paused is True
+    # Dois clusters × três métricas caberiam em seis chamadas do
+    # `GetMetricStatistics`; o lote resolve em uma.
+    assert cloudwatch.chamadas == 1
 
 
 def test_redshift_query_history_is_absent_not_zero():
@@ -172,11 +185,25 @@ class _SageMaker:
 
 
 class _SageMakerMetrics:
-    def get_metric_statistics(self, **kwargs):
-        if kwargs["MetricName"] == "Invocations":
-            return {"Datapoints": [{"Sum": 4.0}] * 3}
-        # CPU quase zerada: o kernel ficou ocioso.
-        return {"Datapoints": [{"Average": 1.0}] * 20}
+    """Responde `GetMetricData`, que é a única operação de métrica da coleta."""
+
+    def get_metric_data(self, **kwargs):
+        resultados = []
+        for query in kwargs["MetricDataQueries"]:
+            nome = query["MetricStat"]["Metric"]["MetricName"]
+            if nome == "Invocations":
+                valores = [4.0] * 3
+            else:
+                # CPU quase zerada: o kernel ficou ocioso.
+                valores = [1.0] * 20
+            resultados.append(
+                {
+                    "Id": query["Id"],
+                    "Values": valores,
+                    "Timestamps": [None] * len(valores),
+                }
+            )
+        return {"MetricDataResults": resultados}
 
 
 def test_sagemaker_collects_apps_and_endpoints():

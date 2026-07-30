@@ -18,6 +18,8 @@ regra que dependa dele dispara.
 
 from __future__ import annotations
 
+from julius.collection.collectors import metrics
+from julius.collection.collectors.metrics import MetricQuery
 from julius.collection.collectors.paginate import safe_pages
 from julius.collection.models import RedshiftCluster
 from julius.collection.window import AnalysisWindow
@@ -41,8 +43,7 @@ def collect_clusters(
     _attach_advisor(redshift_client, clusters, gaps)
     clusters.extend(_serverless(serverless_client, window, gaps))
     _attach_serverless_limits(serverless_client, clusters, gaps)
-    for cluster in clusters:
-        _enrich_cloudwatch(cloudwatch_client, cluster, window)
+    _enrich_cloudwatch(cloudwatch_client, clusters, window)
     return clusters
 
 
@@ -142,56 +143,55 @@ def _attach_serverless_limits(client, clusters: list[RedshiftCluster], gaps) -> 
 
 
 def _enrich_cloudwatch(
-    client, cluster: RedshiftCluster, window: AnalysisWindow
+    client, clusters: list[RedshiftCluster], window: AnalysisWindow
 ) -> None:
-    if client is None:
+    """CPU e conexões de todos os clusters, em lote.
+
+    Eram três chamadas por cluster, em série: vinte clusters pagavam sessenta
+    latências. As mesmas sessenta consultas cabem numa chamada de `GetMetricData`.
+    """
+    if client is None or not clusters:
         return
-    dimension = (
-        ("ClusterIdentifier", cluster.name)
-        if cluster.kind == "provisioned"
-        else ("Workgroup", cluster.name)
-    )
-    namespace = "AWS/Redshift" if cluster.kind == "provisioned" else "AWS/Redshift-Serverless"
-
-    cpu = _points(client, namespace, "CPUUtilization", dimension, window, "Average")
-    if cpu:
-        cluster.avg_cpu_load = round(sum(cpu) / len(cpu) / 100.0, 3)
-        cluster.observed_days = len(cpu)
-    peak = _points(client, namespace, "CPUUtilization", dimension, window, "Maximum")
-    if peak:
-        cluster.max_cpu_load = round(max(peak) / 100.0, 3)
-    connections = _points(
-        client, namespace, "DatabaseConnections", dimension, window, "Average"
-    )
-    if connections:
-        cluster.avg_connections = round(sum(connections) / len(connections), 2)
-
-
-def _points(
-    client,
-    namespace: str,
-    metric: str,
-    dimension: tuple[str, str],
-    window: AnalysisWindow,
-    statistic: str,
-) -> list[float]:
-    try:
-        response = client.get_metric_statistics(
-            Namespace=namespace,
-            MetricName=metric,
-            Dimensions=[{"Name": dimension[0], "Value": dimension[1]}],
-            StartTime=window.start,
-            EndTime=window.end,
-            Period=86400,
-            Statistics=[statistic],
+    pedidos = [
+        (cluster, campo, MetricQuery(
+            namespace=(
+                "AWS/Redshift"
+                if cluster.kind == "provisioned"
+                else "AWS/Redshift-Serverless"
+            ),
+            metric_name=metrica,
+            stat=estatistica,
+            dimensions=(
+                (
+                    "ClusterIdentifier"
+                    if cluster.kind == "provisioned"
+                    else "Workgroup",
+                    cluster.name,
+                ),
+            ),
+        ))
+        for cluster in clusters
+        for campo, metrica, estatistica in (
+            ("cpu", "CPUUtilization", "Average"),
+            ("peak", "CPUUtilization", "Maximum"),
+            ("connections", "DatabaseConnections", "Average"),
         )
-    except Exception:
-        return []
-    return [
-        float(point[statistic])
-        for point in response.get("Datapoints", [])
-        if statistic in point
     ]
+    metrics.collect(
+        client, [query for _c, _f, query in pedidos], start=window.start, end=window.end
+    )
+
+    for cluster, campo, query in pedidos:
+        pontos = query.values
+        if not pontos:
+            continue
+        if campo == "cpu":
+            cluster.avg_cpu_load = round(sum(pontos) / len(pontos) / 100.0, 3)
+            cluster.observed_days = len(pontos)
+        elif campo == "peak":
+            cluster.max_cpu_load = round(max(pontos) / 100.0, 3)
+        else:
+            cluster.avg_connections = round(sum(pontos) / len(pontos), 2)
 
 
 def _paginate(

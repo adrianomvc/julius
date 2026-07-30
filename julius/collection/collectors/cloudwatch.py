@@ -7,10 +7,14 @@ executores.
 
 São onze métricas por job. Uma chamada `GetMetricStatistics` por métrica dava
 onze idas à AWS por job — 3.300 numa conta com 300 jobs, em série, cada uma
-pagando a latência inteira. `GetMetricData` aceita **500 consultas por chamada**
-(e 100.800 pontos; com período diário em 30 dias são 30 pontos por consulta, de
-modo que o limite que vale é o de 500), então as mesmas 3.300 consultas cabem em
-sete chamadas.
+pagando a latência inteira. Em lote as mesmas 3.300 consultas cabem em sete
+chamadas.
+
+O mecanismo do lote mora em `collectors/metrics.py`: ele nasceu aqui, mas o
+namespace era constante do módulo e as dimensões eram fixas em `JobName`, então
+outros seis coletores com o mesmo problema não conseguiam usá-lo. O que fica
+aqui é o que é do Glue — quais métricas importam, quais dimensões cada uma pede
+e como o valor da janela é reduzido.
 
 O que não muda: `Maximum` continua `Maximum` e `Sum` continua `Sum`. Não
 suavizar pressão de memória, disco e skew é decisão de comportamento — o gate de
@@ -20,18 +24,27 @@ métrica continua `None`, nunca zero: zero significaria "medido e vazio".
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterator, Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
-from datetime import datetime
 from statistics import mean
 
+from julius.collection.collectors import metrics as metric_batch
+from julius.collection.collectors.metrics import (
+    DAILY_PERIOD_SECONDS,
+    MAX_QUERIES_PER_CALL,
+    MetricQuery,
+)
 from julius.collection.models import GlueJob
 from julius.collection.window import AnalysisWindow
 
 _NAMESPACE = "Glue"
-_PERIOD_SECONDS = 86400  # um ponto por dia
-#: Teto da API para consultas numa única chamada `GetMetricData`.
-MAX_QUERIES_PER_CALL = 500
+_PERIOD_SECONDS = DAILY_PERIOD_SECONDS
+
+__all__ = [
+    "MAX_QUERIES_PER_CALL",
+    "enrich_glue_cpu",
+    "enrich_glue_observability",
+]
 
 _CPU_METRIC = "glue.ALL.system.cpuSystemLoad"
 
@@ -152,81 +165,31 @@ def _enrich(
         for job in jobs
         for name, metric in metrics.items()
     ]
-    for block in _blocks(requests, MAX_QUERIES_PER_CALL):
-        # O isolamento de falha muda de grão junto com o lote: antes uma métrica
-        # ruim afetava uma métrica, agora uma chamada ruim afeta o bloco. O que
-        # não muda é o efeito — os campos do bloco ficam `None`, exatamente como
-        # ficariam se a métrica não existisse.
-        try:
-            _fetch(cw_client, block, window.start, window.end)
-        except Exception:
-            continue
-        for request in block:
-            if request.values:
-                setattr(
-                    request.job,
-                    request.field_name,
-                    round(request.metric.reduce(request.values), 3),
-                )
-
-
-def _blocks(
-    requests: list[_Request], size: int
-) -> Iterator[list[_Request]]:
-    for start in range(0, len(requests), size):
-        yield requests[start : start + size]
-
-
-def _fetch(
-    cw_client, block: list[_Request], start: datetime, end: datetime
-) -> None:
-    """Executa um bloco e acumula os valores por consulta, página a página."""
-    by_id = {f"m{index}": request for index, request in enumerate(block)}
     queries = [
-        {
-            "Id": query_id,
-            "MetricStat": {
-                "Metric": {
-                    "Namespace": _NAMESPACE,
-                    "MetricName": request.metric.name,
-                    "Dimensions": _dimensions(request),
-                },
-                "Period": _PERIOD_SECONDS,
-                "Stat": request.metric.stat,
-            },
-            "ReturnData": True,
-        }
-        for query_id, request in by_id.items()
+        MetricQuery(
+            namespace=_NAMESPACE,
+            metric_name=request.metric.name,
+            stat=request.metric.stat,
+            dimensions=_dimensions(request),
+            period=_PERIOD_SECONDS,
+        )
+        for request in requests
     ]
+    metric_batch.collect(cw_client, queries, start=window.start, end=window.end)
 
-    token = None
-    while True:
-        kwargs = {
-            "MetricDataQueries": queries,
-            "StartTime": start,
-            "EndTime": end,
-        }
-        if token:
-            kwargs["NextToken"] = token
-        response = cw_client.get_metric_data(**kwargs)
-        for result in response.get("MetricDataResults", []):
-            request = by_id.get(str(result.get("Id")))
-            if request is None:
-                continue
-            request.values.extend(float(value) for value in result.get("Values", []))
-        token = response.get("NextToken")
-        if not token:
-            return
+    for request, query in zip(requests, queries, strict=True):
+        if query.values:
+            setattr(
+                request.job,
+                request.field_name,
+                round(request.metric.reduce(query.values), 3),
+            )
 
 
-def _dimensions(request: _Request) -> list[dict[str, str]]:
-    dimensions = [{"Name": "JobName", "Value": request.job.name}]
+def _dimensions(request: _Request) -> tuple[tuple[str, str], ...]:
+    dimensions = [("JobName", request.job.name)]
     if request.metric.name != _CPU_METRIC:
-        dimensions.append({"Name": "JobRunId", "Value": "ALL"})
-    dimensions.append(
-        {"Name": "Type", "Value": "count" if request.metric.count_type else "gauge"}
-    )
-    dimensions.extend(
-        {"Name": name, "Value": value} for name, value in request.metric.extra_dimensions
-    )
-    return dimensions
+        dimensions.append(("JobRunId", "ALL"))
+    dimensions.append(("Type", "count" if request.metric.count_type else "gauge"))
+    dimensions.extend(request.metric.extra_dimensions)
+    return tuple(dimensions)
