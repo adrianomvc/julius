@@ -81,6 +81,31 @@ S3 = [
 ]
 
 
+def _sm(component: str, instance: str, price: float) -> str:
+    return _product(
+        f"SM{component}{instance}".replace(".", ""),
+        {
+            "productFamily": "ML Instance",
+            "component": component,
+            "instanceName": instance,
+        },
+        [price],
+    )
+
+
+SAGEMAKER = [
+    _sm("Studio Notebook", "ml.t3.medium", 0.05),
+    _sm("Studio Notebook", "ml.m5.large", 0.12),
+    _sm("Training", "ml.m5.xlarge", 0.23),
+]
+
+_MAPA_SAGEMAKER = (
+    '[sagemaker.studio]\nservice = "AmazonSageMaker"\n'
+    'match = { productFamily = "ML Instance", component = "Studio Notebook" }\n'
+    'expand = "instanceName"\npick = "min"\n'
+)
+
+
 def test_products_are_flattened_from_the_nested_price_list():
     client = FakePricing({"AWSGlue": GLUE})
 
@@ -335,6 +360,172 @@ def test_dry_run_reports_without_touching_the_table(tmp_path):
     assert (tables / "sa-east-1.toml").read_text(encoding="utf-8") == antes
 
 
+# --------------------------------------------------------------------------
+# Tarifa por tipo de instância: uma decisão humana, muitos valores
+# --------------------------------------------------------------------------
+
+
+class _Anterior:
+    """O que `Pricing.for_region` devolve para a tabela de antes do mapa.
+
+    `refresh_region` recebe isso por injeção (`previous`); sem passar, nada é
+    carregado e um teste de preservação passaria vazio.
+    """
+
+    sagemaker_instances = {"ml.t3.medium": 0.05, "ml.p3.2xlarge": 4.0}
+    sagemaker_component_instances = {"studio": {"ml.t3.medium": 0.05}}
+    sagemaker_default_hourly = 0.18
+
+
+def _tabela_com_instancias_a_mao(tmp_path):
+    """Tabela no estado anterior ao mapa: instâncias escritas à mão."""
+    tables = tmp_path / "tables"
+    tables.mkdir()
+    (tables / "sa-east-1.toml").write_text(
+        'region = "sa-east-1"\ncurrency = "USD"\nversion = "antiga"\n'
+        "verified = false\n"
+        "\n[glue]\ndpu_hour = 0.44\n"
+        "\n[sagemaker]\ndefault_hourly = 0.18\n"
+        '\n[sagemaker.instances]\n"ml.t3.medium" = 0.05\n"ml.p3.2xlarge" = 4.0\n',
+        encoding="utf-8",
+    )
+    mapping_file = tmp_path / "mapping.toml"
+    mapping_file.write_text(_MAPA_SAGEMAKER, encoding="utf-8")
+    return tables, mapping_file
+
+
+def test_one_entry_resolves_a_rate_per_instance_type(tmp_path):
+    """Mapear tipo por tipo seria copiar a mesma decisão dezenas de vezes.
+
+    E deixaria tipo novo na conta sem tarifa — que, com o gate de pricing, é
+    cifra bloqueada por omissão do mapa, não por falta de evidência.
+    """
+    tables, mapping_file = _tabela_com_instancias_a_mao(tmp_path)
+
+    written, resolutions = refresh_region(
+        FakePricing({"AmazonSageMaker": SAGEMAKER}),
+        "sa-east-1",
+        today=TODAY,
+        tables=tables,
+        mapping_path=mapping_file,
+        previous=lambda _region: _Anterior,
+    )
+
+    assert written is not None
+    assert all(item.ok for item in resolutions)
+    table = tomllib.loads(written.read_text(encoding="utf-8"))
+    studio = table["sagemaker"]["components"]["studio"]
+    assert studio["ml.t3.medium"] == pytest.approx(0.05)
+    assert studio["ml.m5.large"] == pytest.approx(0.12)
+    # O componente que o mapa não pediu não entra de carona.
+    assert "training" not in table["sagemaker"]["components"]
+
+
+def test_refreshing_sagemaker_drops_the_hand_written_instance_list(tmp_path):
+    """A lista antiga não pode herdar a procedência que este refresh conferiu.
+
+    Ela é o default escrito à mão de antes do mapa. Mantê-la dentro de uma
+    seção agora marcada como conferida daria carimbo de Price List a uma tarifa
+    que ninguém checou — e `sagemaker_hourly` a usaria como fallback silencioso.
+    """
+    tables, mapping_file = _tabela_com_instancias_a_mao(tmp_path)
+
+    written, _ = refresh_region(
+        FakePricing({"AmazonSageMaker": SAGEMAKER}),
+        "sa-east-1",
+        today=TODAY,
+        tables=tables,
+        mapping_path=mapping_file,
+        previous=lambda _region: _Anterior,
+    )
+
+    table = tomllib.loads(written.read_text(encoding="utf-8"))
+    assert "instances" not in table["sagemaker"]
+    # ml.p3.2xlarge não estava na resposta da API: fica sem tarifa, e a regra
+    # bloqueia a cifra em vez de usar o número antigo.
+    assert "ml.p3.2xlarge" not in table["sagemaker"]["components"]["studio"]
+    assert table["verification"]["sagemaker"]["verified"] is True
+
+
+def test_refreshing_another_section_keeps_the_sagemaker_components(tmp_path):
+    """`--only glue` não pode apagar tarifa de instância já conferida."""
+    tables = tmp_path / "tables"
+    tables.mkdir()
+    (tables / "sa-east-1.toml").write_text(
+        'region = "sa-east-1"\ncurrency = "USD"\nversion = "antiga"\n'
+        "verified = true\n"
+        "\n[glue]\ndpu_hour = 0.44\nflex_dpu_hour = 0.29\n"
+        "\n[athena]\nper_tb = 5.0\n"
+        "\n[stepfunctions]\nstandard_per_transition = 2.5e-05\n"
+        "express_per_request = 1e-06\n"
+        "\n[sagemaker]\ndefault_hourly = 0.18\n"
+        '\n[sagemaker.components.studio]\n"ml.t3.medium" = 0.05\n',
+        encoding="utf-8",
+    )
+    mapping_file = tmp_path / "mapping.toml"
+    mapping_file.write_text(_MAPA_DUAS_SECOES, encoding="utf-8")
+
+    written, _ = refresh_region(
+        FakePricing({"AWSGlue": GLUE}),
+        "sa-east-1",
+        today=TODAY,
+        tables=tables,
+        mapping_path=mapping_file,
+        sections=("glue",),
+        previous=lambda _region: _Anterior,
+    )
+
+    table = tomllib.loads(written.read_text(encoding="utf-8"))
+    assert table["sagemaker"]["components"]["studio"]["ml.t3.medium"] == pytest.approx(
+        0.05
+    )
+    # E a seção não refrescada mantém a lista antiga: descartá-la é decisão de
+    # quem conferiu a seção, não efeito colateral de atualizar Glue.
+    assert table["sagemaker"]["instances"]["ml.p3.2xlarge"] == pytest.approx(4.0)
+
+
+def test_an_ambiguous_instance_rate_refuses_the_whole_entry():
+    """Ambiguidade em um tipo reprova a entrada, não escolhe por conta própria."""
+    client = FakePricing(
+        {
+            "AmazonSageMaker": [
+                _sm("Studio Notebook", "ml.t3.medium", 0.05),
+                _product(
+                    "SMDUP",
+                    {
+                        "productFamily": "ML Instance",
+                        "component": "Studio Notebook",
+                        "instanceName": "ml.t3.medium",
+                    },
+                    [0.09],
+                ),
+            ]
+        }
+    )
+    items, _ = fetch_products(client, "AmazonSageMaker", "sa-east-1")
+    mapping = tomllib.loads(_MAPA_SAGEMAKER.replace('pick = "min"', 'pick = "only"'))
+
+    resolutions = resolve(mapping, {"AmazonSageMaker": items})
+
+    assert not resolutions[0].ok
+    assert "instanceName=ml.t3.medium" in resolutions[0].problem
+
+
+def test_an_expanded_entry_that_matches_nothing_blocks_the_write(tmp_path):
+    tables, mapping_file = _tabela_com_instancias_a_mao(tmp_path)
+
+    written, resolutions = refresh_region(
+        FakePricing({"AmazonSageMaker": [_sm("Training", "ml.m5.large", 0.12)]}),
+        "sa-east-1",
+        today=TODAY,
+        tables=tables,
+        mapping_path=mapping_file,
+    )
+
+    assert written is None
+    assert "nenhum preço com atributo instanceName" in resolutions[0].problem
+
+
 def test_the_shipped_mapping_is_loadable_and_names_real_services():
     from julius.knowledge.pricing.refresh import load_mapping
 
@@ -348,3 +539,52 @@ def test_the_shipped_mapping_is_loadable_and_names_real_services():
         for key, spec in entries.items():
             assert spec.get("match"), f"{key} sem critério de match"
             assert spec.get("pick") in {"only", "min", "max"}
+
+
+def test_every_declared_pricing_dependency_can_actually_be_verified():
+    """Seção declarada e não mapeada é cifra bloqueada para sempre.
+
+    `dependencies_are_current` reprova a seção ausente do mapa `verification`, e
+    só o refresh popula esse mapa — a partir do `mapping.toml`. Uma dependência
+    declarada sem entrada no mapa não falha em lugar nenhum: passa em silêncio
+    rebaixando toda cifra modelada daquele serviço para `unavailable`. Foi
+    exatamente o que aconteceu com SageMaker.
+    """
+    from julius.findings.build import _pricing_dependencies
+    from julius.knowledge.pricing.refresh import load_mapping
+
+    mapping = load_mapping()
+    # Um asset_type por prefixo que `_pricing_dependencies` reconhece.
+    declared = {
+        section
+        for asset_type in (
+            "glue_job",
+            "athena_workgroup",
+            "state_machine",
+            "sagemaker_app",
+            "s3_prefix",
+        )
+        for section in _pricing_dependencies(asset_type)
+    }
+
+    assert declared, "o mapeamento de dependências ficou vazio"
+    assert declared <= set(mapping), (
+        "seções declaradas sem entrada no mapping.toml: "
+        f"{sorted(declared - set(mapping))}"
+    )
+
+
+def test_pricing_verify_requires_every_mapped_section():
+    """Verde no `pricing verify` não pode ignorar seção que sustenta cifra."""
+    import inspect as inspect_mod
+
+    from julius.cli.pricing import pricing_verify
+    from julius.knowledge.pricing.refresh import load_mapping
+
+    default = inspect_mod.signature(pricing_verify).parameters["sections"].default
+    required = {item.strip() for item in str(default.default).split(",")}
+
+    assert set(load_mapping()) <= required, (
+        "seções mapeadas fora do default de `pricing verify`: "
+        f"{sorted(set(load_mapping()) - required)}"
+    )

@@ -34,6 +34,10 @@ class Resolution:
     key: str
     service: str
     value: float | None = None
+    # Uma entrada com `expand` rende uma tarifa por valor de atributo, não um
+    # escalar: é assim que instância de SageMaker entra no mapa sem exigir um
+    # bloco por tipo.
+    rates: tuple[tuple[str, float], ...] = ()
     unit: str = ""
     candidates: int = 0
     problem: str = ""
@@ -41,7 +45,7 @@ class Resolution:
 
     @property
     def ok(self) -> bool:
-        return self.value is not None
+        return self.value is not None or bool(self.rates)
 
 
 def load_mapping(path: Path = MAPPING) -> dict[str, dict[str, dict]]:
@@ -62,6 +66,12 @@ def resolve(
             matches = [
                 item for item in products.get(service, []) if item.matches(criteria)
             ]
+            expand = str(spec.get("expand", ""))
+            if expand:
+                out.append(
+                    _expand(section, key, service, matches, criteria, pick, expand)
+                )
+                continue
             prices = sorted({item.usd_per_unit for item in matches})
             if not prices:
                 out.append(
@@ -93,6 +103,70 @@ def resolve(
                 )
             )
     return out
+
+
+def _expand(
+    section: str,
+    key: str,
+    service: str,
+    matches: list[PriceItem],
+    criteria: dict[str, str],
+    pick: str,
+    attribute: str,
+) -> Resolution:
+    """Uma tarifa por valor de `attribute`, em vez de um escalar.
+
+    Tarifa de instância de SageMaker ficou fora do mapa porque um bloco por tipo
+    de instância é longo demais para alguém conferir. Mas a decisão humana ali é
+    uma só — *quais atributos identificam a hora de instância daquele
+    componente* — e ela não muda com o tipo. `expand` mantém essa decisão
+    explícita e deixa a lista de tipos vir da API: um tipo novo na conta ganha
+    tarifa sem editar o mapa, em vez de bloquear a cifra por omissão.
+
+    A atomicidade do refresh não é relaxada: ambiguidade em qualquer valor
+    reprova a entrada inteira, e uma entrada reprovada impede a escrita.
+    """
+    grouped: dict[str, list[float]] = {}
+    for item in matches:
+        value = item.attributes.get(attribute, "")
+        if value:
+            grouped.setdefault(value, []).append(item.usd_per_unit)
+    if not grouped:
+        return Resolution(
+            section,
+            key,
+            service,
+            problem=(
+                f"nenhum preço com atributo {attribute} casou com {criteria}"
+            ),
+        )
+    rates: dict[str, float] = {}
+    for value, prices in grouped.items():
+        distinct = sorted(set(prices))
+        if pick == "only" and len(distinct) > 1:
+            return Resolution(
+                section,
+                key,
+                service,
+                candidates=len(distinct),
+                problem=(
+                    f"{len(distinct)} preços distintos para {attribute}={value} "
+                    f"({distinct[:4]}); restrinja o `match` ou use "
+                    'pick = "min"/"max"'
+                ),
+            )
+        rates[value] = {"min": distinct[0], "max": distinct[-1]}.get(
+            pick, distinct[0]
+        )
+    return Resolution(
+        section,
+        key,
+        service,
+        rates=tuple(sorted(rates.items())),
+        unit=matches[0].unit,
+        candidates=len(rates),
+        effective_date=matches[0].effective_date,
+    )
 
 
 def carried_sections(
@@ -160,6 +234,19 @@ def render_table(
         if item.value is not None:
             by_section.setdefault(item.section, {})[item.key] = item.value
 
+    # Componente de SageMaker é tabela aninhada, não escalar de seção: o que o
+    # mapa resolveu substitui o que a tabela anterior trazia, para uma tarifa
+    # que a API deixou de listar não sobreviver dentro de uma seção agora
+    # marcada como conferida.
+    components: dict[str, dict[str, float]] = {
+        name: dict(rates) for name, rates in (sagemaker_components or {}).items()
+    }
+    for item in resolutions:
+        if item.section == "sagemaker" and item.rates:
+            components[item.key] = dict(item.rates)
+    sagemaker_scalars = by_section.pop("sagemaker", {})
+    default_hourly = sagemaker_scalars.pop("default_hourly", sagemaker_default)
+
     provider_dates = sorted(
         item.effective_date[:10]
         for item in resolutions
@@ -205,13 +292,16 @@ def render_table(
         lines.extend(["", f"[{section}]"])
         lines.extend(f"{key} = {value!r}" for key, value in sorted(values.items()))
 
-    lines.extend(["", "[sagemaker]", f"default_hourly = {sagemaker_default!r}"])
+    lines.extend(["", "[sagemaker]", f"default_hourly = {default_hourly!r}"])
+    lines.extend(
+        f"{key} = {value!r}" for key, value in sorted(sagemaker_scalars.items())
+    )
     if sagemaker:
         lines.extend(["", "[sagemaker.instances]"])
         lines.extend(
             f'"{name}" = {value!r}' for name, value in sorted(sagemaker.items())
         )
-    for component, rates in sorted((sagemaker_components or {}).items()):
+    for component, rates in sorted(components.items()):
         if not rates:
             continue
         lines.extend(["", f"[sagemaker.components.{component}]"])
@@ -279,15 +369,21 @@ def refresh_region(
     if dry_run:
         return None, resolutions
 
-    # Preço de instância SageMaker não passa pelo mapa: é longo demais para
-    # conferência manual e o modelo já tem um default. Preserva o que a tabela
-    # anterior tinha, para o refresh não apagar dado revisado.
+    # `[sagemaker.instances]` é a lista escrita à mão de antes do mapa. Quando
+    # este refresh atualiza a seção SageMaker, ela é descartada: carregá-la para
+    # dentro de uma seção que acabou de ser marcada como conferida daria
+    # procedência de Price List a uma tarifa que ninguém conferiu. Sem tarifa, a
+    # regra bloqueia a cifra — que é o comportamento desejado.
     keep = previous(region) if previous else None
     text = render_table(
         region,
         resolutions,
         today=today,
-        sagemaker=getattr(keep, "sagemaker_instances", None),
+        sagemaker=(
+            None
+            if "sagemaker" in mapping
+            else getattr(keep, "sagemaker_instances", None)
+        ),
         sagemaker_components=getattr(
             keep, "sagemaker_component_instances", None
         ),

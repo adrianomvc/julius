@@ -144,7 +144,7 @@ def pricing_refresh(
 def pricing_verify(
     region: str = typer.Option(DEFAULT_REGION, "--region"),
     sections: str = typer.Option(
-        "glue,athena,stepfunctions,s3",
+        "glue,athena,stepfunctions,sagemaker,s3",
         "--sections",
         help="Seções obrigatórias, separadas por vírgula.",
     ),
