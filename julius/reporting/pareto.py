@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from julius.findings.opportunity import Opportunity
+from julius.scoring.priority import ranking_key
 
 _FINANCIAL_TARGET = 0.80
 
@@ -39,7 +40,10 @@ def compute(opportunities: list[Opportunity]) -> Pareto:
     if monthly_total <= 0:
         return p
 
-    # Corte financeiro: mínimo de ações que somam ~80% da economia.
+    # Corte financeiro: mínimo de ações que somam ~80% da economia. Aqui a
+    # ordem é por valor porque a pergunta é essa — quantas ações somam 80% —, e
+    # respondê-la exige as maiores primeiro. É também a ordem da barra do
+    # relatório, que num Pareto é decrescente por definição.
     for o in sorted(quant, key=_monthly, reverse=True):
         p.financial_focus.append(o)
         p.financial_sum += _monthly(o)
@@ -49,8 +53,11 @@ def compute(opportunities: list[Opportunity]) -> Pareto:
     p.financial_sum = round(p.financial_sum, 2)
 
     # Corte executável: subconjunto sem bloqueadores, implementável neste mês.
+    # Esta é uma lista de implantação, não um corte financeiro, então a ordem é
+    # a mesma da tabela: valor × confiança × urgência ÷ dificuldade. Ordenar por
+    # valor puro colocaria a ação cara e difícil antes da barata e imediata.
     executable = [o for o in quant if o.actionable and o.bucket == "fazer_agora"]
-    p.executable_focus = sorted(executable, key=_monthly, reverse=True)
+    p.executable_focus = sorted(executable, key=ranking_key, reverse=True)
     p.executable_sum = round(sum(_monthly(o) for o in p.executable_focus), 2)
     p.executable_pct = round(p.executable_sum / monthly_total * 100)
     return p

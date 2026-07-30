@@ -93,3 +93,34 @@ def tiebreak_key(o: Opportunity) -> tuple:
         -o.difficulty_score,      # menor dificuldade
         o.gain_score,
     )
+
+
+def ranking_key(o: Opportunity) -> tuple:
+    """Ordem de implantação, usada em todo lugar que mostra uma lista de ações.
+
+    Três níveis, todos "maior é melhor", para usar com `reverse=True`:
+
+    1. **Entra no portfólio.** Sem isto, item de cifra não validada — inclusive
+       de valor zero — encabeçava a tabela, porque `execution_priority` não
+       conhece o gate: o ganho de um estratégico é fixo em 92 e a dificuldade
+       dele costuma ser 1, então ele ganha de economia medida com dificuldade 2.
+       Ordenar não esconde nada; só para de sugerir que o não validado vem antes.
+    2. **`execution_priority`**, que é o composto valor × confiança × urgência ÷
+       dificuldade — e não o valor puro. Ação cara e difícil não vem antes de
+       ação barata e imediata só por somar mais.
+    3. **Desempate determinístico**, terminando no `opportunity_id` — que é
+       estável entre scans, porque deriva de regra e ativo, não do scan. Sem ele
+       a chave não é ordem total: itens empatados em tudo ficavam na ordem em que
+       chegaram, e a mesma conta produzia listas diferentes conforme a ordem de
+       avaliação das regras. Alfabético invertido é arbitrário, e é o ponto —
+       arbitrário e estável.
+
+    O corte financeiro do Pareto continua por valor: ali a pergunta é "quantas
+    ações somam 80% da economia", e responder isso exige as maiores primeiro.
+    """
+    return (
+        o.include_in_portfolio,
+        o.execution_priority,
+        *tiebreak_key(o),
+        o.opportunity_id,
+    )

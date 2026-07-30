@@ -15,6 +15,7 @@ from julius.reporting import formatters as fmt
 from julius.reporting.pareto import Pareto
 from julius.reporting.pareto import compute as compute_pareto
 from julius.scoring import evidence_quality
+from julius.scoring.priority import ranking_key
 
 _HIGH_CONF = 0.80
 
@@ -430,7 +431,7 @@ class ReportViewModel:
 def _recommendation(do_now: list[Opportunity], currency: str) -> str:
     picks = sorted(
         [o for o in do_now if o.actionable and o.include_in_portfolio],
-        key=lambda o: o.execution_priority,
+        key=ranking_key,
         reverse=True,
     )[:2]
     if not picks:
@@ -916,7 +917,7 @@ def build(
     ) = _collection_health(account)
     athena_coverage, athena_queries, athena_actors, athena_gaps = _athena_views(account)
 
-    table_sorted = sorted(opportunities, key=lambda o: o.execution_priority, reverse=True)
+    table_sorted = sorted(opportunities, key=ranking_key, reverse=True)
 
     account_currency = (
         account.services[0].currency
