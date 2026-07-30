@@ -237,15 +237,31 @@ def timeout_guardrail_saving(job: GlueJob, config: Config) -> Estimation:
     timeout_runs = int(job.failure_categories.get("timeout", 0))
     failed_runs = max(0, int(job.failed_runs_in_window or 0))
     if timeout_runs <= 0:
+        # Sem timeout observado não há frequência, e sem frequência não há
+        # economia — inventá-la seria o oposto do que este produto faz. Mas
+        # "US$ 0,00" também não é a informação certa: faz o time ignorar um
+        # achado cuja única resposta útil é a ordem de grandeza do estrago.
+        # Então o que sai é exposição: quanto custa **uma** trava.
+        desperdicio_min = max(0.0, job.timeout_min - exec_min)
+        exposicao = desperdicio_min / 60.0 * job.configured_dpu * rate
         return Estimation(
             method="glue_timeout_guardrail_v2",
             baseline_cost=0.0,
             projected_cost=0.0,
             estimated_saving=0.0,
+            exposure_cost=round(exposicao, 2),
             assumptions=[
                 f"timeout {job.timeout_min} min vs. duração p95 {exec_min:.0f} min",
-                "nenhuma execução atingiu timeout na janela; valor é risco evitado",
+                "nenhuma execução atingiu timeout na janela: sem frequência "
+                "observada, não há economia a projetar",
+                (
+                    f"uma trava até o timeout custaria US$ {exposicao:.2f} "
+                    f"({desperdicio_min:.0f} min × {job.configured_dpu:.4g} DPU)"
+                ),
+                source,
             ],
+            pricing_region=pricing.region,
+            estimation_version=pricing.version,
             baseline_quality=quality,
             saving_quality="unavailable",
             is_strategic=True,
@@ -505,6 +521,34 @@ def python_shell_migration_saving(job: GlueJob, config: Config) -> Estimation:
     """
     pricing = config.pricing
     baseline, source, quality = _baseline(job, pricing)
+    if baseline <= 0:
+        # `_baseline` é DPU-hora da janela × tarifa: job que não rodou tem zero.
+        # Emitir economia zero se lê como "não compensa migrar", quando o certo
+        # é "não dá para estimar nesta janela" — e um job parado é candidato a
+        # desligamento, não a migração.
+        return Estimation(
+            method="glue_spark_to_python_shell_v1",
+            baseline_cost=0.0,
+            projected_cost=0.0,
+            estimated_saving=0.0,
+            assumptions=[
+                (
+                    f"nenhuma execução na janela de {job.coverage_days} dias"
+                    + (
+                        f"; última execução em {job.last_run_at[:10]}"
+                        if job.last_run_at
+                        else " e nenhuma execução conhecida"
+                    )
+                ),
+                "sem consumo na janela não há baseline para comparar",
+                "job parado é caso de desligamento, não de migração",
+            ],
+            pricing_region=pricing.region,
+            estimation_version=pricing.version,
+            baseline_quality=quality,
+            saving_quality="unavailable",
+            is_strategic=True,
+        )
     projected = baseline * 0.0625 / job.configured_dpu if job.configured_dpu > 0 else baseline
     projected = min(baseline, projected)
     return Estimation(

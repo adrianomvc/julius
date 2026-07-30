@@ -65,6 +65,12 @@ class Estimation:
     first_month_net_saving: float | None = None
     break_even_months: float | None = None
     maximum_profitable_reads: float | None = None
+    #: Quanto custa **uma** ocorrência do risco, quando a frequência dele não foi
+    #: observada. Não é economia e nunca entra em total nenhum: economia exige
+    #: frequência, e inventá-la seria o oposto do que este produto faz. Existe
+    #: porque "US$ 0,00" faz o time ignorar um achado cuja única informação útil
+    #: é a ordem de grandeza do estrago.
+    exposure_cost: float | None = None
     # Ganho não financeiro (migração, governança): existe economia de risco ou
     # de esforço, mas não um número em USD a somar no portfólio.
     is_strategic: bool = False
