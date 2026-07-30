@@ -140,6 +140,38 @@ def pricing_refresh(
     typer.echo(f"\nEscrito {written}. Revise o diff antes de commitar.")
 
 
+@pricing_app.command("verify")
+def pricing_verify(
+    region: str = typer.Option(DEFAULT_REGION, "--region"),
+    sections: str = typer.Option(
+        "glue,athena,stepfunctions,s3",
+        "--sections",
+        help="Seções obrigatórias, separadas por vírgula.",
+    ),
+    max_age_days: int = typer.Option(90, "--max-age-days", min=1),
+) -> None:
+    """Falha quando o pricing versionado está ausente, não verificado ou vencido."""
+    pricing = Pricing.for_region(region)
+    required = tuple(item.strip() for item in sections.split(",") if item.strip())
+    invalid = [
+        section
+        for section in required
+        if not pricing.dependencies_are_current(
+            (section,), max_age_days=max_age_days
+        )
+    ]
+    if invalid:
+        raise typer.BadParameter(
+            "pricing inválido ou vencido para: "
+            + ", ".join(invalid)
+            + f" (janela máxima {max_age_days} dias)"
+        )
+    typer.echo(
+        f"Pricing {region} válido para {', '.join(required)} "
+        f"(máximo {max_age_days} dias)."
+    )
+
+
 def _como_corrigir(falhas: list, region: str) -> str:
     """Diz qual `inspect` rodar, em vez de mandar descobrir sozinho."""
     servicos = sorted({item.service for item in falhas if item.service})

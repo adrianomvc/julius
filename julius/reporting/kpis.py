@@ -20,7 +20,18 @@ _SERVICE_OF = {
     "glue_job": "AWS Glue",
     "glue_session": "AWS Glue",
     "athena_query": "Amazon Athena",
+    "athena_capacity_reservation": "Amazon Athena",
+    "state_machine": "AWS Step Functions",
+    "sagemaker_app": "Amazon SageMaker",
+    "sagemaker_space": "Amazon SageMaker",
+    "sagemaker_domain": "Amazon SageMaker",
+    "sagemaker_endpoint": "Amazon SageMaker",
+    "sagemaker_notebook": "Amazon SageMaker",
+    "sagemaker_job": "Amazon SageMaker",
+    "sagemaker_feature_group": "Amazon SageMaker",
+    "redshift_cluster": "Amazon Redshift",
     "s3": "Amazon S3",
+    "s3_prefix": "Amazon S3",
 }
 
 
@@ -107,7 +118,12 @@ def compute_kpis(
     with_owner = sum(1 for o in opportunities if o.owner or o.actor)
 
     # Cobertura financeira: custo-base atribuído por serviço ÷ custo do serviço.
-    cost_by_service = {s.name: s.monthly_cost for s in account.services}
+    in_scope_services = set(_SERVICE_OF.values())
+    cost_by_service = {
+        s.name: s.monthly_cost
+        for s in account.services
+        if s.name in in_scope_services
+    }
     attributed: dict[str, float] = {}
     for o in opportunities:
         svc = _SERVICE_OF.get(o.asset_type)
@@ -116,10 +132,12 @@ def compute_kpis(
 
     coverage_by_service: dict[str, float] = {}
     for svc, cost in cost_by_service.items():
-        if cost > 0 and svc in attributed:
-            coverage_by_service[svc] = round(min(1.0, attributed[svc] / cost), 3)
+        if cost > 0:
+            coverage_by_service[svc] = round(
+                min(1.0, attributed.get(svc, 0.0) / cost), 3
+            )
 
-    analyzable_total = sum(cost_by_service.get(s, 0.0) for s in attributed)
+    analyzable_total = sum(cost_by_service.values())
     coverage_overall = (
         round(min(1.0, sum(attributed.values()) / analyzable_total), 3)
         if analyzable_total
@@ -144,12 +162,12 @@ def compute_kpis(
     identified_monthly = sum(
         opportunity.portfolio_gain.monthly_expected
         for opportunity in opportunities
-        if not opportunity.estimated_gain.is_strategic
+        if opportunity.include_in_portfolio
     )
     committed_monthly = sum(
         opportunity.portfolio_gain.monthly_expected
         for opportunity in opportunities
-        if not opportunity.estimated_gain.is_strategic
+        if opportunity.include_in_portfolio
         and opportunity.status in {"accepted", "planned", "implemented", "validated"}
     )
 

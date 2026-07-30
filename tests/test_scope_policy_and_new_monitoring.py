@@ -17,7 +17,7 @@ from julius.knowledge.rules.s3 import rules as s3_rules
 from julius.knowledge.rules.stepfunctions import rules as stepfunctions_rules
 
 
-def test_consumer_scope_suppresses_source_before_client_creation():
+def test_consumer_scope_includes_redshift_and_isolates_access_failure():
     class Session:
         def client(self, _service):
             raise AssertionError("fonte fora do escopo não pode criar cliente")
@@ -43,8 +43,8 @@ def test_consumer_scope_suppresses_source_before_client_creation():
 
     run(source, context, recorder)
 
-    assert recorder.entries[0].status == "not_applicable"
-    assert recorder.entries[0].error_category == "out_of_scope"
+    assert recorder.entries[0].status == "unavailable"
+    assert recorder.entries[0].error_category == "invalid_response"
 
 
 def test_athena_capacity_reduces_only_one_safe_step():

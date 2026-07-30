@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 
 import pytest
+from verified_pricing import verified_config
 
 from julius.collection.normalizers import load_account
 from julius.config import DEFAULT_CONFIG
@@ -99,7 +100,7 @@ def test_savings_are_positive(analysis):
 
 def test_quick_wins_surface(analysis):
     do_now = [o for o in analysis.opportunities if o.bucket == "fazer_agora"]
-    assert do_now, "esperava ao menos uma oportunidade em 'fazer_agora'"
+    assert do_now == [], "pricing não verificado não pode liberar quick win financeiro"
     assert all(o.difficulty_score <= 2 for o in do_now)
 
 
@@ -115,11 +116,11 @@ def test_pareto_two_cuts(analysis):
     vm = analysis.vm
     assert 0 < vm.pareto_pct <= 100
     assert vm.pareto_count >= 1
-    assert vm.executable_count >= 1
+    assert vm.executable_count == 0
 
 
 def test_recommendation_is_deterministic(analysis):
-    assert "Começar por" in analysis.vm.recommendation
+    assert "coletar evidência" in analysis.vm.recommendation
 
 
 def test_producer_recommendations(analysis):
@@ -302,20 +303,21 @@ def test_flex_is_no_longer_dead_and_waits_for_the_sla_answer():
     )
     account = Account(account_id="123456789012", glue_jobs=[job])
 
-    found = {o.rule_id: o for o in run_all(account, DEFAULT_CONFIG, "scan")}
+    config = verified_config("glue")
+    found = {o.rule_id: o for o in run_all(account, config, "scan")}
     flex = found["GLUE-FLEX-CANDIDATE"]
     assert flex.blocked is True, "migrar sem saber o SLA seria recomendar às cegas"
     assert flex.missing_evidence
 
-    sinais = {s.rule_id for s in collect_signals(account, DEFAULT_CONFIG)}
+    sinais = {s.rule_id for s in collect_signals(account, config)}
     assert "GLUE-FLEX-TOLERANCE" in sinais
 
     # A afirmação explícita libera a recomendação e cala a pergunta.
     job.time_sensitive = False
-    flex = {o.rule_id: o for o in run_all(account, DEFAULT_CONFIG, "scan")}[
+    flex = {o.rule_id: o for o in run_all(account, config, "scan")}[
         "GLUE-FLEX-CANDIDATE"
     ]
     assert flex.blocked is False
     assert "GLUE-FLEX-TOLERANCE" not in {
-        s.rule_id for s in collect_signals(account, DEFAULT_CONFIG)
+        s.rule_id for s in collect_signals(account, config)
     }

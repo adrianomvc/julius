@@ -516,13 +516,14 @@ def _timeout(account: Account, job: GlueJob, config: Config, scan_id: str) -> Op
             risks=["timeout curto demais pode cortar picos legítimos"],
             docs=[_DOC_MONITORING],
             risk=0.7,
+            blocked=est.saving_quality == "unavailable",
         ),
         Evidence(
             items=[f"timeout={job.timeout_min} min", f"duração média {exec_min:.0f} min"],
             sources=["Glue GetJob", "GetJobRuns"],
             observed_runs=job.observed_runs,
             coverage_days=job.coverage_days,
-            has_optional_metrics=True,
+            has_optional_metrics=est.saving_quality != "unavailable",
             owner_tag=job.owner_tag,
         ),
         est,
@@ -550,17 +551,25 @@ def _worker_type(
             asset_name=job.name,
             rule_id="GLUE-WORKER-TYPE-OVERSIZED",
             rule_version="1.0.0",
-            title=f"Worker type {job.worker_type} maior que a necessidade",
-            why=f"CPU média {(job.avg_cpu_load or 0):.0%} com {job.worker_type} — um type menor ({new_type}) bastaria.",
+            title=f"Worker type {job.worker_type} candidato a experimento",
+            why=(
+                f"CPU média {(job.avg_cpu_load or 0):.0%} com {job.worker_type}; "
+                f"{new_type} precisa de validação comparável."
+            ),
         ),
         Recommendation(
             difficulty=2,
-            action=f"Reduzir o worker type de {job.worker_type} para {new_type}",
-            how_to_apply=f"Alterar WorkerType para {new_type} e testar 1 execução (mantendo o nº de workers).",
-            how_to_validate="Comparar DPU-h, duração e memória por execução após a mudança.",
+            action=f"Testar worker type {new_type} em experimento controlado",
+            how_to_apply=(
+                f"Executar ao menos 3 testes com {new_type}, mesma entrada e "
+                "mesmo nº de workers, sem alterar produção automaticamente."
+            ),
+            how_to_validate=(
+                "Validar saída equivalente, nenhuma falha nova e duração até 10% maior."
+            ),
             risks=["type menor tem menos memória/vCPU por worker"],
             docs=[_DOC_WORKERS],
-            blocked=not capacity_evidence,
+            blocked=est.saving_quality == "potential" or not capacity_evidence,
         ),
         Evidence(
             items=[
@@ -899,7 +908,7 @@ def _flex(account: Account, job: GlueJob, config: Config, scan_id: str) -> Oppor
             rule_version="1.0.0",
             title="Job batch elegível a ExecutionClass FLEX",
             why=(
-                "Job Spark batch ainda usa STANDARD; a tarifa FLEX versionada é "
+                f"'{job.name}' ainda usa STANDARD; a tarifa FLEX versionada é "
                 f"{discount:.0%} menor, se o SLA tolerar início adiado."
             ),
         ),
@@ -1044,12 +1053,13 @@ def _autoscaling(
             action="Habilitar Auto Scaling e revisar o teto de workers",
             how_to_apply=(
                 "No job: ativar --enable-auto-scaling e definir max workers ~"
-                f"{max(2, (job.number_of_workers or 0) // 2)}; testar 1 execução controlada."
+                f"{max(2, (job.number_of_workers or 0) // 2)}; executar ao menos "
+                "3 testes comparáveis antes de alterar produção."
             ),
             how_to_validate="Comparar DPU-h e duração média por execução após a mudança.",
             risks=["reprocessamento", "picos de partição em estágio único"],
             docs=[_DOC_AUTOSCALING],
-            blocked=not capacity_evidence,
+            blocked=est.saving_quality == "potential" or not capacity_evidence,
         ),
         Evidence(
             items=[

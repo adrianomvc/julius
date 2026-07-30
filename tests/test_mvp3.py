@@ -177,7 +177,7 @@ def test_rule_demoted_to_signal_does_not_expire_backlog(tmp_path):
     assert backlog.status_for(opportunity.fingerprint()) == "detected"
 
 
-def test_two_runs_emit_worsened_and_disappeared_events(tmp_path):
+def test_hypothetical_capacity_change_does_not_worsen_financial_event(tmp_path):
     backlog = BacklogStore(tmp_path / "backlog.json")
     with HistoryStore(tmp_path / "history.duckdb") as history:
         first_account = load_account(SAMPLE)
@@ -201,8 +201,8 @@ def test_two_runs_emit_worsened_and_disappeared_events(tmp_path):
             history=history,
             today=date(2026, 7, 2),
         )
-        assert any(
-            event.event_type in {"worsened", "new_evidence"}
+        assert not any(
+            event.event_type == "worsened"
             and event.asset_name == "processa_interacoes"
             for event in second.events
         )

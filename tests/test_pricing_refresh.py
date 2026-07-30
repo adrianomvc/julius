@@ -198,7 +198,8 @@ def test_a_complete_refresh_writes_a_verified_and_dated_table(tmp_path):
     table = tomllib.loads(written.read_text(encoding="utf-8"))
     assert table["region"] == "sa-east-1"
     assert table["verified"] is True
-    assert table["effective_date"] == TODAY.isoformat()
+    assert table["verified_at"] == TODAY.isoformat()
+    assert table["effective_date"] == ""
     assert table["glue"]["dpu_hour"] == pytest.approx(0.44)
     assert table["glue"]["flex_dpu_hour"] == pytest.approx(0.29)
 

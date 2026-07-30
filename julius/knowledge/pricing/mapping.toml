@@ -121,3 +121,51 @@ pick = "min"
 service = "AmazonS3"
 match = { productFamily = "API Request", group = "S3-API-SIA-Tier1" }
 pick = "min"
+
+# CopyObject é uma requisição PUT/COPY cobrada conforme a classe de destino.
+[s3.request_copy_standard_ia_per_1000]
+service = "AmazonS3"
+match = { productFamily = "API Request", group = "S3-API-SIA-Tier1" }
+pick = "min"
+
+[s3.request_copy_glacier_ir_per_1000]
+service = "AmazonS3"
+match = { productFamily = "API Request", group = "S3-API-GIR-Tier1" }
+pick = "min"
+
+[s3.request_copy_glacier_flexible_per_1000]
+service = "AmazonS3"
+match = { productFamily = "API Request", group = "S3-API-Glacier-Tier1" }
+pick = "min"
+
+# Recuperação: custo por volume e por request. O refresh é atômico; se os
+# atributos da Price List mudarem, a seção S3 não é marcada como verificada.
+[s3.retrieval_standard_ia_per_gb]
+service = "AmazonS3"
+match = { group = "S3-API-SIA-DataRetrieval" }
+pick = "only"
+
+[s3.retrieval_request_standard_ia_per_1000]
+service = "AmazonS3"
+match = { productFamily = "API Request", group = "S3-API-SIA-Tier2" }
+pick = "min"
+
+[s3.retrieval_glacier_ir_per_gb]
+service = "AmazonS3"
+match = { group = "S3-API-GIR-DataRetrieval" }
+pick = "only"
+
+[s3.retrieval_request_glacier_ir_per_1000]
+service = "AmazonS3"
+match = { productFamily = "API Request", group = "S3-API-GIR-Tier2" }
+pick = "min"
+
+[s3.retrieval_glacier_flexible_per_gb]
+service = "AmazonS3"
+match = { group = "S3-API-Glacier-DataRetrieval" }
+pick = "min"
+
+[s3.retrieval_request_glacier_flexible_per_1000]
+service = "AmazonS3"
+match = { productFamily = "API Request", group = "S3-API-Glacier-Tier3" }
+pick = "min"

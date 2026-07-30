@@ -161,6 +161,9 @@ REGISTRY: tuple[RuleFamily, ...] = (
                 "REDSHIFT-OVERSIZED",
                 "REDSHIFT-IDLE-JUSTIFICATION",
                 "REDSHIFT-RESIZE-TARGET",
+                "REDSHIFT-ADVISOR-UNAPPLIED",
+                "REDSHIFT-SERVERLESS-MAX-CAPACITY-MISSING",
+                "REDSHIFT-SERVERLESS-RPU-HOURS-LIMIT-MISSING",
             }
         ),
     ),
@@ -249,10 +252,12 @@ def families_without_evidence(account: Account) -> list[RuleFamily]:
         for family in REGISTRY
         if _enabled(account, family)
         and (
-            family.requires
-            and not any(getattr(account, name, None) for name in family.requires)
+            (
+                family.requires
+                and not any(getattr(account, name, None) for name in family.requires)
+            )
+            or any(_unmeasured(account, path) for path in family.measures)
         )
-        or any(_unmeasured(account, path) for path in family.measures)
     ]
 
 
@@ -277,6 +282,15 @@ def disabled_rule_ids(account: Account) -> frozenset[str]:
                 "S3-JOB-STAGING-LEFTOVER",
                 "S3-INCOMPLETE-MULTIPART",
                 "S3-STORAGE-CLASS-TRANSITION",
+            }
+        )
+    elif getattr(account, "s3_mode", "proposal") == "storage_class_only":
+        disabled.update(
+            {
+                "S3-ATHENA-RESULTS-STALE",
+                "S3-SPARK-LOGS-STALE",
+                "S3-JOB-STAGING-LEFTOVER",
+                "S3-INCOMPLETE-MULTIPART",
             }
         )
     return frozenset(disabled)

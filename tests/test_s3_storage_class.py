@@ -48,8 +48,28 @@ _PRECOS = {
 def _config(**overrides):
     pricing = replace(
         Pricing.for_region("sa-east-1"),
+        verified=True,
+        verified_at="2026-07-29",
+        verification={
+            "s3": {"verified": True, "verified_at": "2026-07-29"}
+        },
         s3_storage_gb_month=dict(_PRECOS),
-        s3_request_per_1000={"lifecycle_transition": 0.01, "list": 0.007},
+        s3_request_per_1000={
+            "copy_standard_ia": 0.01,
+            "copy_glacier_ir": 0.01,
+            "copy_glacier_flexible": 0.01,
+            "list": 0.007,
+        },
+        s3_retrieval_per_gb={
+            "standard_ia": 0.0,
+            "glacier_ir": 0.0,
+            "glacier_flexible": 0.0,
+        },
+        s3_retrieval_request_per_1000={
+            "standard_ia": 0.0,
+            "glacier_ir": 0.0,
+            "glacier_flexible": 0.0,
+        },
     )
     return replace(DEFAULT_CONFIG, pricing=pricing, **overrides)
 
@@ -70,13 +90,29 @@ def _prefixo(**overrides) -> S3Prefix:
 
 
 def _conta(*, lido_em: str = "", prefixos=None, configs=None, **overrides) -> Account:
+    measured_prefixes = prefixos if prefixos is not None else [_prefixo()]
+    if lido_em:
+        measured_prefixes = [
+            replace(
+                item,
+                last_read_at=item.last_read_at or lido_em,
+                read_coverage_days=item.read_coverage_days or 1000,
+                access_source=item.access_source or "persisted_touch_history",
+                access_quality=(
+                    item.access_quality
+                    if item.access_quality != "unavailable"
+                    else "measured"
+                ),
+            )
+            for item in measured_prefixes
+        ]
     return Account(
         account_id="123456789012",
         window_end="2026-07-29",
         tables=[
             Table(name="db.vendas", location="s3://lake/vendas/", last_read_at=lido_em)
         ],
-        s3_prefixes=prefixos if prefixos is not None else [_prefixo()],
+        s3_prefixes=measured_prefixes,
         s3_bucket_configs=configs if configs is not None else [],
         **overrides,
     )
@@ -134,8 +170,8 @@ def test_a_long_unread_prefix_becomes_an_opportunity():
     assert achados[0].estimated_gain.monthly_expected > 0
 
 
-def test_the_read_date_can_come_from_the_athena_history_alone():
-    """Sem tabela de toques configurada, o histórico de queries responde."""
+def test_the_read_date_from_athena_without_coverage_remains_a_signal():
+    """Uma data isolada não comprova ausência de leituras na janela inteira."""
     conta = _conta()
     conta.athena_queries = [
         AthenaQuery(
@@ -150,7 +186,8 @@ def test_the_read_date_can_come_from_the_athena_history_alone():
 
     achados = storage_class.detect(conta, _config(), "scan")
 
-    assert len(achados) == 1
+    assert achados == []
+    assert len(storage_class.signals(conta, _config())) == 1
 
 
 # ---------------------------------------------------------------------------
@@ -401,7 +438,7 @@ def test_expiration_before_break_even_suppresses_double_counting():
             costly.pricing,
             s3_request_per_1000={
                 **costly.pricing.s3_request_per_1000,
-                "lifecycle_transition": 1000.0,
+                "copy_glacier_ir": 1000.0,
             },
         ),
     )
@@ -554,6 +591,7 @@ def test_the_recommendation_says_who_rewrites():
 
     assert "não executa" in achado.how_to_apply
     assert "CopyObject" in achado.how_to_apply
+    assert "lifecycle" not in achado.how_to_apply.lower()
 
 
 def test_a_truncated_listing_says_the_volume_is_a_floor():
@@ -564,5 +602,25 @@ def test_a_truncated_listing_says_the_volume_is_a_floor():
 
     achado = storage_class.detect(conta, _config(), "scan")[0]
 
-    assert any("piso" in item for item in achado.missing_evidence)
+    assert any("parcial" in item for item in achado.missing_evidence)
+    assert achado.include_in_portfolio is False
     assert any("parcial" in risco for risco in achado.risks)
+
+
+def test_copy_on_versioned_bucket_is_blocked_until_noncurrent_cost_is_known():
+    conta = _conta(
+        lido_em="2026-01-01T00:00:00+00:00",
+        s3_buckets=[
+            S3Bucket(
+                name="lake",
+                bytes_by_class={"StandardStorage": float(500 * _GB)},
+                versioning_enabled=True,
+            )
+        ],
+    )
+
+    achado = storage_class.detect(conta, _config(), "scan")[0]
+
+    assert achado.blocked is True
+    assert achado.include_in_portfolio is False
+    assert any("versões não correntes" in item for item in achado.missing_evidence)

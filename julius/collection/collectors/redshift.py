@@ -38,7 +38,9 @@ def collect_clusters(
     Redshift nenhum — e o relatório afirmaria que não há cluster.
     """
     clusters = _provisioned(redshift_client, window, gaps)
+    _attach_advisor(redshift_client, clusters, gaps)
     clusters.extend(_serverless(serverless_client, window, gaps))
+    _attach_serverless_limits(serverless_client, clusters, gaps)
     for cluster in clusters:
         _enrich_cloudwatch(cloudwatch_client, cluster, window)
     return clusters
@@ -84,14 +86,59 @@ def _serverless(
             RedshiftCluster(
                 name=name,
                 kind="serverless",
+                resource_arn=str(raw.get("workgroupArn") or ""),
                 status=str(raw.get("status") or "AVAILABLE").lower(),
                 base_rpu=int(raw.get("baseCapacity") or 0),
+                max_rpu=(
+                    int(raw["maxCapacity"])
+                    if raw.get("maxCapacity") is not None
+                    else None
+                ),
+                price_performance_target=str(
+                    (raw.get("pricePerformanceTarget") or {}).get("level") or ""
+                ),
                 encrypted=True,  # Serverless é sempre criptografado em repouso.
                 created_at=_iso(raw.get("creationDate")),
                 coverage_days=window.days,
             )
         )
     return out
+
+
+def _attach_advisor(client, clusters: list[RedshiftCluster], gaps) -> None:
+    """Anexa recomendações oficiais do Advisor sem inferir economia."""
+    by_name = {item.name: item for item in clusters if item.kind == "provisioned"}
+    for raw in _paginate(client, "list_recommendations", "Recommendations", gaps):
+        name = str(raw.get("ClusterIdentifier") or "")
+        cluster = by_name.get(name)
+        if cluster is None:
+            continue
+        cluster.advisor_recommendations.append(
+            {
+                "type": str(raw.get("RecommendationType") or ""),
+                "action_type": str(raw.get("RecommendedActionType") or ""),
+                "text": str(raw.get("RecommendationText") or ""),
+                "action": str(raw.get("RecommendedAction") or ""),
+            }
+        )
+
+
+def _attach_serverless_limits(client, clusters: list[RedshiftCluster], gaps) -> None:
+    if client is None:
+        return
+    serverless = [item for item in clusters if item.kind == "serverless"]
+    if not serverless:
+        return
+    limits = _paginate(client, "list_usage_limits", "usageLimits", gaps)
+    for cluster in serverless:
+        cluster.serverless_usage_limits = [
+            str(item.get("featureType") or item.get("limitType") or "usage")
+            for item in limits
+            if (
+                str(item.get("resourceArn") or "") == cluster.resource_arn
+                or cluster.name in str(item.get("resourceArn") or "")
+            )
+        ]
 
 
 def _enrich_cloudwatch(

@@ -483,11 +483,16 @@ class RedshiftCluster:
     name: str
     #: `provisioned` ou `serverless` — a cobrança e as regras diferem.
     kind: str = "provisioned"
+    resource_arn: str = ""
     node_type: str = ""
     node_count: int = 0
     status: str = "available"
     #: Serverless cobra RPU-hora; provisionado cobra nó-hora.
     base_rpu: int = 0
+    max_rpu: int | None = None
+    price_performance_target: str = ""
+    serverless_usage_limits: list[str] = field(default_factory=list)
+    advisor_recommendations: list[dict[str, str]] = field(default_factory=list)
     #: Pausa/retomada agendada existe? Cluster parado não cobra compute.
     paused: bool = False
     #: Concurrency scaling e elastic resize deixam rastro no plano de controle.
