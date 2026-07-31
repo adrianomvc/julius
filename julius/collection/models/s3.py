@@ -113,6 +113,12 @@ class S3Prefix:
     #: Ativo de origem — job, tabela ou workgroup — para religar ao dono.
     source_asset: str = ""
     owner_tag: str | None = None
+    #: O prefixo é particionado por data (`dt=`, `year=`, `ano=`…)? É o que
+    #: separa fonte que **cresce** de fonte que é reescrita inteira, e sem essa
+    #: distinção não dá para dizer se reler tudo a cada execução é desperdício ou
+    #: necessidade. Derivado das chaves dentro do coletor: nenhuma chave de
+    #: objeto sobe daqui, então o sinal precisa ser calculado onde elas existem.
+    date_partitioned: bool = False
     #: Bytes por `StorageClass` do próprio objeto, agregado da listagem. É mais
     #: fino que o `bytes_by_class` do bucket, que vem do CloudWatch e não sabe
     #: separar prefixo — e é no prefixo que a recomendação de transição age.
