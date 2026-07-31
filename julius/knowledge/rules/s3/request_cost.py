@@ -54,6 +54,23 @@ def request_estimation(
         if coverage is not None
         else None
     )
+    unit_source = "custo unitário por request = custo / UsageQuantity de Requests-Tier2"
+    baseline_quality = "allocated"
+    dependencies: tuple[str, ...] = ()
+    if unit_cost is None:
+        # A fatura é a melhor âncora, mas não é a única. A tabela versionada já
+        # traz a tarifa de GET e a regra de classe de armazenamento já a consome
+        # por `s3_request_cost`; aqui ela ficava sem uso, e a falta do rateio
+        # reconciliado bloqueava um achado que já é estratégico — ou seja, que
+        # nem entra no portfólio. Trocar `unavailable` por um número modelado dá
+        # grandeza ao time sem mexer em nenhum total.
+        unit_cost = config.pricing.s3_request_cost("get", 1)
+        if unit_cost is not None:
+            unit_source = (
+                f"tarifa versionada de GET · {config.pricing.provenance}"
+            )
+            baseline_quality = "modeled"
+            dependencies = ("s3",)
     measured = [
         prefix
         for prefix in candidates
@@ -67,7 +84,8 @@ def request_estimation(
         missing = []
         if unit_cost is None:
             missing.append(
-                "custo/UsageQuantity de Requests-Tier2 não reconciliado"
+                "sem custo por GET: Requests-Tier2 não reconciliado no Cost "
+                "Explorer e tarifa de GET ausente na tabela versionada"
             )
         if not measured:
             missing.append(
@@ -122,16 +140,17 @@ def request_estimation(
             f"~{target_objects_total} objetos após compactação",
             f"~{projected_requests} GETs projetados por leitura equivalente",
             f"{object_reduction} objetos evitáveis por leitura equivalente",
-            "custo unitário por request = custo / UsageQuantity de Requests-Tier2",
+            unit_source,
             (
                 "atribuição por Server Access Logs é best-effort; o valor é "
                 "potencial e exige validação na janela seguinte"
             ),
             "o armazenamento permanece; compactação não reduz os bytes armazenados",
         ],
-        baseline_quality="allocated",
+        baseline_quality=baseline_quality,
         saving_quality="modeled_evidence",
         is_strategic=True,
+        pricing_dependencies=dependencies,
     )
 
 
