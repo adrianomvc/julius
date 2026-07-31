@@ -1,7 +1,7 @@
 """Coleta read-only de S3: panorama por métrica, detalhe por prefixo conhecido.
 
 **O Julius lê e recomenda; quem apaga é o time dono.** Nada aqui escreve,
-apaga ou aborta coisa alguma — as operações usadas são `GetMetricStatistics`,
+apaga ou aborta coisa alguma — as operações usadas são `GetMetricData`,
 `ListObjectsV2`, `ListMultipartUploads` e `GetBucketVersioning`.
 
 O desenho existe por causa de um risco concreto: listar um data lake cobra por
@@ -21,6 +21,8 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from typing import Any
 
+from julius.collection.collectors import metrics
+from julius.collection.collectors.metrics import MetricQuery
 from julius.collection.collectors.s3_evidence import (
     MAX_LIST_PAGES,
     as_utc,
@@ -54,13 +56,80 @@ def collect_buckets(
     out: list[S3Bucket] = []
     for name in names:
         bucket = S3Bucket(name=name, coverage_days=window.days)
-        if cloudwatch_client is not None:
-            bucket.bytes_by_class = _size_by_class(cloudwatch_client, name, window)
-            bucket.object_count = _object_count(cloudwatch_client, name, window)
-            bucket.observed_days = 1 if bucket.bytes_by_class else 0
         bucket.versioning_enabled = _versioning(s3_client, name)
         out.append(bucket)
+    _enrich_sizes(cloudwatch_client, out, window)
     return out
+
+
+#: Classes de armazenamento consultadas por bucket. `BucketSizeBytes` é publicado
+#: por `StorageType` uma vez ao dia e não custa nada.
+_STORAGE_TYPES = (
+    "StandardStorage",
+    "StandardIAStorage",
+    "OneZoneIAStorage",
+    "IntelligentTieringFAStorage",
+    "IntelligentTieringIAStorage",
+    "GlacierInstantRetrievalStorage",
+    "GlacierStorage",
+    "DeepArchiveStorage",
+    "ReducedRedundancyStorage",
+)
+
+
+def _enrich_sizes(cloudwatch_client, buckets: list[S3Bucket], window) -> None:
+    """Tamanho por classe e contagem de objetos de todos os buckets, em lote.
+
+    Eram dez chamadas por bucket — nove classes e a contagem — em série. Cinquenta
+    buckets pagavam quinhentas latências; as mesmas quinhentas consultas cabem em
+    uma chamada.
+
+    `ScanBy` ascendente importa aqui: o tamanho de um bucket é o **último** ponto
+    da série, não um agregado dela, e o default do `GetMetricData` é descendente.
+    """
+    if cloudwatch_client is None or not buckets:
+        return
+    pedidos = [
+        (bucket, storage_type, MetricQuery(
+            namespace="AWS/S3",
+            metric_name="BucketSizeBytes",
+            stat="Average",
+            dimensions=(
+                ("BucketName", bucket.name),
+                ("StorageType", storage_type),
+            ),
+        ))
+        for bucket in buckets
+        for storage_type in _STORAGE_TYPES
+    ]
+    contagens = [
+        (bucket, MetricQuery(
+            namespace="AWS/S3",
+            metric_name="NumberOfObjects",
+            stat="Average",
+            dimensions=(
+                ("BucketName", bucket.name),
+                ("StorageType", "AllStorageTypes"),
+            ),
+        ))
+        for bucket in buckets
+    ]
+    metrics.collect(
+        cloudwatch_client,
+        [query for _b, _t, query in pedidos] + [query for _b, query in contagens],
+        start=window.start,
+        end=window.end,
+        scan_by="TimestampAscending",
+    )
+
+    for bucket, storage_type, query in pedidos:
+        if query.values:
+            bucket.bytes_by_class[storage_type] = round(query.values[-1], 2)
+    for bucket, query in contagens:
+        if query.values:
+            bucket.object_count = int(query.values[-1])
+    for bucket in buckets:
+        bucket.observed_days = 1 if bucket.bytes_by_class else 0
 
 
 def collect_prefixes(
@@ -263,64 +332,6 @@ def _multipart_bytes(s3_client, bucket: str, uploads: list[dict]) -> int | None:
     return total if consultados else None
 
 
-def _size_by_class(cloudwatch_client, bucket: str, window) -> dict[str, float]:
-    tamanhos: dict[str, float] = {}
-    for storage_type in (
-        "StandardStorage",
-        "StandardIAStorage",
-        "OneZoneIAStorage",
-        "IntelligentTieringFAStorage",
-        "IntelligentTieringIAStorage",
-        "GlacierInstantRetrievalStorage",
-        "GlacierStorage",
-        "DeepArchiveStorage",
-        "ReducedRedundancyStorage",
-    ):
-        pontos = _metric(
-            cloudwatch_client,
-            "BucketSizeBytes",
-            [
-                {"Name": "BucketName", "Value": bucket},
-                {"Name": "StorageType", "Value": storage_type},
-            ],
-            window,
-        )
-        if pontos:
-            tamanhos[storage_type] = round(pontos[-1], 2)
-    return tamanhos
-
-
-def _object_count(cloudwatch_client, bucket: str, window) -> int | None:
-    pontos = _metric(
-        cloudwatch_client,
-        "NumberOfObjects",
-        [
-            {"Name": "BucketName", "Value": bucket},
-            {"Name": "StorageType", "Value": "AllStorageTypes"},
-        ],
-        window,
-    )
-    return int(pontos[-1]) if pontos else None
-
-
-def _metric(cloudwatch_client, metric: str, dimensions, window) -> list[float]:
-    try:
-        response = cloudwatch_client.get_metric_statistics(
-            Namespace="AWS/S3",
-            MetricName=metric,
-            Dimensions=dimensions,
-            StartTime=window.start,
-            EndTime=window.end,
-            Period=86400,
-            Statistics=["Average"],
-        )
-    except Exception:
-        return []
-    pontos = sorted(
-        (item for item in response.get("Datapoints", []) if "Average" in item),
-        key=lambda item: item.get("Timestamp") or datetime.min,
-    )
-    return [float(item["Average"]) for item in pontos]
 
 
 def _versioning(s3_client, bucket: str) -> bool | None:

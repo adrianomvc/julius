@@ -21,6 +21,8 @@ from __future__ import annotations
 from datetime import datetime
 from statistics import quantiles
 
+from julius.collection.collectors import metrics
+from julius.collection.collectors.metrics import MetricQuery
 from julius.collection.collectors.paginate import safe_call, safe_pages
 from julius.collection.models import (
     SageMakerApp,
@@ -520,26 +522,37 @@ def _metric_series(
     statistic: str,
     extra_dimensions: list[dict] | None = None,
 ) -> tuple[bool, list[tuple[object, float]]]:
-    try:
-        response = cloudwatch_client.get_metric_statistics(
-            Namespace=namespace,
-            MetricName=metric,
-            Dimensions=[
-                {"Name": dimension[0], "Value": dimension[1]},
-                *(extra_dimensions or []),
-            ],
-            StartTime=window.start,
-            EndTime=window.end,
-            Period=86400,
-            Statistics=[statistic],
-        )
-    except Exception:
+    """Uma série do CloudWatch, com o instante de cada ponto.
+
+    Sete pontos deste módulo consultam métrica por recurso, dentro da construção
+    de cada endpoint, variante e app — e o valor é usado na hora, não depois.
+    Agrupar as consultas exigiria montar tudo em duas fases, e o ganho seria
+    menor que nos outros coletores: aqui são cinco métricas por endpoint, contra
+    dez por bucket no S3 e onze por job no Glue.
+
+    O que muda é a operação: `GetMetricData` no lugar de `GetMetricStatistics`,
+    uma consulta por chamada. Mesma contagem de chamadas, um só mecanismo em toda
+    a coleta — e quando a construção destes objetos for para duas fases, agrupar
+    passa a ser trocar a lista de consultas, não trocar de API.
+    """
+    query = MetricQuery(
+        namespace=namespace,
+        metric_name=metric,
+        stat=statistic,
+        dimensions=(
+            (dimension[0], dimension[1]),
+            *(
+                (str(extra["Name"]), str(extra["Value"]))
+                for extra in (extra_dimensions or [])
+            ),
+        ),
+    )
+    problems = metrics.collect(
+        cloudwatch_client, [query], start=window.start, end=window.end
+    )
+    if problems:
         return False, []
-    return True, [
-        (point.get("Timestamp"), float(point[statistic]))
-        for point in response.get("Datapoints", [])
-        if statistic in point
-    ]
+    return True, query.points()
 
 
 def _metric_total(

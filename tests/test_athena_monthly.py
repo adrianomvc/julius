@@ -182,13 +182,23 @@ class _Athena:
 
 
 class _CloudWatch:
+    """Responde em lote: todos os workgroups numa chamada de `GetMetricData`."""
+
     def __init__(self, totals):
         self.totals = totals
+        self.chamadas = 0
 
-    def get_metric_statistics(self, **kwargs):
-        assert kwargs["MetricName"] == "ProcessedBytes"
-        workgroup = kwargs["Dimensions"][0]["Value"]
-        return {"Datapoints": [{"Sum": self.totals.get(workgroup, 0)}]}
+    def get_metric_data(self, **kwargs):
+        self.chamadas += 1
+        resultados = []
+        for query in kwargs["MetricDataQueries"]:
+            stat = query["MetricStat"]
+            assert stat["Metric"]["MetricName"] == "ProcessedBytes"
+            workgroup = stat["Metric"]["Dimensions"][0]["Value"]
+            resultados.append(
+                {"Id": query["Id"], "Values": [self.totals.get(workgroup, 0)]}
+            )
+        return {"MetricDataResults": resultados}
 
 
 class _CostExplorer:

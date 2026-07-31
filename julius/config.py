@@ -14,6 +14,7 @@ from dataclasses import dataclass, field
 
 from julius.collection.settings import (
     ANALYSIS_WINDOW_DAYS,
+    BOOTSTRAP_WINDOW_DAYS,
     DATASET_SCHEMA_VERSION,
     DAYS_PER_MONTH,
     DPU_PER_WORKER,
@@ -152,6 +153,7 @@ IMPL_OFFSET_BY_DIFFICULTY: dict[int, int] = {1: 0, 2: 0, 3: 1, 4: 2, 5: 3}
 __all__ = [
     "ALLOCATED_GLUE_BUCKETS",
     "ANALYSIS_WINDOW_DAYS",
+    "BOOTSTRAP_WINDOW_DAYS",
     "ATHENA_RECOVERY_RATES",
     "ATHENA_RECOVERY_VERSION",
     "DATASET_SCHEMA_VERSION",

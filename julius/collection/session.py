@@ -23,15 +23,24 @@ from botocore.config import Config
 #: `max_pool_connections`, e passar dele só troca espera por espera.
 S3_LISTING_WORKERS = 8
 
+#: Jobs cujo histórico de execuções é paginado ao mesmo tempo. `GetJobRuns` é uma
+#: chamada por job, e numa conta com centenas de jobs a série domina o scan
+#: inteiro. Mesma natureza do caso do S3 — latência, não CPU — e mesmo teto útil.
+GLUE_RUN_HISTORY_WORKERS = 8
+
+#: O maior grupo de threads que um cliente atende de uma vez. As fontes rodam em
+#: série, então nunca são os dois grupos somados.
+_MAX_CONCURRENT_WORKERS = max(S3_LISTING_WORKERS, GLUE_RUN_HISTORY_WORKERS)
+
 CLIENT_CONFIG = Config(
     retries={"mode": "adaptive", "max_attempts": 5},
     connect_timeout=10,
     read_timeout=60,
-    # Precisa acompanhar `S3_LISTING_WORKERS`: com o pool menor que o número de
-    # threads, elas disputam conexão e o paralelismo vira fila — o urllib3 ainda
-    # avisa "Connection pool is full" a cada requisição. A folga é para o
+    # Precisa acompanhar o maior grupo de workers: com o pool menor que o número
+    # de threads, elas disputam conexão e o paralelismo vira fila — o urllib3
+    # ainda avisa "Connection pool is full" a cada requisição. A folga é para o
     # cliente compartilhado atender listagem e métrica ao mesmo tempo.
-    max_pool_connections=max(25, S3_LISTING_WORKERS * 2),
+    max_pool_connections=max(25, _MAX_CONCURRENT_WORKERS * 2),
 )
 
 

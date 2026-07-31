@@ -13,11 +13,13 @@ eram usadas lado a lado como se cobrissem o mesmo período.
 from __future__ import annotations
 
 from collections.abc import Sequence
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from statistics import mean, median, pstdev
 
 from julius.collection.collectors.paginate import safe_pages
 from julius.collection.models import GlueJob, Table
+from julius.collection.session import GLUE_RUN_HISTORY_WORKERS
 from julius.collection.settings import DPU_PER_WORKER
 from julius.collection.window import AnalysisWindow
 
@@ -45,12 +47,35 @@ def _truthy(value) -> bool:
 
 
 def collect_jobs(
-    glue_client, *, window: AnalysisWindow, gaps: list[str] | None = None
+    glue_client,
+    *,
+    window: AnalysisWindow,
+    gaps: list[str] | None = None,
+    workers: int = GLUE_RUN_HISTORY_WORKERS,
 ) -> list[GlueJob]:
+    """Inventário de jobs, cada um com o histórico de execuções da janela.
+
+    O `GetJobRuns` é uma chamada paginada **por job**. Em série, uma conta com
+    trezentos jobs paga trezentas latências antes de a fonte terminar, e ela é
+    fonte obrigatória — nada mais começa. `workers` pagina vários jobs ao mesmo
+    tempo; clientes botocore são seguros entre threads depois de criados, e o
+    teto útil é o `max_pool_connections` da sessão.
+
+    `pool.map` preserva a ordem da entrada: dois scans do mesmo inventário
+    produzem o mesmo dataset, e o diff entre eles continua legível. Com um job
+    só o caminho sequencial evita montar pool para nada.
+    """
     resultado = safe_pages(glue_client, "get_jobs", "Jobs")
     if gaps is not None and not resultado.complete:
         gaps.append(f"get_jobs: {resultado.error_category or 'incompleto'}")
-    return [_build_job(glue_client, job, window) for job in resultado.items]
+    jobs = resultado.items
+    if workers <= 1 or len(jobs) <= 1:
+        return [_build_job(glue_client, job, window) for job in jobs]
+
+    with ThreadPoolExecutor(max_workers=min(workers, len(jobs))) as pool:
+        return list(
+            pool.map(lambda job: _build_job(glue_client, job, window), jobs)
+        )
 
 
 def _build_job(glue_client, job: dict, window: AnalysisWindow) -> GlueJob:

@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from statistics import quantiles
 
+from julius.collection.collectors import metrics
+from julius.collection.collectors.metrics import MetricQuery
 from julius.collection.collectors.paginate import safe_call, safe_pages
 from julius.collection.models import AthenaCapacityReservation
 
@@ -61,8 +63,8 @@ def collect_capacity_reservations(
             ],
             coverage_days=window.days,
         )
-        _metrics(cloudwatch_client, item, window, gaps)
         out.append(item)
+    _metrics(cloudwatch_client, out, window, gaps)
     if ce_client is not None and out:
         _allocate_cost(out, _capacity_cost(ce_client, window, gaps))
     return out
@@ -123,31 +125,41 @@ def _allocate_cost(reservations, total_cost) -> None:
         item.cost_quality = "allocated"
 
 
-def _metrics(client, reservation, window, gaps) -> None:
-    for metric_name, (field, statistic) in _METRICS.items():
-        try:
-            response = client.get_metric_statistics(
-                Namespace="AWS/Athena",
-                MetricName=metric_name,
-                Dimensions=[
-                    {"Name": "CapacityReservation", "Value": reservation.name}
-                ],
-                StartTime=window.start,
-                EndTime=window.end,
-                Period=3600,
-                Statistics=[statistic],
-            )
-        except Exception:
-            if gaps is not None:
-                gaps.append(f"cloudwatch_athena_capacity:{reservation.name}")
-            return
-        samples = [
-            float(point.get(statistic) or 0)
-            for point in response.get("Datapoints", [])
-        ]
-        if samples:
-            setattr(reservation, field, round(_p95(samples), 3))
-        if metric_name == "DPUConsumed" and samples:
+def _metrics(client, reservations, window, gaps) -> None:
+    """Cinco métricas de cada reserva, em lote.
+
+    O período é horário, não diário: `idle_hours` conta horas com consumo zero, e
+    um ponto por dia não responde isso. Passar do teto de pontos por chamada é
+    resolvido por paginação dentro de `metrics.collect`.
+    """
+    if client is None or not reservations:
+        return
+    pedidos = [
+        (reservation, field, metric_name, MetricQuery(
+            namespace="AWS/Athena",
+            metric_name=metric_name,
+            stat=statistic,
+            dimensions=(("CapacityReservation", reservation.name),),
+            period=3600,
+        ))
+        for reservation in reservations
+        for metric_name, (field, statistic) in _METRICS.items()
+    ]
+    problems = metrics.collect(
+        client,
+        [query for *_resto, query in pedidos],
+        start=window.start,
+        end=window.end,
+    )
+    if problems and gaps is not None:
+        gaps.append("cloudwatch_athena_capacity")
+
+    for reservation, field, metric_name, query in pedidos:
+        samples = query.values
+        if not samples:
+            continue
+        setattr(reservation, field, round(_p95(samples), 3))
+        if metric_name == "DPUConsumed":
             reservation.consumed_dpu_hours = round(sum(samples), 3)
             reservation.idle_hours = float(sum(value == 0 for value in samples))
 

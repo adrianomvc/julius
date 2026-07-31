@@ -8,6 +8,8 @@ from datetime import datetime, timedelta
 from statistics import quantiles
 from typing import Any
 
+from julius.collection.collectors import metrics
+from julius.collection.collectors.metrics import MetricQuery
 from julius.collection.collectors.paginate import safe_call, safe_pages
 from julius.collection.models import (
     SageMakerDomain,
@@ -161,51 +163,65 @@ def collect_domains(
             ),
             coverage_days=window.days,
         )
-        if efs_id and cloudwatch_client is not None:
-            _apply_efs_metrics(cloudwatch_client, domain, window)
         domains.append(domain)
+    _apply_efs_metrics(cloudwatch_client, domains, window)
     return domains
 
 
-def _apply_efs_metrics(cloudwatch_client, domain: SageMakerDomain, window) -> None:
-    specs = {
-        "StorageBytes": ("efs_storage_bytes", "Average"),
-        "TotalIOBytes": ("efs_total_io_bytes", "Sum"),
-        "DataReadIOBytes": ("efs_read_io_bytes", "Sum"),
-        "DataWriteIOBytes": ("efs_write_io_bytes", "Sum"),
-        "ClientConnections": ("efs_client_connections", "Sum"),
-    }
-    for metric, (field_name, statistic) in specs.items():
-        dimensions = [
-            {
-                "Name": "FileSystemId",
-                "Value": domain.home_efs_file_system_id,
-            }
-        ]
-        if metric == "StorageBytes":
-            dimensions.append({"Name": "StorageClass", "Value": "Total"})
-        try:
-            response = cloudwatch_client.get_metric_statistics(
-                Namespace="AWS/EFS",
-                MetricName=metric,
-                Dimensions=dimensions,
-                StartTime=window.start,
-                EndTime=window.end,
-                Period=86400,
-                Statistics=[statistic],
-            )
-        except Exception:
-            continue
-        values = [
-            float(point[statistic])
-            for point in response.get("Datapoints", [])
-            if point.get(statistic) is not None
-        ]
-        if values:
+_EFS_METRICS = {
+    "StorageBytes": ("efs_storage_bytes", "Average"),
+    "TotalIOBytes": ("efs_total_io_bytes", "Sum"),
+    "DataReadIOBytes": ("efs_read_io_bytes", "Sum"),
+    "DataWriteIOBytes": ("efs_write_io_bytes", "Sum"),
+    "ClientConnections": ("efs_client_connections", "Sum"),
+}
+
+
+def _apply_efs_metrics(
+    cloudwatch_client, domains: list[SageMakerDomain], window
+) -> None:
+    """Cinco métricas de EFS de todos os domains, em lote.
+
+    Eram cinco chamadas por domain, em série. Só entram os domains com EFS
+    identificado: sem `FileSystemId` não há o que perguntar.
+    """
+    alvos = [
+        domain
+        for domain in domains
+        if domain.home_efs_file_system_id
+    ]
+    if cloudwatch_client is None or not alvos:
+        return
+    pedidos = [
+        (domain, field_name, metric, MetricQuery(
+            namespace="AWS/EFS",
+            metric_name=metric,
+            stat=statistic,
+            dimensions=(
+                ("FileSystemId", domain.home_efs_file_system_id),
+                *(
+                    (("StorageClass", "Total"),)
+                    if metric == "StorageBytes"
+                    else ()
+                ),
+            ),
+        ))
+        for domain in alvos
+        for metric, (field_name, statistic) in _EFS_METRICS.items()
+    ]
+    metrics.collect(
+        cloudwatch_client,
+        [query for *_resto, query in pedidos],
+        start=window.start,
+        end=window.end,
+    )
+
+    for domain, field_name, metric, query in pedidos:
+        if query.values:
             setattr(
                 domain,
                 field_name,
-                max(values) if metric == "StorageBytes" else sum(values),
+                max(query.values) if metric == "StorageBytes" else sum(query.values),
             )
 
 

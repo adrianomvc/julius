@@ -40,7 +40,7 @@ from julius.reporting.formatters import money
 from julius.reporting.view_models import ReportViewModel
 from julius.reporting.view_models import build as build_vm
 from julius.scoring.calibration import apply_calibrations
-from julius.scoring.priority import tiebreak_key
+from julius.scoring.priority import ranking_key
 from julius.scoring.process_cost import (
     apply_conservative_caps,
     build_process_costs,
@@ -237,7 +237,7 @@ def analyze_account(
             for item in history.efficiency_regressions(account)
         )
     # Ordena por prioridade de execução, com desempate determinístico.
-    opportunities.sort(key=lambda o: (o.execution_priority, *tiebreak_key(o)), reverse=True)
+    opportunities.sort(key=ranking_key, reverse=True)
 
     previous = history.latest_snapshots(account.account_id) if history is not None else []
     reconciliation = Reconciliation()
@@ -267,9 +267,7 @@ def analyze_account(
         for opportunity in opportunities
         if opportunity.fingerprint() not in suppressed
     ]
-    opportunities.sort(
-        key=lambda o: (o.execution_priority, *tiebreak_key(o)), reverse=True
-    )
+    opportunities.sort(key=ranking_key, reverse=True)
 
     if labels is None and history is not None:
         labels = history.labels_for(opportunities)

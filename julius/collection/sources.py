@@ -52,6 +52,7 @@ from julius.collection.models import Account, CollectionHealth
 from julius.collection.policy import ScopePolicy, policy_for_profile
 from julius.collection.scope import CatalogScope
 from julius.collection.session import S3_LISTING_WORKERS, make_client
+from julius.collection.settings import retention_ceiling
 from julius.collection.telemetry import InstrumentedClient, RunTelemetry
 from julius.collection.window import AnalysisWindow, BillingMonth
 
@@ -136,6 +137,9 @@ class Source:
     next_action: str
     required: bool = False
     required_capabilities: frozenset[str] = frozenset()
+    # Família de retenção. Declarada em `_SOURCE_FAMILIES` e aplicada por
+    # `replace`, para não repetir metadado em 39 blocos.
+    family: str = ""
     # Onde o resultado aterrissa: um atributo do Account, ou uma função quando
     # a fonte enriquece algo já coletado em vez de devolver uma lista nova.
     into: str = ""
@@ -156,7 +160,14 @@ class Source:
 
 
 def run(source: Source, ctx: CollectionContext, recorder: CollectionRecorder) -> None:
-    """Executa uma fonte e registra a saúde dela."""
+    """Executa uma fonte e registra a saúde dela.
+
+    A janela que a fonte recebe é recortada no teto de retenção da família dela.
+    O recorte vale sempre, não só no bootstrap: é invariante — nunca pedir a uma
+    fonte mais dias do que a AWS retém — e com a janela padrão de 30 dias ele não
+    morde nenhuma família, então o caminho de sempre não muda.
+    """
+    ctx = _scoped(ctx, source)
     if not ctx.scope_policy.allows(*source.required_capabilities):
         recorder.not_applicable(
             source.name,
@@ -210,10 +221,27 @@ def run(source: Source, ctx: CollectionContext, recorder: CollectionRecorder) ->
         source.apply(ctx, result)
     if source.after is not None:
         source.after(ctx, result, recorder.entries[-1])
+    # Com teto por família, "que janela esta fonte mediu" deixa de ser dedutível
+    # da janela da conta e passa a ser dado.
+    recorder.entries[-1].window_days = ctx.window.days
     _record_gaps(ctx, recorder.entries[-1])
     if ctx.pending_health:
         recorder.entries.extend(ctx.pending_health)
         ctx.pending_health.clear()
+
+
+def _scoped(ctx: CollectionContext, source: Source) -> CollectionContext:
+    """`ctx` com a janela da família, compartilhando o resto por referência.
+
+    `replace` monta um objeto novo, mas `account`, `flags`, `gaps`,
+    `pending_health` e o cache de clientes continuam sendo os mesmos objetos — o
+    que uma fonte escreve segue visível para a seguinte, e nenhum cliente é
+    remontado.
+    """
+    window = ctx.window.capped(retention_ceiling(source.family))
+    if window is ctx.window:
+        return ctx
+    return replace(ctx, window=window)
 
 
 _SOURCE_CAPABILITIES: dict[str, frozenset[str]] = {
@@ -256,6 +284,56 @@ _SOURCE_CAPABILITIES: dict[str, frozenset[str]] = {
     "Table Touches": frozenset({"athena"}),
     "DataWarm Mapping": frozenset({"glue_catalog"}),
     "CloudTrail Ownership": frozenset({"ownership"}),
+}
+
+
+#: A qual retenção cada fonte está sujeita. Por família, e não por fonte, porque
+#: uma fonte de custo tem de medir a **mesma** janela do inventário com que ela
+#: reconcilia: se `Glue Jobs` medisse 90 dias e `Glue Cost Explorer` 45, o delta
+#: de reconciliação explodiria e o rateio deixaria de fechar sem que a causa
+#: aparecesse em lugar nenhum. O Cost Explorer nunca é o limitante (retém 12+
+#: meses), então o teto é sempre o da telemetria da família.
+_SOURCE_FAMILIES: dict[str, str] = {
+    "Cost Explorer": "billing",
+    "Glue Jobs": "glue",
+    "Glue Scripts": "glue",
+    "Spark Event Logs": "glue",
+    "Glue Catalog": "glue",
+    "Glue Crawlers": "glue",
+    "Glue Triggers": "glue",
+    "Glue DataBrew": "glue",
+    "CloudWatch Glue CPU": "glue",
+    "CloudWatch Glue Observability": "glue",
+    "Glue Interactive Sessions": "glue",
+    "Glue Cost Explorer": "glue",
+    "Athena Queries": "athena",
+    "Athena Provisioned Capacity": "athena",
+    "Amazon S3": "s3",
+    "S3 Config": "s3",
+    "S3 Prefixes": "s3",
+    "S3 Access Evidence": "s3",
+    "S3 Multipart Uploads": "s3",
+    "S3 Cost Explorer": "s3",
+    "SageMaker Studio": "sagemaker",
+    "SageMaker Spaces": "sagemaker",
+    "SageMaker Domains": "sagemaker",
+    "SageMaker Endpoints": "sagemaker",
+    "SageMaker Notebooks": "sagemaker",
+    "SageMaker Jobs": "sagemaker",
+    "SageMaker Feature Store": "sagemaker",
+    "SageMaker Pipelines": "sagemaker",
+    "SageMaker Model Monitor": "sagemaker",
+    "SageMaker Inference Recommender": "sagemaker",
+    "SageMaker Cost Explorer": "sagemaker",
+    "SageMaker Savings Plans": "sagemaker",
+    "Amazon Redshift": "redshift",
+    "Redshift Cost Explorer": "redshift",
+    "Step Functions": "stepfunctions",
+    "EventBridge Schedules": "stepfunctions",
+    # Toques saem do histórico de queries do Athena: mesma retenção de 45 dias.
+    "Table Touches": "athena",
+    "DataWarm Mapping": "glue",
+    "CloudTrail Ownership": "ownership",
 }
 
 
@@ -1228,7 +1306,18 @@ if {source.name for source in SOURCES} != set(_SOURCE_CAPABILITIES):
     extra = set(_SOURCE_CAPABILITIES) - {source.name for source in SOURCES}
     raise RuntimeError(f"capabilities de fontes inconsistentes: missing={missing}, extra={extra}")
 
+# Fonte sem família herdaria a profundidade cheia em silêncio, que é o modo de
+# falha que o teto existe para evitar. Falha na importação, como as capabilities.
+if {source.name for source in SOURCES} != set(_SOURCE_FAMILIES):
+    missing = {source.name for source in SOURCES} - set(_SOURCE_FAMILIES)
+    extra = set(_SOURCE_FAMILIES) - {source.name for source in SOURCES}
+    raise RuntimeError(f"famílias de fontes inconsistentes: missing={missing}, extra={extra}")
+
 SOURCES = tuple(
-    replace(source, required_capabilities=_SOURCE_CAPABILITIES[source.name])
+    replace(
+        source,
+        required_capabilities=_SOURCE_CAPABILITIES[source.name],
+        family=_SOURCE_FAMILIES[source.name],
+    )
     for source in SOURCES
 )

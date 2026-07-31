@@ -14,6 +14,7 @@ from dataclasses import dataclass, field
 
 from julius.collection.models import Account
 from julius.findings.opportunity import Opportunity
+from julius.scoring.priority import ranking_key
 
 # serviço AWS por tipo de ativo (para cobertura financeira).
 _SERVICE_OF = {
@@ -149,7 +150,9 @@ def compute_kpis(
     false_positives = 0
     false_positive_rate = None
     if labels:
-        top10 = sorted(opportunities, key=lambda o: o.execution_priority, reverse=True)[:10]
+        # Mesma ordem da tabela do relatório. Medir precisão sobre um Top 10
+        # ordenado de outro jeito seria avaliar uma lista que ninguém viu.
+        top10 = sorted(opportunities, key=ranking_key, reverse=True)[:10]
         judged = [labels.get(o.opportunity_id) for o in top10 if o.opportunity_id in labels]
         if judged:
             reviewed = len(judged)

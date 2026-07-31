@@ -238,3 +238,94 @@ def test_the_sources_run_after_what_they_derive_from():
         assert nomes.index(dependencia) < nomes.index("Amazon S3")
     # E o rateio de custo depende do inventário de buckets.
     assert nomes.index("Amazon S3") < nomes.index("S3 Cost Explorer")
+
+
+# --------------------------------------------------------------------------
+# Tamanho e contagem por bucket
+#
+# `collect_buckets` não tinha teste: a migração para `GetMetricData` em lote
+# passou verde sem nada exercitar a leitura da métrica. Estes cobrem o que a
+# semântica depende — qual ponto da série vale, e quantas chamadas custa.
+# --------------------------------------------------------------------------
+
+
+class _CloudWatchLote:
+    """Responde `GetMetricData`, guardando o que foi pedido."""
+
+    def __init__(self, series: dict[tuple[str, str], list[float]]):
+        self.series = series
+        self.chamadas: list[dict] = []
+
+    def get_metric_data(self, **kwargs):
+        self.chamadas.append(kwargs)
+        resultados = []
+        for query in kwargs["MetricDataQueries"]:
+            stat = query["MetricStat"]
+            dims = {d["Name"]: d["Value"] for d in stat["Metric"]["Dimensions"]}
+            chave = (dims["BucketName"], dims["StorageType"])
+            resultados.append(
+                {"Id": query["Id"], "Values": self.series.get(chave, [])}
+            )
+        return {"MetricDataResults": resultados}
+
+
+def test_bucket_size_uses_the_most_recent_point_of_the_series():
+    """Tamanho de bucket é o último ponto, não a média nem o primeiro.
+
+    Por isso o lote pede `TimestampAscending`: o default do `GetMetricData` é
+    descendente, e sem isso o tamanho reportado seria o do começo da janela.
+    """
+    janela = AnalysisWindow.trailing(days=30)
+    cloudwatch = _CloudWatchLote(
+        {
+            ("lake", "StandardStorage"): [100.0, 200.0, 300.0],
+            ("lake", "GlacierStorage"): [10.0],
+            ("lake", "AllStorageTypes"): [5.0, 9.0],
+        }
+    )
+
+    buckets = s3.collect_buckets(cloudwatch, None, names=["lake"], window=janela)
+
+    assert buckets[0].bytes_by_class == {
+        "StandardStorage": 300.0,
+        "GlacierStorage": 10.0,
+    }
+    assert buckets[0].object_count == 9
+    assert buckets[0].observed_days == 1
+    assert cloudwatch.chamadas[0]["ScanBy"] == "TimestampAscending"
+
+
+def test_every_bucket_and_class_fits_in_one_call():
+    """Eram dez chamadas por bucket; três buckets custavam trinta."""
+    janela = AnalysisWindow.trailing(days=30)
+    cloudwatch = _CloudWatchLote({})
+
+    s3.collect_buckets(
+        cloudwatch, None, names=["a", "b", "c"], window=janela
+    )
+
+    assert len(cloudwatch.chamadas) == 1
+    # Nove classes mais a contagem, por bucket.
+    assert len(cloudwatch.chamadas[0]["MetricDataQueries"]) == 3 * 10
+
+
+def test_a_bucket_without_metrics_reports_nothing_instead_of_zero():
+    """Métrica ausente não vira tamanho zero — seria afirmação diferente."""
+    janela = AnalysisWindow.trailing(days=30)
+
+    buckets = s3.collect_buckets(
+        _CloudWatchLote({}), None, names=["vazio"], window=janela
+    )
+
+    assert buckets[0].bytes_by_class == {}
+    assert buckets[0].object_count is None
+    assert buckets[0].observed_days == 0
+
+
+def test_no_cloudwatch_client_leaves_the_bucket_unmeasured():
+    janela = AnalysisWindow.trailing(days=30)
+
+    buckets = s3.collect_buckets(None, None, names=["lake"], window=janela)
+
+    assert buckets[0].bytes_by_class == {}
+    assert buckets[0].object_count is None
