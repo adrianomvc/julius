@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import Any
 
@@ -72,7 +73,42 @@ def resolve_owner(account: Account, asset_type: str, asset_name: str) -> OwnerAt
         if asset.primary_community:
             return OwnerAttribution(asset.primary_community, "principal comunidade que toca a tabela", 0.6)
 
+    convencao = owner_from_name(asset_name)
+    if convencao:
+        return OwnerAttribution(
+            convencao, f"convenção de nome do recurso ({asset_name})", 0.4
+        )
+
     return OwnerAttribution(None, "desconhecido", 0.0)
+
+
+#: Convenção de nome que denuncia o time dono. É a última tentativa, abaixo de
+#: qualquer tag, de CloudTrail e do cadastro corporativo — um nome é intenção de
+#: quem criou o recurso, não declaração de propriedade, e pode estar velho.
+#:
+#: Vale mesmo assim porque `check_actionable` exige dono ou ator: sem nenhum dos
+#: dois o achado nasce em `investigar_primeiro` por falta de responsável, e não
+#: por falta de evidência. Resolver o dono move o achado de fila sem alterar um
+#: centavo de economia.
+OWNER_NAME_PATTERNS: tuple[str, ...] = (
+    r"^(squad[-_][a-z0-9]+)",
+    r"^(team[-_][a-z0-9]+)",
+    r"^(time[-_][a-z0-9]+)",
+    r"^(tribo?[-_][a-z0-9]+)",
+    r"^(grupo[-_][a-z0-9]+)",
+)
+
+_NAME_PATTERNS = tuple(re.compile(padrao, re.IGNORECASE) for padrao in OWNER_NAME_PATTERNS)
+
+
+def owner_from_name(asset_name: str) -> str | None:
+    """Time deduzido do nome do recurso, quando ele segue convenção declarada."""
+    nome = str(asset_name or "").strip()
+    for padrao in _NAME_PATTERNS:
+        encontrado = padrao.match(nome)
+        if encontrado:
+            return encontrado.group(1).lower()
+    return None
 
 
 def _asset(account: Account, asset_type: str, asset_name: str) -> Any:

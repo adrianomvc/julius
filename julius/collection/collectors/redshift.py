@@ -22,6 +22,7 @@ from julius.collection.collectors import metrics
 from julius.collection.collectors.metrics import MetricQuery
 from julius.collection.collectors.paginate import safe_pages
 from julius.collection.models import RedshiftCluster
+from julius.collection.ownership_tags import owner_from_tags
 from julius.collection.window import AnalysisWindow
 
 
@@ -208,7 +209,4 @@ def _iso(value) -> str:
 
 
 def _tag(tags) -> str | None:
-    for item in tags or []:
-        if isinstance(item, dict) and item.get("Key") == "Owner":
-            return item.get("Value")
-    return None
+    return owner_from_tags(tags)

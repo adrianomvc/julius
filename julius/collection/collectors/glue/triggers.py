@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from julius.collection.models import GlueTrigger
+from julius.collection.ownership_tags import owner_from_tags
 from julius.collection.schedule_frequency import expected_runs_per_month
 
 
@@ -29,7 +30,7 @@ def collect_triggers(glue_client) -> list[GlueTrigger]:
                             if action.get("CrawlerName")
                         }
                     ),
-                    owner_tag=(raw.get("Tags", {}) or {}).get("Owner"),
+                    owner_tag=owner_from_tags(raw.get("Tags")),
                     expected_runs_monthly=expected_runs_per_month(
                         str(raw.get("Schedule") or "")
                     ),
