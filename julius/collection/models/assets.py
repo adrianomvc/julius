@@ -309,6 +309,11 @@ class SageMakerJob:
     modeled_cost: float | None = None
     allocated_cost: float | None = None
     cost_quality: str = "unavailable"
+    #: Por que não há custo, quando não há. Distingue os três casos que
+    #: produziam o mesmo silêncio: configuração de recurso não descrita, tarifa
+    #: ausente para o tipo de instância, e job que existiu mas não acumulou tempo
+    #: faturável. Sem isto, "custo zero" e "custo desconhecido" ficam iguais.
+    cost_unavailable_reason: str = ""
     cost_coverage_days: int | None = None
     consistent_scans: int = 1
 

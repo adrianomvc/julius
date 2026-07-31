@@ -312,10 +312,7 @@ def collect_jobs(
                 window,
                 history_window,
             )
-            rate = _rate(pricing, job.instance_type, kind)
-            if rate is not None:
-                job.modeled_cost = round(job.instance_hours * rate, 6)
-                job.cost_quality = "modeled"
+            _apply_modeled_cost(job, pricing, kind)
             jobs.append(job)
 
     selected = jobs if full_metrics else _select_detailed(jobs, detailed_limit)
@@ -329,6 +326,42 @@ def collect_jobs(
         )
     _apply_workload_history(jobs, low_utilization_threshold)
     return jobs
+
+
+def _apply_modeled_cost(job: SageMakerJob, pricing, kind: str) -> None:
+    """Custo modelado do job, ou o motivo de não haver — nunca um zero mudo.
+
+    `instance_type` e `instance_count` só existem no `describe`: o summary da
+    listagem não os traz. Quando o describe é negado, o job entrava no
+    inventário com tipo vazio e contagem zero, e o efeito não parava aí — sem
+    base de rateio ele sai do denominador do Cost Explorer, e a cobrança dele é
+    redistribuída entre os outros jobs, que passam a parecer mais caros do que
+    são. Registrar o motivo é o que torna essa redistribuição visível.
+
+    Job que falhou antes de iniciar é caso distinto e legítimo: ele existiu, a
+    configuração é conhecida, e não houve tempo faturável. Zero ali é verdade —
+    mas `cost_quality="modeled"` sobre esse zero afirmaria medição, então o campo
+    vira `unavailable` com o motivo.
+    """
+    if not job.instance_type or job.instance_count <= 0:
+        job.cost_quality = "unavailable"
+        job.cost_unavailable_reason = (
+            "configuração de recurso não descrita (describe negado ou ausente)"
+        )
+        return
+    rate = _rate(pricing, job.instance_type, kind)
+    if rate is None:
+        job.cost_quality = "unavailable"
+        job.cost_unavailable_reason = f"sem tarifa {kind} para {job.instance_type}"
+        return
+    if job.instance_hours <= 0:
+        job.cost_quality = "unavailable"
+        job.cost_unavailable_reason = (
+            "job sem tempo faturável observado (não chegou a iniciar)"
+        )
+        return
+    job.modeled_cost = round(job.instance_hours * rate, 6)
+    job.cost_quality = "modeled"
 
 
 def _normalize_job(
