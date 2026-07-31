@@ -16,6 +16,7 @@ from julius.collection.collectors.last_read import apply_last_read
 from julius.collection.health import CollectionRecorder, RequiredCollectionError
 from julius.collection.models import Account
 from julius.collection.policy import ScopePolicy, policy_for_profile
+from julius.collection.redundant_reads import apply_redundant_reads
 from julius.collection.scope import CatalogScope
 from julius.collection.session import make_client
 from julius.collection.settings import ANALYSIS_WINDOW_DAYS
@@ -110,6 +111,10 @@ def collect_account(
     # AWS, então não é fonte — mas o alcance dela entra na saúde, porque
     # recomendar classe de armazenamento depende inteiramente dessa cobertura.
     _record_read_evidence(account, health)
+    # Segunda derivação pura: cruza o que o job leu (CloudWatch) com o tamanho da
+    # fonte (listagem S3) para medir reprocessamento. Sem chamada AWS, e por isso
+    # fora de `SOURCES`.
+    apply_redundant_reads(account)
 
     account.collection_health = health.entries
     account.run_telemetry.estimate(config.pricing)

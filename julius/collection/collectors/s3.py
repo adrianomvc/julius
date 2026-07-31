@@ -17,6 +17,7 @@ métrica não consultada deixa o campo em `None`.
 
 from __future__ import annotations
 
+import re
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from typing import Any
@@ -109,6 +110,29 @@ def collect_prefixes(
         return list(pool.map(coletar, alvos))
 
 
+#: Chaves de partição temporal, no estilo Hive. Cobre português porque o
+#: catálogo destas contas usa os dois.
+_PARTICAO_TEMPORAL = re.compile(
+    r"(?:^|/)(dt|ds|data|date|ano|year|mes|month|dia|day|hora|hour)=",
+    re.IGNORECASE,
+)
+
+
+def _particionado_por_data(objects: list[dict]) -> bool:
+    """A fonte cresce por partição de data, ou é reescrita inteira?
+
+    A distinção decide se reler tudo a cada execução é desperdício ou
+    necessidade — e é a condição que o cálculo de reprocessamento exige antes de
+    afirmar qualquer byte redundante.
+
+    Calculado aqui porque é aqui que as chaves existem: elas não sobem deste
+    módulo, por decisão de privacidade, então o que sobe é o booleano.
+    """
+    return any(
+        _PARTICAO_TEMPORAL.search(str(item.get("Key") or "")) for item in objects
+    )
+
+
 def _agregar(
     bucket: str,
     prefix: str,
@@ -131,6 +155,7 @@ def _agregar(
         # Listagem falhou: sem contagem, e nenhuma regra vai afirmar.
         return entry
     entry.object_count = len(objects)
+    entry.date_partitioned = _particionado_por_data(objects)
     entry.total_bytes = sum(int(item.get("Size") or 0) for item in objects)
     entry.nonzero_object_count = sum(
         1 for item in objects if int(item.get("Size") or 0) > 0
