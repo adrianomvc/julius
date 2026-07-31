@@ -30,6 +30,7 @@ from julius.collection.models import (
     SageMakerInferenceComponent,
     SageMakerVariant,
 )
+from julius.collection.ownership_tags import owner_from_tags
 from julius.collection.window import AnalysisWindow
 
 # Um app sem sessão de kernel ativa ainda cobra a instância. `AppInstanceCount`
@@ -672,7 +673,7 @@ def _tag(raw: dict, key: str) -> str | None:
 
 def _owner_tag(client, *resources: dict) -> str | None:
     for resource in resources:
-        direct = _tag(resource, "Owner")
+        direct = owner_from_tags(resource.get("Tags"))
         if direct:
             return direct
     arn = next(
@@ -687,4 +688,4 @@ def _owner_tag(client, *resources: dict) -> str | None:
     if not arn:
         return None
     response, _ = safe_call(client, "list_tags", ResourceArn=arn)
-    return _tag(response, "Owner")
+    return owner_from_tags(response.get("Tags"))

@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 
 from julius.collection.collectors.paginate import safe_pages
 from julius.collection.models import GlueCrawler
+from julius.collection.ownership_tags import owner_from_tags
 from julius.collection.schedule_frequency import expected_runs_per_month
 from julius.collection.window import AnalysisWindow
 
@@ -56,7 +57,7 @@ def collect_crawlers(
                 dpu_hours_window=round(
                     sum(float(item.get("DPUHour", 0) or 0) for item in histories), 4
                 ),
-                owner_tag=(raw.get("Tags", {}) or {}).get("Owner"),
+                owner_tag=owner_from_tags(raw.get("Tags")),
                 crawl_ids_in_window=sorted(
                     str(item["CrawlId"]) for item in histories if item.get("CrawlId")
                 ),

@@ -19,6 +19,7 @@ from statistics import mean, median, pstdev
 
 from julius.collection.collectors.paginate import safe_pages
 from julius.collection.models import GlueJob, Table
+from julius.collection.ownership_tags import owner_from_tags
 from julius.collection.session import GLUE_RUN_HISTORY_WORKERS
 from julius.collection.settings import DPU_PER_WORKER
 from julius.collection.window import AnalysisWindow
@@ -232,7 +233,7 @@ def _build_job(glue_client, job: dict, window: AnalysisWindow) -> GlueJob:
         run_ids_in_window=sorted(
             str(r["Id"]) for r in window_runs if r.get("Id")
         ),
-        owner_tag=(job.get("Tags", {}) or {}).get("Owner"),
+        owner_tag=owner_from_tags(job.get("Tags")),
             script_location=(job.get("Command", {}) or {}).get("ScriptLocation"),
             default_argument_keys=sorted(
                 str(key) for key in (job.get("DefaultArguments") or {})

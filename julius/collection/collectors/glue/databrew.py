@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 
 from julius.collection.collectors.paginate import safe_pages
 from julius.collection.models import DataBrewJob
+from julius.collection.ownership_tags import owner_from_tags
 from julius.collection.schedule_frequency import expected_runs_per_month
 from julius.collection.window import AnalysisWindow
 
@@ -46,7 +47,7 @@ def collect_jobs(
                 execution_hours_window=round(execution_hours, 4),
                 # A API informa capacidade máxima, não utilização por node.
                 estimated_node_hours_window=round(execution_hours * capacity, 4),
-                owner_tag=(raw.get("Tags", {}) or {}).get("Owner"),
+                owner_tag=owner_from_tags(raw.get("Tags")),
                 run_ids_in_window=sorted(
                     str(run["RunId"]) for run in runs if run.get("RunId")
                 ),

@@ -21,6 +21,7 @@ from julius.collection.models import (
     SageMakerPipeline,
     SageMakerSpace,
 )
+from julius.collection.ownership_tags import owner_from_tags
 from julius.collection.window import AnalysisWindow
 
 _JOB_SPECS = {
@@ -888,10 +889,9 @@ def _search_metric(
 
 def _owner(client, *resources: dict) -> str | None:
     for resource in resources:
-        tags = resource.get("Tags") or []
-        for tag in tags if isinstance(tags, list) else []:
-            if tag.get("Key") == "Owner":
-                return str(tag.get("Value") or "") or None
+        dono = owner_from_tags(resource.get("Tags"))
+        if dono:
+            return dono
     arn = next(
         (
             str(resource.get(key) or "")
@@ -909,10 +909,7 @@ def _owner(client, *resources: dict) -> str | None:
     if not arn:
         return None
     response, _ = safe_call(client, "list_tags", ResourceArn=arn)
-    for tag in response.get("Tags", []) or []:
-        if tag.get("Key") == "Owner":
-            return str(tag.get("Value") or "") or None
-    return None
+    return owner_from_tags(response.get("Tags"))
 
 
 def _rate(pricing: Any, instance_type: str, component: str) -> float | None:
