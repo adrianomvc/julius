@@ -40,9 +40,10 @@ def apply_last_read(account: Any) -> int:
         return medidas
     medidas = 0
     for table in account.tables:
-        candidata = ultima.get(_normalizado(table.name), "")
+        candidata, origem = ultima.get(_normalizado(table.name), ("", ""))
         if candidata > table.last_read_at:
             table.last_read_at = candidata
+            table.last_read_source = origem
         if table.last_read_at:
             medidas += 1
     _apply_prefix_read_evidence(account)
@@ -57,26 +58,67 @@ def _apply_prefix_read_evidence(account: Any) -> None:
     de `S3Prefix` têm defaults explícitos.
     """
     leituras = last_read_by_prefix(account)
+    origens = _origem_por_prefixo(account)
     for prefixo in getattr(account, "s3_prefixes", None) or ():
         quando = last_read_for(prefixo, leituras)
         if not quando or quando <= prefixo.last_read_at:
             continue
+        origem = origens.get(quando, "catalog_read_history")
         prefixo.last_read_at = quando
-        prefixo.access_source = "catalog_read_history"
-        prefixo.access_quality = "prefix_inferred"
+        prefixo.access_source = origem
+        # Qualidades diferentes porque as afirmações são diferentes: query
+        # observada diz **quando** o prefixo foi lido; execução de job diz que
+        # ele **é** consumido, sem garantir que a leitura foi da parte inteira.
+        prefixo.access_quality = (
+            "process_inferred" if origem == "process_lineage" else "prefix_inferred"
+        )
         prefixo.read_coverage_days = int(getattr(account, "window_days", 0) or 0)
 
 
-def _ultima_leitura_por_tabela(account: Any) -> dict[str, str]:
-    ultima: dict[str, str] = {}
+def _origem_por_prefixo(account: Any) -> dict[str, str]:
+    """A origem de cada data de leitura, indexada pela própria data."""
+    return {
+        str(getattr(table, "last_read_at", "") or ""): str(
+            getattr(table, "last_read_source", "") or ""
+        )
+        for table in getattr(account, "tables", None) or ()
+        if getattr(table, "last_read_at", "")
+    }
+
+
+def _ultima_leitura_por_tabela(account: Any) -> dict[str, tuple[str, str]]:
+    """`(quando, origem)` por tabela, da fonte mais forte que tiver data.
+
+    Duas origens, e elas afirmam coisas diferentes. O histórico de query é
+    **leitura observada**: alguém consultou a tabela e há registro disso. A
+    linhagem é **inferência**: um job que declara ler a tabela rodou naquele
+    instante, então o dado é consumido — mas o job pode ler só a partição do
+    dia, e a data não é de leitura da tabela inteira.
+
+    A data mais recente vence, porque uma leitura posterior é uma leitura
+    posterior venha de onde vier. O que a origem decide é o que a regra pode
+    afirmar com ela.
+    """
+    ultima: dict[str, tuple[str, str]] = {}
+
+    def registrar(nome: Any, quando: str, origem: str) -> None:
+        chave = _normalizado(nome)
+        if not chave or not quando:
+            return
+        anterior = ultima.get(chave)
+        if anterior is None or quando > anterior[0]:
+            ultima[chave] = (quando, origem)
+
     for query in getattr(account, "athena_queries", None) or ():
         quando = str(getattr(query, "last_execution_at", "") or "")
-        if not quando:
-            continue
         for nome in getattr(query, "reads_tables", None) or ():
-            chave = _normalizado(nome)
-            if quando > ultima.get(chave, ""):
-                ultima[chave] = quando
+            registrar(nome, quando, "catalog_read_history")
+
+    for job in getattr(account, "glue_jobs", None) or ():
+        quando = str(getattr(job, "last_run_at", "") or "")
+        for nome in getattr(job, "reads_tables", None) or ():
+            registrar(nome, quando, "process_lineage")
+
     return ultima
 
 

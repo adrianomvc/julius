@@ -432,6 +432,13 @@ class Table:
     #: dado é usado. É essa diferença que separa uma recomendação de classe de
     #: armazenamento com economia de uma que sai como pergunta.
     last_read_at: str = ""
+    #: De onde veio `last_read_at`. `touches` e `catalog_read_history` são
+    #: leitura observada — alguém consultou a tabela e há registro disso.
+    #: `process_lineage` é inferência: um job que declara ler a tabela rodou
+    #: naquele instante, então o dado é consumido — mas o job pode ler só uma
+    #: partição, e a data não é de leitura da tabela inteira. A distinção decide
+    #: o que a regra pode afirmar com ela.
+    last_read_source: str = ""
     consuming_accounts: int | None = None
     consuming_communities: int | None = None
     storage_bytes: int = 0

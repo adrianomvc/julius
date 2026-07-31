@@ -283,7 +283,17 @@ def _dias_sem_leitura(
                 < config.thresholds.s3_cold_after_days
             ):
                 return None, source, "insufficient_coverage"
-            if prefixo.access_quality in {"partial", "unavailable"}:
+            # `process_inferred` entra aqui junto com evidência parcial, e por
+            # motivo próprio: a execução de um job que lê a tabela prova que o
+            # dado **é** consumido, não **quando** o prefixo inteiro foi lido —
+            # o job pode ler só a partição do dia. Usar essa data para concluir
+            # "frio há N dias" transformaria inferência em cifra, que é
+            # exatamente o que o gate de procedência existe para impedir.
+            if prefixo.access_quality in {
+                "partial",
+                "unavailable",
+                "process_inferred",
+            }:
                 return None, source, prefixo.access_quality
             return (
                 dias,
