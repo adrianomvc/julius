@@ -329,3 +329,51 @@ def test_manifest_hash_is_verified_and_pipeline_consumes_code_findings(tmp_path)
         assert "hash divergente" in str(exc)
     else:
         raise AssertionError("manifesto adulterado deveria ser rejeitado")
+
+
+def test_a_heuristic_pattern_no_longer_turns_a_constant_into_a_figure():
+    """Spill medido prova que houve shuffle, não que 15% do job é economia.
+
+    `GLUE-CODE-SHUFFLE` dispara em qualquer `join`, `groupBy`, `orderBy` ou
+    `map`. Com correlação de runtime ele virava `Opportunity` e a economia saía
+    de `RuleSpec.fraction` — uma constante multiplicada pelo custo do job. A
+    medição sustentava a existência do padrão e não o número.
+
+    O padrão continua inteiro: mesmas linhas, mesmo hash, mesma pergunta. O que
+    saiu foi a cifra que não era dele.
+    """
+    job = GlueJob(
+        name="job-code",
+        glue_version="5.1",
+        command_type="glueetl",
+        worker_type="G.1X",
+        number_of_workers=10,
+        runs_in_window=10,
+        observed_runs=10,
+        coverage_days=30,
+        dpu_seconds_window=36000,
+        has_spill_evidence=True,
+        shuffle_write_bytes=8 * 1024**3,
+        max_task_skew=3.0,
+        spark_event_log_evidence_complete=True,
+    )
+    account = Account(account_id="123456789012", glue_jobs=[job])
+
+    found, signals = glue_code.detect(
+        account, [_artifact(SPARK_SCRIPT)], DEFAULT_CONFIG, "scan-heuristica"
+    )
+
+    heuristicas = {
+        "GLUE-CODE-SHUFFLE",
+        "GLUE-CODE-PYTHON-UDF",
+        "GLUE-CODE-REPEATED-ACTIONS",
+        "GLUE-CODE-CACHE-LIFECYCLE",
+    }
+    assert not (heuristicas & {item.rule_id for item in found})
+    assert heuristicas <= {item.rule_id for item in signals}
+
+    shuffle = next(item for item in signals if item.rule_id == "GLUE-CODE-SHUFFLE")
+    assert shuffle.artifact_sha256 and shuffle.lines
+
+    # E o que continua determinístico não foi arrastado junto.
+    assert "GLUE-CODE-PUSHDOWN" in {item.rule_id for item in found}

@@ -115,9 +115,8 @@ def test_the_guard_would_catch_a_field_nobody_writes():
 #: - **intermediário legítimo**: `date_partitioned` alimenta
 #:   `collection/redundant_reads.py`, `workload_fingerprint` agrupa jobs em
 #:   `_apply_workload_history`. O consumidor existe e é interno à coleta;
-#: - **evidência a ligar**: `shuffle_read_bytes`, `training_seconds`,
-#:   `bytes_by_size` e as falhas por máquina do Step Functions são dinheiro
-#:   medido esperando regra;
+#: - **evidência a ligar**: `bytes_by_size`, `object_count_by_size` e
+#:   `duration_p95_ms` são dinheiro medido esperando regra;
 #: - **custo puro**: o resto — chamada de API paga em toda coleta para nada.
 SEM_CONSUMIDOR_CONHECIDO = frozenset(
     {
@@ -227,7 +226,6 @@ SEM_CONSUMIDOR_CONHECIDO = frozenset(
         "server_errors",
         "serverless_memory_mb",
         "sharing_type",
-        "shuffle_read_bytes",
         "space_count",
         "space_name",
         "spark_event_log_objects_scanned",

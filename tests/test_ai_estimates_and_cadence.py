@@ -157,3 +157,70 @@ def test_monthly_validation_waits_for_a_full_stable_month(tmp_path):
         )
     assert august[0] is False
     assert september == (True, "mês completo estável")
+
+
+def test_the_ai_chooses_the_scenario_and_the_engine_runs_the_formula():
+    """Os métodos novos seguem o contrato: proposta é cenário, não número."""
+    from julius.collection.models import GlueJob, SageMakerJob
+    from julius.findings.investigation import AIEstimationProposal
+    from julius.knowledge.contextual_estimation import evaluate_proposal
+
+    account = Account(
+        account_id="123456789012",
+        sagemaker_jobs=[
+            SageMakerJob(
+                name="treino",
+                kind="training",
+                instance_type="ml.p3.2xlarge",
+                instance_count=1,
+                modeled_cost=400.0,
+                cost_quality="modeled",
+            )
+        ],
+        glue_jobs=[
+            GlueJob(
+                name="etl",
+                shuffle_write_bytes=8 * 1024**3,
+                has_spill_evidence=True,
+                dpu_seconds_window=360000,
+            )
+        ],
+    )
+
+    gpu = evaluate_proposal(
+        account,
+        _signal("SM-CODE-CPU-ONLY-ON-GPU", "sagemaker_training_job", "treino"),
+        AIEstimationProposal(method="sagemaker_gpu_to_cpu_instance_v1", target={}),
+        DEFAULT_CONFIG,
+    )
+    assert gpu.status == "estimated"
+    assert gpu.estimated_low < gpu.estimated_expected <= gpu.estimated_high
+
+    shuffle = evaluate_proposal(
+        account,
+        _signal("GLUE-CODE-SHUFFLE", "glue_job", "etl"),
+        AIEstimationProposal(
+            method="glue_shuffle_reduction_v1", target={"expected_reduction": 0.2}
+        ),
+        DEFAULT_CONFIG,
+    )
+    assert shuffle.status == "estimated"
+    assert shuffle.estimated_high == round(shuffle.baseline_cost * 0.2, 2)
+
+
+def test_a_method_cannot_be_proposed_for_a_signal_it_does_not_answer():
+    """`_ALLOWED` é o que impede a proposta de virar carta branca."""
+    import pytest
+
+    from julius.findings.investigation import AIEstimationProposal
+    from julius.knowledge.contextual_estimation import evaluate_proposal
+
+    with pytest.raises(ValueError):
+        evaluate_proposal(
+            Account(account_id="123456789012"),
+            _signal("GLUE-CODE-SHUFFLE", "glue_job", "etl"),
+            AIEstimationProposal(
+                method="sagemaker_managed_spot_training_v1", target={}
+            ),
+            DEFAULT_CONFIG,
+        )
