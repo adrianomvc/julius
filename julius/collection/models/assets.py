@@ -80,7 +80,6 @@ class StateMachine:
     throttled_events: int = 0
     redriven_executions: int = 0
     open_executions_max: int = 0
-    distributed_map_backlog: int = 0
     service_integration_failures: int = 0
     duration_p95_ms: float | None = None
     avg_failed_state_transitions: int | None = None
@@ -160,7 +159,6 @@ class SageMakerDomain:
     efs_write_io_bytes: float | None = None
     efs_client_connections: float | None = None
     coverage_days: int = 0
-    modeled_storage_cost: float | None = None
     allocated_storage_cost: float | None = None
     cost_quality: str = "unavailable"
     cost_coverage_days: int | None = None
@@ -293,7 +291,6 @@ class SageMakerJob:
     warm_pool_reused: bool = False
     failure_category: str = ""
     pipeline_name: str = ""
-    pipeline_execution_arn: str = ""
     workload_fingerprint: str = ""
     workload_runs: int = 0
     low_utilization_runs: int = 0
