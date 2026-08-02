@@ -121,7 +121,6 @@ def test_the_guard_would_catch_a_field_nobody_writes():
 #: - **custo puro**: o resto — chamada de API paga em toda coleta para nada.
 SEM_CONSUMIDOR_CONHECIDO = frozenset(
     {
-        "aborted_executions",
         "access_log_target_bucket",
         "access_log_target_prefix",
         "access_logging_enabled",
@@ -145,9 +144,6 @@ SEM_CONSUMIDOR_CONHECIDO = frozenset(
         "created_on",
         "current_copies",
         "current_on_demand_spend",
-        "cw_aborted_executions",
-        "cw_failed_executions",
-        "cw_timed_out_executions",
         "database_name",
         "date_partitioned",
         "definition_available",
@@ -231,7 +227,6 @@ SEM_CONSUMIDOR_CONHECIDO = frozenset(
         "select_requests_window",
         "server_errors",
         "serverless_memory_mb",
-        "service_integration_failures",
         "sharing_type",
         "shuffle_read_bytes",
         "space_count",
@@ -242,7 +237,6 @@ SEM_CONSUMIDOR_CONHECIDO = frozenset(
         "storage_lens_enabled",
         "storage_type",
         "succeeded",
-        "timed_out_executions",
         "training_seconds",
         "trigger_type",
         "user_profile_name",
@@ -310,15 +304,25 @@ def test_a_new_model_field_reaches_something_downstream():
 
 
 def test_the_debt_list_only_shrinks():
-    """Campo que ganhou consumidor sai da lista — senão ela vira decoração.
+    """Campo que saiu da dívida sai da lista — senão ela vira decoração.
 
     Sem esta metade, `SEM_CONSUMIDOR_CONHECIDO` só cresceria: ninguém lembra de
     apagar uma linha de um `frozenset` ao escrever uma regra nova.
-    """
-    obsoletos = SEM_CONSUMIDOR_CONHECIDO - _sem_consumidor()
 
-    assert not obsoletos, (
-        f"estes campos já têm consumidor a jusante: {sorted(obsoletos)}. "
+    Há duas formas de sair da dívida, e a mensagem separa as duas porque a ação
+    de quem lê o erro é a mesma mas a leitura não: um campo ligado a uma regra
+    é dívida paga, um campo removido é dívida cancelada.
+    """
+    declarados = set(_campos_declarados())
+    ligados = (SEM_CONSUMIDOR_CONHECIDO & declarados) - _sem_consumidor()
+    removidos = SEM_CONSUMIDOR_CONHECIDO - declarados
+
+    assert not ligados, (
+        f"estes campos já têm consumidor a jusante: {sorted(ligados)}. "
+        "Remova-os de SEM_CONSUMIDOR_CONHECIDO."
+    )
+    assert not removidos, (
+        f"estes campos não existem mais no modelo: {sorted(removidos)}. "
         "Remova-os de SEM_CONSUMIDOR_CONHECIDO."
     )
 

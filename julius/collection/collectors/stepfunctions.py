@@ -15,10 +15,16 @@ transições é uma afirmação, e uma afirmação falsa.
 
 from __future__ import annotations
 
-import json
 from collections import Counter
 from datetime import datetime, timezone
 
+from julius.collection.asl import (
+    express_blockers,
+    parse_definition,
+    resource_of,
+    scan_patterns,
+    walk_states,
+)
 from julius.collection.collectors import metrics
 from julius.collection.collectors.metrics import MetricQuery
 from julius.collection.collectors.paginate import safe_call, safe_pages
@@ -62,7 +68,7 @@ def collect_state_machines(
         )
         if falha_detalhe and gaps is not None:
             gaps.append(f"describe_state_machine: {falha_detalhe}")
-        definition = _json(detail.get("definition", "{}"))
+        definition = parse_definition(detail.get("definition"))
         executions, falha_execucoes = _executions(client, arn, cutoff)
         if falha_execucoes and gaps is not None:
             gaps.append(f"list_executions: {falha_execucoes}")
@@ -91,6 +97,8 @@ def collect_state_machines(
                 coverage_days=window.days,
                 sampled_executions=min(len(executions), _MAX_SAMPLED_EXECUTIONS),
                 glue_jobs=sorted(_glue_jobs(definition)),
+                asl_patterns=scan_patterns(definition),
+                express_blockers=express_blockers(definition),
                 has_polling_loop=bool(loop_states),
                 definition_available=not falha_detalhe,
                 execution_history_available=not falha_execucoes,
@@ -174,10 +182,13 @@ def _sample_transitions(
     )
 
 
+#: Só o que o histórico de execução **não** dá. `ExecutionsFailed`,
+#: `ExecutionsTimedOut` e `ExecutionsAborted` estavam aqui e mediam, pela
+#: segunda vez e sobre a mesma janela, o que `list_executions` já conta por
+#: status — três consultas por máquina para preencher campos que ninguém lia.
+#: Como fallback também não serviam: sem `GetExecutionHistory` não há média de
+#: transições, e sem ela a contagem de falhas não vira cifra nenhuma.
 _CW_METRICS = {
-    "ExecutionsFailed": ("cw_failed_executions", "Sum"),
-    "ExecutionsTimedOut": ("cw_timed_out_executions", "Sum"),
-    "ExecutionsAborted": ("cw_aborted_executions", "Sum"),
     "ExecutionThrottled": ("throttled_events", "Sum"),
     "ExecutionsRedriven": ("redriven_executions", "Sum"),
     "ExecutionTime": ("duration_p95_ms", "p95"),
@@ -336,7 +347,7 @@ def _execution_events(client, execution_arn: str) -> list[dict] | None:
 def _max_retry_attempts(definition: dict) -> int:
     """Maior `MaxAttempts` declarado em qualquer Retry da definição."""
     attempts = 0
-    for state in _states(definition):
+    for state in walk_states(definition):
         for retry in state.get("Retry", []) or []:
             if isinstance(retry, dict):
                 attempts = max(attempts, int(retry.get("MaxAttempts", 3) or 0))
@@ -365,28 +376,10 @@ def _executions(client, arn: str, cutoff: datetime) -> tuple[list[dict], str]:
     return executions, ""
 
 
-def _json(value: str) -> dict:
-    try:
-        return json.loads(value)
-    except (TypeError, json.JSONDecodeError):
-        return {}
-
-
-def _states(definition: dict):
-    for state in (definition.get("States") or {}).values():
-        yield state
-        for branch in state.get("Branches", []) or []:
-            yield from _states(branch)
-        if state.get("ItemProcessor"):
-            yield from _states(state["ItemProcessor"])
-        if state.get("Iterator"):
-            yield from _states(state["Iterator"])
-
-
 def _glue_jobs(definition: dict) -> set[str]:
     jobs: set[str] = set()
-    for state in _states(definition):
-        resource = str(state.get("Resource", "")).lower()
+    for state in walk_states(definition):
+        resource = resource_of(state)
         if "glue:startjobrun" not in resource:
             continue
         params = state.get("Parameters", {}) or {}

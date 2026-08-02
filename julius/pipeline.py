@@ -35,6 +35,7 @@ from julius.knowledge.recurrence import (
 )
 from julius.knowledge.rules import collect_signals, run_all
 from julius.knowledge.rules.glue.code import rules as glue_code
+from julius.knowledge.verdict_facts import apply_verdicts
 from julius.reporting import ProductKPIs, compute_kpis
 from julius.reporting.formatters import money
 from julius.reporting.view_models import ReportViewModel
@@ -158,6 +159,11 @@ def analyze_account(
     _allocate_billing(account, config)
     account.process_costs = build_process_costs(account, config, today=today)
     graph = build_process_graph(account)
+    # Antes das regras, porque o que já foi julgado é fato de entrada delas: um
+    # veredito sobre idempotência é a condição que `SFN-STANDARD-TO-EXPRESS`
+    # exige, e aplicá-lo depois deixaria a regra rodar sobre o inventário velho.
+    if ledger is not None:
+        apply_verdicts(account, ledger.decisions_for(account.account_id))
     opportunities = run_all(account, config, scan_id)
     signals = collect_signals(account, config)
     opportunities, signals = _drop_non_recurrent(account, config, opportunities, signals)

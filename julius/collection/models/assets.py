@@ -54,6 +54,15 @@ class StateMachine:
     # Tolerar semântica at-least-once é propriedade da lógica de negócio, não da
     # config: fica `None` até a análise contextual julgar a ASL.
     idempotent: bool | None = None
+    #: Padrões de custo lidos da ASL, do identificador ao nome dos estados que
+    #: o produzem — o vocabulário está em `collection/asl.py::ASL_PATTERNS`. É
+    #: fato da definição, não julgamento: que exista um `sns:publish` a ASL
+    #: prova; se reexecutá-lo custa caro, só quem conhece o negócio responde.
+    asl_patterns: dict[str, list[str]] = field(default_factory=dict)
+    #: Por que esta máquina não roda em Express, quando não roda. Lista vazia em
+    #: máquina cuja definição não foi lida significa "não sei", não "pode migrar"
+    #: — por isso `definition_available` continua sendo consultado junto.
+    express_blockers: list[str] = field(default_factory=list)
     has_polling_loop: bool = False
     poll_extra_transitions: int | None = None  # transições extras por execução
     max_retry_attempts: int = 0
@@ -80,13 +89,9 @@ class StateMachine:
     throttled_events: int = 0
     redriven_executions: int = 0
     open_executions_max: int = 0
-    service_integration_failures: int = 0
     duration_p95_ms: float | None = None
     avg_failed_state_transitions: int | None = None
     avg_retry_transitions: int | None = None
-    cw_failed_executions: int = 0
-    cw_timed_out_executions: int = 0
-    cw_aborted_executions: int = 0
 
 
 @dataclass
