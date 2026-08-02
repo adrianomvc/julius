@@ -540,6 +540,7 @@
   ],
   "s3_cost": {},
   "scan_id": "baseline",
+  "signals": [],
   "summary": {
     "billing_cost_mtd": "US$ 846,16",
     "committed_monthly": "US$ 0",

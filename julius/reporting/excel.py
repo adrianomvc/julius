@@ -73,6 +73,8 @@ def write_workbook(vm: ReportViewModel, path: str | Path) -> Path:
     for title, attribute in BUCKETS:
         rows = getattr(vm, attribute, [])
         _opportunities_sheet(workbook.create_sheet(title), rows)
+    if vm.signals:
+        _signals_sheet(workbook.create_sheet("Sinais"), vm)
     _health_sheet(workbook.create_sheet("Saúde da coleta"), vm)
     _assumptions_sheet(workbook.create_sheet("Premissas"), vm)
 
@@ -202,6 +204,50 @@ def _as_number(value: Any) -> Any:
         return float(cleaned)
     except ValueError:
         return text
+
+
+def _signals_sheet(sheet: Worksheet, vm: ReportViewModel) -> None:
+    """Hipóteses em aberto, ordenadas pela faixa e sem coluna de economia.
+
+    A aba fica separada das oportunidades de propósito. Uma coluna "Economia"
+    ao lado de uma faixa de ordem de grandeza convida a somar as duas, e somar
+    hipótese com achado é como um relatório passa a prometer o que não mediu —
+    por isso o cabeçalho diz "potencial" em todas as três colunas de valor.
+    """
+    _header(
+        sheet,
+        [
+            "Ativo",
+            "Regra",
+            "Observação",
+            "Pergunta a responder",
+            "Potencial mínimo",
+            "Potencial provável",
+            "Potencial máximo",
+            "Base do potencial",
+            "O que a faixa assume",
+            "Evidência ausente",
+        ],
+    )
+    for signal in vm.signals:
+        faixa = signal.get("potential_range") or {}
+        sheet.append(
+            [
+                signal.get("asset_name", ""),
+                signal.get("rule_id", ""),
+                signal.get("observation", ""),
+                signal.get("question", ""),
+                faixa.get("low"),
+                faixa.get("expected"),
+                faixa.get("high"),
+                faixa.get("basis", ""),
+                faixa.get("caveat", ""),
+                "; ".join(signal.get("missing_evidence") or []),
+            ]
+        )
+    sheet.freeze_panes = "A2"
+    sheet.auto_filter.ref = sheet.dimensions
+    _autosize(sheet, [26, 30, 44, 52, 16, 16, 16, 30, 44, 44])
 
 
 def _header(sheet: Worksheet, labels: list[str]) -> None:

@@ -11,6 +11,7 @@ from julius.findings.opportunity import Estimation, Opportunity
 from julius.findings.recommendation import Recommendation
 from julius.findings.signal import Signal
 from julius.knowledge.rules.stepfunctions import estimation as sfn_est
+from julius.knowledge.signal_potential import potential
 
 _DOC_EXPRESS = (
     "https://docs.aws.amazon.com/step-functions/latest/dg/concepts-standard-vs-express.html"
@@ -362,7 +363,33 @@ _ASL_SIGNALS = {
 }
 
 
-def _asl_signals(sm: StateMachine) -> list[Signal]:
+#: Fração das transições da máquina que cada padrão pode devolver. Ordena
+#: hipóteses entre si; não promete economia — ver `signal_potential`.
+_ASL_FRACTIONS = {
+    "manual_polling": 0.30,
+    "retry_unbounded": 0.15,
+    "catch_swallow": 0.10,
+    "unbounded_fanout": 0.10,
+}
+
+
+def _transition_baseline(sm: StateMachine, config: Config) -> float | None:
+    """Custo mensal de transição da máquina — medido, não estimado.
+
+    `executions_per_month` vem do histórico e `avg_state_transitions` da amostra
+    de `GetExecutionHistory`. Sem a segunda não há base: zero transições é uma
+    afirmação, e uma afirmação falsa.
+    """
+    if sm.type != "STANDARD" or not sm.avg_state_transitions:
+        return None
+    return (
+        sm.executions_per_month
+        * sm.avg_state_transitions
+        * config.pricing.sfn_standard_per_transition
+    )
+
+
+def _asl_signals(sm: StateMachine, config: Config) -> list[Signal]:
     """O que a definição levanta e o histórico não confirma.
 
     Nenhum destes vira cifra. O Standard cobra por transição, então a ASL diz
@@ -370,6 +397,7 @@ def _asl_signals(sm: StateMachine) -> list[Signal]:
     está no histórico, e é de lá que as regras com número já tiram o baseline.
     """
     out: list[Signal] = []
+    baseline = _transition_baseline(sm, config)
     for padrao, (rule_id, texto, pergunta, falta, quando) in _ASL_SIGNALS.items():
         estados = sm.asl_patterns.get(padrao) or []
         if not estados or not quando(sm):
@@ -384,6 +412,15 @@ def _asl_signals(sm: StateMachine) -> list[Signal]:
                 question=pergunta,
                 missing_evidence=list(falta),
                 doc_links=[_DOC_RETRY if "RETRY" in rule_id else _DOC_SYNC],
+                potential_range=potential(
+                    baseline,
+                    fraction=_ASL_FRACTIONS[padrao],
+                    basis="transições/mês observadas × tarifa Standard",
+                    caveat=(
+                        "quantas transições o padrão responde só o histórico "
+                        "por estado diria; a fração é típica, não medida"
+                    ),
+                ),
             )
         )
     return out
@@ -445,7 +482,7 @@ def signals(account: Account, config: Config) -> list[Signal]:
                     doc_links=[_DOC_EXPRESS],
                 )
             )
-        out += _asl_signals(sm)
+        out += _asl_signals(sm, config)
         if sm.max_retry_attempts >= th.sfn_retry_attempts_high:
             out.append(
                 Signal(

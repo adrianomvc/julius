@@ -362,6 +362,21 @@ def analyze_account(
         opportunity_count=len(opportunities),
     )
     vm = build_vm(account, opportunities, manifest)
+    # A faixa é o que permite ordenar hipótese contra hipótese. Sem ela, quinze
+    # sinais sem número se ordenam por nada, e o que vale dez mil por mês fica
+    # ao lado do que vale dez. A ordenação é aqui e não no consumidor porque o
+    # JSON, o Excel e o e-mail leem a mesma lista.
+    vm.signals = [
+        signal.to_dict()
+        for signal in sorted(
+            signals,
+            key=lambda item: (
+                -(item.potential_range.expected if item.potential_range else 0.0),
+                item.rule_id,
+                item.asset_name,
+            ),
+        )
+    ]
     vm.diff_events = [
         {
             "type": event.event_type,

@@ -26,6 +26,7 @@ from julius.findings.recommendation import Recommendation
 from julius.findings.signal import Signal
 from julius.knowledge.rules.sagemaker import estimation as sm_est
 from julius.knowledge.rules.sagemaker.code_scanner import scan_sagemaker_script
+from julius.knowledge.signal_potential import potential
 
 _DOC_SPOT = (
     "https://docs.aws.amazon.com/sagemaker/latest/dg/model-managed-spot-training.html"
@@ -53,6 +54,9 @@ class RuleSpec:
     doc: str
     #: O que precisa ser medido para o padrão virar cifra.
     missing: tuple[str, ...]
+    #: Fração típica do custo do job que o padrão pode devolver. Não é medição:
+    #: serve para ordenar hipóteses entre si, nunca para prometer economia.
+    fraction: float
 
 
 _RULES: dict[str, RuleSpec] = {
@@ -67,6 +71,7 @@ _RULES: dict[str, RuleSpec] = {
         0.55,
         _DOC_INSTANCES,
         ("benchmark do mesmo volume na instância alvo", "perfil de CPU e memória do treino"),
+        0.6,
     ),
     "SM-CODE-SINGLE-DEVICE-MULTI-INSTANCE": RuleSpec(
         "Mais de uma instância sem treino distribuído no código",
@@ -80,6 +85,7 @@ _RULES: dict[str, RuleSpec] = {
         0.60,
         _DOC_DISTRIBUTED,
         ("utilização por instância durante a execução",),
+        0.5,
     ),
     "SM-CODE-NO-CHECKPOINT": RuleSpec(
         # O sinal aponta o spot porque é ele que o checkpoint destrava: sem
@@ -96,6 +102,7 @@ _RULES: dict[str, RuleSpec] = {
         0.50,
         _DOC_CHECKPOINT,
         ("tolerância a interrupção e prazo máximo aceitável",),
+        0.5,
     ),
     "SM-CODE-FULL-DATASET-LOAD": RuleSpec(
         "Dataset de entrada carregado inteiro antes do treino",
@@ -109,6 +116,7 @@ _RULES: dict[str, RuleSpec] = {
         0.55,
         _DOC_INPUT_MODE,
         ("tempo de download versus tempo de treino na execução",),
+        0.2,
     ),
     "SM-CODE-FIXED-EPOCHS": RuleSpec(
         "Número fixo de épocas sem parada antecipada",
@@ -120,6 +128,7 @@ _RULES: dict[str, RuleSpec] = {
         0.45,
         _DOC_METRICS,
         ("curva da métrica de validação por época",),
+        0.25,
     ),
     "SM-CODE-ROW-EXTERNAL-IO": RuleSpec(
         "I/O externo executado por registro",
@@ -133,6 +142,7 @@ _RULES: dict[str, RuleSpec] = {
         0.70,
         _DOC_METRICS,
         ("quantidade de chamadas externas por execução",),
+        0.2,
     ),
     "SM-CODE-SWALLOWED-EXCEPTION": RuleSpec(
         "Código descarta exceções silenciosamente",
@@ -144,6 +154,7 @@ _RULES: dict[str, RuleSpec] = {
         0.70,
         _DOC_METRICS,
         ("execuções que terminaram OK sem produzir o modelo esperado",),
+        0.1,
     ),
 }
 
@@ -283,6 +294,7 @@ def _code_signal(
     spec: RuleSpec,
     rule_id: str,
 ) -> Signal:
+    baseline = job.allocated_cost if job.allocated_cost is not None else job.modeled_cost
     return Signal(
         kind="code",
         rule_id=rule_id,
@@ -297,6 +309,19 @@ def _code_signal(
         artifact_sha256=artifact.sha256,
         lines=list(lines),
         doc_links=[spec.doc],
+        potential_range=potential(
+            baseline,
+            fraction=spec.fraction,
+            basis=(
+                "custo atribuído do job"
+                if job.allocated_cost is not None
+                else "custo modelado do job pela tarifa da instância"
+            ),
+            caveat=(
+                "fração típica do padrão aplicada ao custo do job; só o piloto "
+                "mede quanto a duração muda de fato"
+            ),
+        ),
     )
 
 

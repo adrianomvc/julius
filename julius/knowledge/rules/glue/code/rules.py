@@ -17,7 +17,9 @@ from julius.knowledge.rules.glue.code.scanner import scan_glue_script
 from julius.knowledge.rules.glue.estimation import (
     code_pattern_saving,
     python_shell_migration_saving,
+    window_baseline,
 )
+from julius.knowledge.signal_potential import potential
 from julius.knowledge.rules.s3.request_cost import (
     request_estimation,
     request_evidence,
@@ -328,6 +330,7 @@ def _code_signal(
     rule_id: str,
     config: Config,
 ) -> Signal:
+    baseline, fonte, _ = window_baseline(job, config.pricing)
     return Signal(
         kind="code",
         rule_id=rule_id,
@@ -342,6 +345,15 @@ def _code_signal(
         artifact_sha256=artifact.sha256,
         lines=list(lines),
         doc_links=[spec.doc],
+        potential_range=potential(
+            baseline,
+            fraction=spec.fraction,
+            basis=f"DPU-hora da janela × {fonte}",
+            caveat=(
+                "fração típica do padrão aplicada ao custo do job; nenhuma "
+                "medição sustenta o valor até o benchmark A/B"
+            ),
+        ),
     )
 
 

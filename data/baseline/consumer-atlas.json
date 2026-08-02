@@ -571,6 +571,26 @@
   ],
   "s3_cost": {},
   "scan_id": "baseline",
+  "signals": [
+    {
+      "artifact_sha256": "",
+      "asset_name": "consolida_pedidos",
+      "asset_type": "glue_job",
+      "doc_links": [
+        "https://docs.aws.amazon.com/glue/latest/dg/release-notes.html"
+      ],
+      "kind": "config",
+      "lines": [],
+      "missing_evidence": [
+        "compatibilidade de bibliotecas e formatos usados pelo script",
+        "benchmark de duração e DPU-h na versão alvo"
+      ],
+      "observation": "Job em Glue 3.0, abaixo da versão preferencial 5.1.",
+      "potential_range": null,
+      "question": "O script usa bibliotecas, formatos ou APIs que impedem a migração para Glue 5.1? Se não impedem, o que a migração muda em duração e DPU-h neste job?",
+      "rule_id": "GLUE-VERSION-REVIEW"
+    }
+  ],
   "summary": {
     "billing_cost_mtd": "US$ 3.123,07",
     "committed_monthly": "US$ 0",

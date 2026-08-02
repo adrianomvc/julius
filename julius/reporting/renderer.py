@@ -94,6 +94,9 @@ def render_json(vm: ReportViewModel, opportunities: list[Opportunity]) -> str:
             "diff_events": vm.diff_events,
             "validated_results": [asdict(result) for result in vm.previous_results],
         },
+        # Fora de `ai_analysis` porque o sinal existe com ou sem provedor: o
+        # scanner o produz no scan, e o veredito é o que pode não vir.
+        "signals": vm.signals,
         "ai_analysis": {
             "source": "Devin" if vm.ai_summary else None,
             "executive_summary": vm.ai_summary,
