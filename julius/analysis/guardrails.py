@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from julius.analysis.context_builder import AgentContext
 
-PROMPT_VERSION = "1.7.0"
+PROMPT_VERSION = "1.8.0"
 
 #: As regras em si, separadas do texto que as apresenta — o validador de
 #: resposta verifica o resultado das mesmas restrições.
@@ -120,6 +120,18 @@ SCOPE = (
             "parada?",
             "Isso exige Studio ativo, ou cabe num training/processing job sob "
             "demanda?",
+        ),
+    ),
+    (
+        "sagemaker_training_job",
+        (
+            "O script usa o acelerador que a instância cobra, ou só a biblioteca "
+            "que o importa? Confirme contra o arquivo inteiro, não pelo import.",
+            "O treino tolera interrupção com retomada por checkpoint? É essa "
+            "resposta que libera ou barra o managed spot.",
+            "As instâncias extras recebem trabalho, ou o script roda em uma só?",
+            "O tempo entre o início cobrado e a primeira época é download de "
+            "dado que FastFile ou Pipe evitariam?",
         ),
     ),
     (

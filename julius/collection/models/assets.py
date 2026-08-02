@@ -318,6 +318,19 @@ class SageMakerJob:
     cost_unavailable_reason: str = ""
     cost_coverage_days: int | None = None
     consistent_scans: int = 1
+    #: Onde está o código que o job executa: `sourcedir.tar.gz` do script mode,
+    #: objeto `.py` avulso, ou vazio quando não há código do cliente.
+    code_location: str = ""
+    #: O arquivo dentro do pacote, quando o pacote é um tar.
+    code_entry_point: str = ""
+    #: `sourcedir_tar`, `s3_object`, `container_entrypoint` ou
+    #: `builtin_algorithm`. Distingue o formato do pacote, que decide como lê-lo.
+    code_kind: str = ""
+    #: Por que não há código, quando não há. Algoritmo gerenciado da AWS não é
+    #: falha — não existe script do cliente para ler. `describe` negado é falha,
+    #: e sem o motivo os dois produzem o mesmo silêncio: um job sem análise de
+    #: código que parece um job cujo código está limpo.
+    code_unavailable_reason: str = ""
 
     @property
     def instance_hours(self) -> float:

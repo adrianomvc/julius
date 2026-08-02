@@ -354,6 +354,94 @@ def recommender_saving(
     )
 
 
+#: O alvo de comparação quando o script não usa a GPU que a conta paga. `m5` é
+#: a família de propósito geral da mesma geração das GPUs em uso, e manter o
+#: mesmo sufixo de tamanho mantém a ordem de grandeza de vCPU e memória. É
+#: hipótese de comparação, não recomendação de tipo — a validação do achado
+#: exige medir CPU e memória no piloto antes de fixar a instância.
+_CPU_TARGET_FAMILY = "ml.m5."
+
+
+def gpu_to_cpu_saving(job: SageMakerJob, config: Config) -> Estimation:
+    """Diferença entre a tarifa paga com GPU e a de uma instância sem GPU.
+
+    O baseline é o custo já atribuído ao job — não uma reconstrução. O que a
+    regra estima é só o outro lado: a mesma duração numa instância de propósito
+    geral do mesmo tamanho. Se a tabela da região não tiver a tarifa do alvo, a
+    estimativa não existe, e dizer isso é a resposta certa: um zero aqui se
+    leria como "não compensa trocar".
+    """
+    method = "sm_code_gpu_to_cpu_v1"
+    baseline = job.allocated_cost if job.allocated_cost is not None else job.modeled_cost
+    if baseline is None or baseline <= 0:
+        return unavailable(
+            method, job.cost_unavailable_reason or f"custo não atribuído ao job {job.name}"
+        )
+    atual = config.pricing.sagemaker_hourly(job.instance_type, job.kind)
+    tamanho = job.instance_type.split(".")[-1] if "." in job.instance_type else ""
+    alvo = config.pricing.sagemaker_hourly(f"{_CPU_TARGET_FAMILY}{tamanho}", job.kind)
+    if not atual or not alvo or alvo >= atual:
+        return unavailable(
+            method,
+            f"tarifa de comparação ausente para {_CPU_TARGET_FAMILY}{tamanho} "
+            f"na região {config.pricing.region}",
+        )
+    projetado = baseline * (alvo / atual)
+    return Estimation(
+        method=method,
+        baseline_cost=round(baseline, 2),
+        projected_cost=round(projetado, 2),
+        estimated_saving=round(baseline - projetado, 2),
+        assumptions=[
+            f"mesma duração em {_CPU_TARGET_FAMILY}{tamanho} a "
+            f"{alvo:.4g} USD/h contra {atual:.4g} USD/h",
+            "duração equivalente é hipótese: sem GPU em uso, o tempo tende a "
+            "não mudar, mas só o piloto confirma",
+            "o tipo alvo definitivo depende do perfil de CPU e memória medido",
+        ],
+        pricing_region=config.pricing.region,
+        estimation_version=config.sagemaker_cost.version,
+        baseline_quality="allocated" if job.allocated_cost is not None else "modeled",
+        saving_quality="modeled",
+    )
+
+
+def idle_instances_saving(job: SageMakerJob, config: Config) -> Estimation:
+    """As instâncias que o cluster cobra e o script não usa.
+
+    O rateio é direto e não depende de hipótese sobre duração: o cluster é
+    provisionado inteiro pelo mesmo tempo, então cada instância responde pela
+    mesma fração do custo. Sem API distribuída no script, todas menos uma são
+    capacidade paga sem trabalho.
+    """
+    method = "sm_code_idle_instances_v1"
+    baseline = job.allocated_cost if job.allocated_cost is not None else job.modeled_cost
+    if baseline is None or baseline <= 0:
+        return unavailable(
+            method, job.cost_unavailable_reason or f"custo não atribuído ao job {job.name}"
+        )
+    if job.instance_count <= 1:
+        return unavailable(method, "cluster de uma instância: não há capacidade ociosa")
+    ociosas = job.instance_count - 1
+    saving = baseline * (ociosas / job.instance_count)
+    return Estimation(
+        method=method,
+        baseline_cost=round(baseline, 2),
+        projected_cost=round(baseline - saving, 2),
+        estimated_saving=round(saving, 2),
+        assumptions=[
+            f"{ociosas} de {job.instance_count} instâncias sem trabalho atribuível "
+            "pelo script",
+            "cluster provisionado pelo mesmo tempo: custo dividido igualmente",
+            "encolher o cluster mantém a duração; distribuir de fato a reduziria",
+        ],
+        pricing_region=config.pricing.region,
+        estimation_version=config.sagemaker_cost.version,
+        baseline_quality="allocated" if job.allocated_cost is not None else "modeled",
+        saving_quality="modeled",
+    )
+
+
 def _monthly_allocated(value: float | None, coverage_days: int) -> float | None:
     if value is None or value <= 0:
         return None
