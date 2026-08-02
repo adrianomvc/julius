@@ -1368,7 +1368,7 @@
       "finding": "Timeout muito acima da duração média (+3 achados relacionados)",
       "first_seen": "",
       "gain_score": 92,
-      "how_to_apply": "Definir Timeout ~120 min (2× a duração média).",
+      "how_to_apply": "Definir Timeout ~120 min — o maior entre 2× a duração p95 e 1,25× a execução mais longa observada.",
       "how_to_validate": "Confirmar que execuções normais não são cortadas e que travadas param cedo.",
       "julius_version": "0.6.0",
       "knowledge_version": "glue-knowledge-2026-07",
