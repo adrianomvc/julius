@@ -118,8 +118,10 @@ _SIDE_EFFECTS = {
 #: Padrões que o Express não suporta. Não é preferência: a API recusa.
 _EXPRESS_BLOCKERS = (".sync", ".waitfortasktoken")
 
-#: Teto de duração de uma execução Express, em segundos.
-_EXPRESS_MAX_DURATION_SEC = 300
+#: Teto de duração de uma execução Express, em segundos. Público porque a
+#: duração medida barra a migração tanto quanto a declarada, e quem lê a
+#: métrica precisa comparar contra o mesmo limite.
+EXPRESS_MAX_DURATION_SEC = 300
 
 #: Os padrões que `scan_patterns` reconhece, e o que cada um afirma. O texto
 #: mora aqui, junto da detecção, para o detector e a frase não divergirem.
@@ -204,10 +206,10 @@ def express_blockers(definition: dict) -> list[str]:
             if bloqueador in resource
         ]
         timeout = state.get("TimeoutSeconds")
-        if isinstance(timeout, int) and timeout > _EXPRESS_MAX_DURATION_SEC:
+        if isinstance(timeout, int) and timeout > EXPRESS_MAX_DURATION_SEC:
             motivos.append(f"{nome} declara TimeoutSeconds={timeout}")
     topo = definition.get("TimeoutSeconds")
-    if isinstance(topo, int) and topo > _EXPRESS_MAX_DURATION_SEC:
+    if isinstance(topo, int) and topo > EXPRESS_MAX_DURATION_SEC:
         motivos.append(f"a máquina declara TimeoutSeconds={topo}")
     return sorted(set(motivos))
 

@@ -19,6 +19,9 @@ from collections import Counter
 from datetime import datetime, timezone
 
 from julius.collection.asl import (
+    EXPRESS_MAX_DURATION_SEC as _EXPRESS_MAX_DURATION_SEC,
+)
+from julius.collection.asl import (
     express_blockers,
     parse_definition,
     resource_of,
@@ -124,9 +127,34 @@ def collect_state_machines(
         )
     if cloudwatch_client is not None and machines:
         _enrich_cloudwatch(cloudwatch_client, machines, window, gaps)
+        _apply_measured_express_blocker(machines)
         if account_metrics is not None:
             _account_cloudwatch(cloudwatch_client, account_metrics, window, gaps)
     return machines
+
+
+def _apply_measured_express_blocker(machines: list[StateMachine]) -> None:
+    """A duração observada também barra o Express, e a definição não a conhece.
+
+    O Express mata a execução aos cinco minutos — não a degrada, não a cobra
+    mais caro: ela falha. Uma máquina cuja duração média cabe no limite mas cujo
+    p95 não cabe tem uma fatia de execuções que a migração quebraria, e barrar
+    por média deixaria passar exatamente esse caso.
+
+    Entra na mesma lista dos bloqueadores declarados porque a consequência é a
+    mesma — a migração não é possível — e quem lê o relatório precisa dos dois
+    motivos no mesmo lugar, não de um na definição e outro numa métrica.
+    """
+    for machine in machines:
+        p95 = machine.duration_p95_ms
+        if p95 is None or p95 <= _EXPRESS_MAX_DURATION_SEC * 1000:
+            continue
+        motivo = (
+            f"p95 de duração observado em {p95 / 1000:.0f}s, acima do teto de "
+            f"{_EXPRESS_MAX_DURATION_SEC}s do Express"
+        )
+        if motivo not in machine.express_blockers:
+            machine.express_blockers.append(motivo)
 
 
 def _sample_transitions(

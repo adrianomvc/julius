@@ -89,6 +89,11 @@ class StateMachine:
     throttled_events: int = 0
     redriven_executions: int = 0
     open_executions_max: int = 0
+    #: Duração p95 do CloudWatch. Nenhuma regra o lê direto: quem o consome é
+    #: `_apply_measured_express_blocker`, na própria coleta, que o compara ao
+    #: teto de cinco minutos do Express e escreve o motivo em `express_blockers`.
+    #: A cauda importa mais que a média aqui — o Express não degrada a execução
+    #: que passa do limite, ele a mata.
     duration_p95_ms: float | None = None
     avg_failed_state_transitions: int | None = None
     avg_retry_transitions: int | None = None

@@ -26,7 +26,7 @@ lê o campo. A distinção é editorial e mora aqui.
 | `StateMachine.timed_out_executions`, `aborted_executions` | `SFN-FAILED-TRANSITION-COST` contava só `FAILED` e subestimava a própria cifra | **ligado** |
 | `S3Prefix.bytes_by_size`, `bytes_by_age`, `object_count_by_age` | dimensionar quanto do volume está na cauda pequena e quanto já é frio o bastante para transição | pendente |
 | `AthenaQuery.p50_ms`, `p95_ms` | pressão de fila nas regras de capacidade — hoje elas olham DPU alocada e não latência | pendente |
-| `StateMachine.duration_p95_ms` | uma máquina cujo p95 passa de 300 s tem execuções que o Express recusaria, mesmo com média dentro do limiar | pendente |
+| `StateMachine.duration_p95_ms` | uma máquina cujo p95 passa de 300 s tem execuções que o Express mataria, mesmo com média dentro do limiar — vira motivo em `express_blockers` | **ligado** (via balde b) |
 | `GlueJob.max_execution_sec`, `bytes_written_window` | timeout dimensionado e volume escrito por execução | pendente |
 
 ### (b) Intermediário legítimo da coleta
@@ -41,6 +41,7 @@ auditoria os classifica como mortos de novo.
 | `AthenaQuery.exact_fingerprint` | agregação de padrões em `collectors/athena/aggregate.py` |
 | `CollectionHealth.started_at`, `completed_at` | janela da própria coleta, exibida via resumo |
 | `StateMachine.definition_available`, `execution_history_available` | distinguem "não usa" de "não foi lido" dentro da coleta |
+| `StateMachine.duration_p95_ms` | `_apply_measured_express_blocker`, que o converte em motivo de bloqueio do Express |
 
 ### (c) Custo puro — removido
 

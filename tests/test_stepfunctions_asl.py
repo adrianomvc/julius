@@ -276,3 +276,43 @@ def test_a_timeout_burns_transitions_exactly_like_a_failure():
     # Um timeout não se corrige como uma falha: a composição precisa aparecer.
     assert "por timeout" in achado.why
     assert "abortadas" in achado.why
+
+
+def test_a_tail_above_five_minutes_blocks_express_even_with_a_short_average():
+    """Express mata a execução aos cinco minutos — não a degrada, ela falha.
+
+    Uma máquina com média de 90s e p95 de 400s tem uma fatia de execuções que a
+    migração quebraria. Barrar por média deixaria passar exatamente esse caso, e
+    o estrago não seria de custo: seria de execução perdida.
+    """
+    from julius.collection.collectors.stepfunctions import (
+        _apply_measured_express_blocker,
+    )
+
+    curta = _maquina(duration_p95_ms=120_000)
+    com_cauda = _maquina(duration_p95_ms=400_000)
+
+    _apply_measured_express_blocker([curta, com_cauda])
+
+    assert curta.express_blockers == []
+    assert any("p95" in motivo for motivo in com_cauda.express_blockers)
+
+    # E o bloqueio medido tem o mesmo efeito do declarado: nada é oferecido.
+    com_cauda.idempotent = True
+    com_cauda.express_benchmark_duration_ms = 800
+    com_cauda.express_benchmark_memory_mb = 128
+    found = stepfunctions_rules.detect(_conta(com_cauda), DEFAULT_CONFIG, "scan")
+    assert not any(item.rule_id == "SFN-STANDARD-TO-EXPRESS" for item in found)
+
+
+def test_a_machine_without_the_metric_is_not_blocked_by_missing_data():
+    """`None` é "não medido", não "acima do teto"."""
+    from julius.collection.collectors.stepfunctions import (
+        _apply_measured_express_blocker,
+    )
+
+    sem_metrica = _maquina(duration_p95_ms=None)
+
+    _apply_measured_express_blocker([sem_metrica])
+
+    assert sem_metrica.express_blockers == []
