@@ -273,3 +273,42 @@ def test_the_compaction_target_is_configurable():
     assert "256 MiB" in achado.recommended_action
     # 40 GB em blocos de 256 MiB = 160 objetos.
     assert "~160" in " ".join(achado.estimation.assumptions)
+
+
+def test_a_bimodal_prefix_is_no_longer_hidden_by_its_average():
+    """Dez mil arquivos de 1 MiB e vinte de 5 GiB: a média mente, a contagem não.
+
+    Esta é a forma mais comum do problema, e era exatamente a que a regra não
+    via: a média sobe acima do limiar por causa da cauda grande, enquanto os dez
+    mil arquivos pequenos continuam fazendo um GET cada por leitura.
+    """
+    from julius.knowledge.rules.s3.small_files import objetos_pequenos
+
+    prefixo = _prefixo(
+        object_count=10_020,
+        # 10.000 × 1 MiB + 20 × 5 GiB dá média de ~10 MiB... acima do limiar só
+        # se a cauda for maior; aqui a média é o que a coleta mediu de fato.
+        average_object_bytes=100 * 1024**2,
+        object_count_by_size={"1-64mb": 10_000, "128mb+": 20},
+        bytes_by_size={"1-64mb": 10_000 * 1024**2, "128mb+": 20 * 5 * 1024**3},
+    )
+    conta = Account(account_id="123456789012", s3_prefixes=[prefixo])
+
+    assert objetos_pequenos(prefixo, DEFAULT_CONFIG) == 10_000
+
+    achados = small_files.detect(conta, DEFAULT_CONFIG, "scan-bimodal")
+    achado = next(i for i in achados if i.rule_id == "S3-SMALL-FILES")
+    assert "10000 de 10020 objetos" in achado.why
+
+
+def test_without_a_distribution_the_average_still_decides():
+    """Listagem sem distribuição não pode virar silêncio: a média é o que sobra."""
+    prefixo = _prefixo(
+        object_count=5_000,
+        average_object_bytes=2 * 1024**2,
+        object_count_by_size={},
+    )
+    conta = Account(account_id="123456789012", s3_prefixes=[prefixo])
+
+    achados = small_files.detect(conta, DEFAULT_CONFIG, "scan-media")
+    assert any(i.rule_id == "S3-SMALL-FILES" for i in achados)

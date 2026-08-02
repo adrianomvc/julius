@@ -296,6 +296,11 @@ class SageMakerJob:
     warm_pool_reused: bool = False
     failure_category: str = ""
     pipeline_name: str = ""
+    #: Identidade do workload, para agrupar execuções repetidas do mesmo treino.
+    #: O consumidor é interno à coleta — `_apply_workload_history` preenche
+    #: `workload_runs` e `low_utilization_runs` a partir dele, e são esses dois
+    #: que as regras leem. Dito aqui porque uma auditoria de campos sem leitor a
+    #: jusante o encontra e o classifica como morto, e ele não é.
     workload_fingerprint: str = ""
     workload_runs: int = 0
     low_utilization_runs: int = 0

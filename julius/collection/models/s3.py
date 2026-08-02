@@ -118,6 +118,8 @@ class S3Prefix:
     #: distinção não dá para dizer se reler tudo a cada execução é desperdício ou
     #: necessidade. Derivado das chaves dentro do coletor: nenhuma chave de
     #: objeto sobe daqui, então o sinal precisa ser calculado onde elas existem.
+    #: O consumidor é `collection/redundant_reads.py`, dentro da própria coleta —
+    #: nenhuma regra o lê diretamente, e isso é correto, não uma lacuna.
     date_partitioned: bool = False
     #: Bytes por `StorageClass` do próprio objeto, agregado da listagem. É mais
     #: fino que o `bytes_by_class` do bucket, que vem do CloudWatch e não sabe
