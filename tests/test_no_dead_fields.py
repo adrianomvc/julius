@@ -115,8 +115,8 @@ def test_the_guard_would_catch_a_field_nobody_writes():
 #: - **intermediário legítimo**: `date_partitioned` alimenta
 #:   `collection/redundant_reads.py`, `workload_fingerprint` agrupa jobs em
 #:   `_apply_workload_history`. O consumidor existe e é interno à coleta;
-#: - **evidência a ligar**: `bytes_by_size`, `bytes_by_age` e `p95_ms` são
-#:   dinheiro medido esperando regra;
+#: - **evidência a ligar**: `bytes_by_size` e `bytes_by_age` são dinheiro
+#:   medido esperando regra;
 #: - **custo puro**: o resto — chamada de API paga em toda coleta para nada.
 SEM_CONSUMIDOR_CONHECIDO = frozenset(
     {
@@ -208,8 +208,6 @@ SEM_CONSUMIDOR_CONHECIDO = frozenset(
         "offline_store",
         "oldest_submission",
         "owner_user_profile",
-        "p50_ms",
-        "p95_ms",
         "partition_keys",
         "partition_projection_enabled",
         "period_kind",

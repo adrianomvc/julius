@@ -87,6 +87,23 @@ def detect(account: Account, config: Config, scan_id: str) -> list[Opportunity]:
     return out
 
 
+def _latencia(q: AthenaQuery) -> list[str]:
+    """A duração observada do padrão, como evidência de impacto — não de cifra.
+
+    O Athena on-demand cobra por bytes lidos, não por tempo: uma regra que
+    transformasse latência em dinheiro estaria inventando o mecanismo de
+    cobrança. O que a duração faz é separar dois achados de volume parecido —
+    um full scan que responde em dois segundos e outro que trava quatro minutos
+    de pipeline pedem urgências diferentes, e quem prioriza precisa saber qual
+    é qual.
+    """
+    if not q.p95_ms:
+        return []
+    return [
+        f"duração observada: p50 {q.p50_ms / 1000:.1f}s, p95 {q.p95_ms / 1000:.1f}s"
+    ]
+
+
 def _select_star_wide(
     account: Account, q: AthenaQuery, config: Config, scan_id: str
 ) -> Opportunity:
@@ -112,6 +129,7 @@ def _select_star_wide(
         ),
         Evidence(
             items=q.evidence
+            + _latencia(q)
             + [
                 f"tabelas wide: {', '.join(q.wide_tables)}",
                 f"{q.max_table_columns} colunas no maior schema",
@@ -153,7 +171,9 @@ def _full_table_scan(account: Account, q: AthenaQuery, config: Config, scan_id: 
             docs=[_DOC_PERFORMANCE],
         ),
         Evidence(
-            items=q.evidence + ["full scan confirmado por AST e volume escaneado"],
+            items=q.evidence
+            + _latencia(q)
+            + ["full scan confirmado por AST e volume escaneado"],
             sources=["Athena GetQueryExecution", "sqlglot AST"],
             observed_runs=q.observed_runs,
             coverage_days=q.coverage_days,
@@ -206,6 +226,7 @@ def _table_not_partitioned(
         ),
         Evidence(
             items=q.evidence
+            + _latencia(q)
             + [
                 "sem partition keys: " + ", ".join(q.unpartitioned_tables),
                 "colunas observadas em filtros: " + candidate_text,
@@ -375,6 +396,7 @@ def _result_reuse(account: Account, q: AthenaQuery, config: Config, scan_id: str
         ),
         Evidence(
             items=q.evidence
+            + _latencia(q)
             + [
                 *(
                     [
@@ -432,6 +454,7 @@ def _no_partition(account: Account, q: AthenaQuery, config: Config, scan_id: str
         ),
         Evidence(
             items=q.evidence
+            + _latencia(q)
             + [
                 f"DataScannedInBytes {q.data_scanned_bytes / (1024**3):.0f} GB por execução",
                 "sem filtro de partição: "
@@ -488,6 +511,7 @@ def _excessive_scan(account: Account, q: AthenaQuery, config: Config, scan_id: s
         ),
         Evidence(
             items=q.evidence
+            + _latencia(q)
             + [
                 f"{q.data_scanned_bytes / _GB:.0f} GB escaneados por execução",
                 "SELECT * detectado" if q.selects_star else "leitura ampla de colunas",
@@ -588,6 +612,7 @@ def _small_files(
         ),
         Evidence(
             items=q.evidence
+            + _latencia(q)
             + [
                 f"{q.small_file_count} objetos S3",
                 f"tamanho médio {q.average_file_bytes / 1024**2:.1f} MiB",
