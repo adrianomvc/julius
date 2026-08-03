@@ -80,6 +80,30 @@ def _named(definition: dict, *, prefixo: str) -> Iterator[tuple[str, dict]]:
                 yield from _named(sub, prefixo=f"{completo}.")
 
 
+def state_scopes(definition: dict) -> Iterator[dict]:
+    """Cada mapa `States` da definição, do topo às ramificações.
+
+    Diferente de `walk_states`, que devolve estados soltos. Aqui o que importa é
+    o **escopo**: `Next` só endereça estados do mesmo mapa, então qualquer
+    análise que siga transições tem de rodar dentro de um escopo por vez.
+    Achatar tudo num conjunto só faria um `Next` apontar para um estado
+    homônimo de outro ramo.
+    """
+    states = definition.get("States")
+    if isinstance(states, dict):
+        yield states
+    for state in (states or {}).values():
+        if not isinstance(state, dict):
+            continue
+        for branch in state.get("Branches") or ():
+            if isinstance(branch, dict):
+                yield from state_scopes(branch)
+        for chave in ("ItemProcessor", "Iterator"):
+            sub = state.get(chave)
+            if isinstance(sub, dict):
+                yield from state_scopes(sub)
+
+
 def resource_of(state: Any) -> str:
     """O `Resource` do estado em minúsculas, ou vazio se não for um `Task`."""
     if not isinstance(state, dict):

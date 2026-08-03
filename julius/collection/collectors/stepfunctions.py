@@ -26,6 +26,7 @@ from julius.collection.asl import (
     parse_definition,
     resource_of,
     scan_patterns,
+    state_scopes,
     walk_states,
 )
 from julius.collection.collectors import metrics
@@ -423,10 +424,27 @@ def _polling_loop_states(definition: dict) -> set[str]:
     Antes bastava saber que o loop existia. Agora o conjunto importa: é ele que
     permite contar, no histórico, quantas transições vieram de espera e quantas
     do trabalho em si.
+
+    A busca é por escopo, não achatada. Um `Map` que processa mil itens e espera
+    dentro do `ItemProcessor` cobra mil vezes o ciclo — é o caso mais caro do
+    padrão, e era justamente o que uma varredura só do nível de topo não via.
+    `Next` endereça apenas o próprio mapa, então achatar os escopos faria uma
+    transição apontar para um estado homônimo de outro ramo.
+
+    Os nomes voltam sem prefixo de caminho de propósito: quem os consome compara
+    com os eventos de `GetExecutionHistory`, que trazem o nome cru do estado.
     """
-    states = definition.get("States", {}) or {}
+    for states in state_scopes(definition):
+        encontrado = _ciclo_de_espera(states)
+        if encontrado:
+            return encontrado
+    return set()
+
+
+def _ciclo_de_espera(states: dict) -> set[str]:
+    """O ciclo `Wait → … → Wait` dentro de um único mapa de estados."""
     for name, state in states.items():
-        if state.get("Type") != "Wait":
+        if not isinstance(state, dict) or state.get("Type") != "Wait":
             continue
         path: list[str] = [name]
         seen: set[str] = {name}
