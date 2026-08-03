@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Any
 
+from julius.collection.collectors.billing_matrix import BillingMatrix
 from julius.collection.currency import non_usd_gap, usd_amount
 from julius.collection.models import (
     Account,
@@ -32,6 +33,7 @@ def collect_sagemaker_costs(
     window: AnalysisWindow,
     markers: Sequence[tuple[str, str]],
     version: str = "",
+    matrix: BillingMatrix | None = None,
 ) -> SageMakerCostCoverage:
     coverage = SageMakerCostCoverage(
         period_start=window.start_date.isoformat(),
@@ -40,34 +42,43 @@ def collect_sagemaker_costs(
         allocation_version=version,
     )
     for metric in _METRICS:
-        try:
-            request: dict[str, Any] = {
-                "TimePeriod": {
-                    "Start": window.start_date.isoformat(),
-                    "End": window.end_date.isoformat(),
-                },
-                "Granularity": "MONTHLY",
-                "Metrics": [metric],
-                "Filter": {
-                    "Dimensions": {"Key": "SERVICE", "Values": ["Amazon SageMaker"]}
-                },
-                "GroupBy": [{"Type": "DIMENSION", "Key": "USAGE_TYPE"}],
-            }
-            responses = []
-            while True:
-                response = ce_client.get_cost_and_usage(**request)
-                responses.append(response)
-                token = response.get("NextPageToken")
-                if not token:
-                    break
-                request["NextPageToken"] = token
-        except Exception as exc:
-            coverage.gaps.append(f"Cost Explorer {metric}: {type(exc).__name__}")
+        responses = matrix.for_service("Amazon SageMaker", metric) if matrix else None
+        if matrix is not None and responses is None:
             continue
+        if matrix is None:
+            try:
+                request: dict[str, Any] = {
+                    "TimePeriod": {
+                        "Start": window.start_date.isoformat(),
+                        "End": window.end_date.isoformat(),
+                    },
+                    "Granularity": "MONTHLY",
+                    "Metrics": [metric],
+                    "Filter": {
+                        "Dimensions": {
+                            "Key": "SERVICE",
+                            "Values": ["Amazon SageMaker"],
+                        }
+                    },
+                    "GroupBy": [{"Type": "DIMENSION", "Key": "USAGE_TYPE"}],
+                }
+                responses = []
+                while True:
+                    response = ce_client.get_cost_and_usage(**request)
+                    responses.append(response)
+                    token = response.get("NextPageToken")
+                    if not token:
+                        break
+                    request["NextPageToken"] = token
+            except Exception as exc:
+                coverage.gaps.append(
+                    f"Cost Explorer {metric}: {type(exc).__name__}"
+                )
+                continue
 
         buckets: dict[str, float] = {}
         unknown: list[str] = []
-        for response in responses:
+        for response in responses or []:
             for period in response.get("ResultsByTime", []) or []:
                 for group in period.get("Groups", []) or []:
                     usage_type = next(iter(group.get("Keys", []) or []), "")
@@ -153,6 +164,7 @@ def collect_and_allocate_costs(
     markers: Sequence[tuple[str, str]],
     version: str,
     allocatable: frozenset[str] | set[str],
+    matrix: BillingMatrix | None = None,
 ) -> SageMakerCostCoverage:
     """Coleta SageMaker e ancora também o storage EFS conhecido dos Domains."""
     coverage = collect_sagemaker_costs(
@@ -160,6 +172,7 @@ def collect_and_allocate_costs(
         window=window,
         markers=markers,
         version=version,
+        matrix=matrix,
     )
     allocate_costs(account, coverage, allocatable)
     _allocate_efs_storage(account, coverage, ce_client, window)

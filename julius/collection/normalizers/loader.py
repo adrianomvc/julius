@@ -22,6 +22,7 @@ from julius.collection.models import (
     GlueCrawler,
     GlueJob,
     GlueTrigger,
+    IamGap,
     InteractiveSession,
     PreviousResult,
     ProcessCost,
@@ -139,16 +140,20 @@ def load_account(path: str | Path) -> Account:
         period=raw.get("period", ""),
         lookback_days=raw.get("lookback_days", ANALYSIS_WINDOW_DAYS),
         generated_at=raw.get("generated_at", ""),
+        scan_id=str(raw.get("scan_id") or ""),
         window_start=str(window.get("start") or ""),
         window_end=str(window.get("end") or ""),
         window_days=int(window.get("days") or ANALYSIS_WINDOW_DAYS),
         # USD é a única moeda aceita; a AWS já reporta custo em USD.
         currency="USD",
     )
-    account.collection_health = [
-        _pick(item, CollectionHealth)
-        for item in raw.get("collection_health", [])
-    ]
+    account.collection_health = []
+    for item in raw.get("collection_health", []):
+        values = dict(item)
+        values["iam_gaps"] = [
+            _pick(gap, IamGap) for gap in values.get("iam_gaps", [])
+        ]
+        account.collection_health.append(_pick(values, CollectionHealth))
     ce = raw.get("cost_explorer", {})
     account.services = [
         service
@@ -184,6 +189,26 @@ def load_account(path: str | Path) -> Account:
         },
         estimated_cost_usd=float(telemetry.get("estimated_cost_usd") or 0),
         unpriced_operations=list(telemetry.get("unpriced_operations") or []),
+        execution_mode=str(telemetry.get("execution_mode") or "serial"),
+        collection_wall_ms=int(telemetry.get("collection_wall_ms") or 0),
+        source_duration_ms=int(telemetry.get("source_duration_ms") or 0),
+        max_parallel_sources=int(telemetry.get("max_parallel_sources") or 1),
+        service_concurrency_limits={
+            str(key): int(value)
+            for key, value in (
+                telemetry.get("service_concurrency_limits") or {}
+            ).items()
+        },
+        snapshot_hits=int(telemetry.get("snapshot_hits") or 0),
+        snapshot_misses=int(telemetry.get("snapshot_misses") or 0),
+        cloudwatch_metric_requests=int(
+            telemetry.get("cloudwatch_metric_requests") or 0
+        ),
+        cloudwatch_metric_queries=int(telemetry.get("cloudwatch_metric_queries") or 0),
+        cloudwatch_metric_batches=int(telemetry.get("cloudwatch_metric_batches") or 0),
+        cloudwatch_coalesced_requests=int(
+            telemetry.get("cloudwatch_coalesced_requests") or 0
+        ),
     )
     if raw.get("athena_coverage"):
         account.athena_coverage = _pick(raw["athena_coverage"], AthenaCoverage)

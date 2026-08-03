@@ -24,6 +24,7 @@ import json
 from dataclasses import dataclass, field
 from threading import Lock
 from time import perf_counter
+from typing import Any
 
 
 @dataclass
@@ -54,12 +55,27 @@ class ApiCallStat:
         # entra em comparação nem em serialização do manifesto.
         self._lock = Lock()
 
+    def value(self, name: str) -> int:
+        with self._lock:
+            return int(getattr(self, name))
+
 
 @dataclass
 class RunTelemetry:
     api_calls: dict[str, ApiCallStat] = field(default_factory=dict)
     estimated_cost_usd: float = 0.0
     unpriced_operations: list[str] = field(default_factory=list)
+    execution_mode: str = "serial"
+    collection_wall_ms: int = 0
+    source_duration_ms: int = 0
+    max_parallel_sources: int = 1
+    service_concurrency_limits: dict[str, int] = field(default_factory=dict)
+    snapshot_hits: int = 0
+    snapshot_misses: int = 0
+    cloudwatch_metric_requests: int = 0
+    cloudwatch_metric_queries: int = 0
+    cloudwatch_metric_batches: int = 0
+    cloudwatch_coalesced_requests: int = 0
 
     def __post_init__(self) -> None:
         self._lock = Lock()
@@ -76,6 +92,36 @@ class RunTelemetry:
             if key not in self.api_calls:
                 self.api_calls[key] = ApiCallStat(service=service, operation=operation)
             return self.api_calls[key]
+
+    def throttles(self, service: str) -> int:
+        """Snapshot consistente de throttles de um serviço."""
+        with self._lock:
+            stats = [
+                stat for stat in self.api_calls.values() if stat.service == service
+            ]
+        return sum(stat.value("throttles") for stat in stats)
+
+    def record_snapshot(self, *, hit: bool) -> None:
+        with self._lock:
+            if hit:
+                self.snapshot_hits += 1
+            else:
+                self.snapshot_misses += 1
+
+    def record_cloudwatch_batch(
+        self,
+        *,
+        requests: int = 0,
+        queries: int = 0,
+        batches: int = 0,
+        coalesced: int = 0,
+    ) -> None:
+        """Registra economia de lote sem disputar o lock das chamadas API."""
+        with self._lock:
+            self.cloudwatch_metric_requests += requests
+            self.cloudwatch_metric_queries += queries
+            self.cloudwatch_metric_batches += batches
+            self.cloudwatch_coalesced_requests += coalesced
 
     def estimate(self, pricing) -> float:
         cost = 0.0
@@ -116,12 +162,24 @@ class RunTelemetry:
 class InstrumentedClient:
     """Proxy transparente que conta chamadas, páginas, retries e cache CE."""
 
-    def __init__(self, client, service: str, telemetry: RunTelemetry, cache: dict):
+    def __init__(
+        self,
+        client,
+        service: str,
+        telemetry: RunTelemetry,
+        cache: dict,
+        *,
+        cache_lock=None,
+    ):
         self._client = client
         self._service = service
         self._telemetry = telemetry
         self._cache = cache
+        self._cache_lock = cache_lock or Lock()
         self._started_query_ids: set[str] = set()
+        # Preenchido somente no cliente CloudWatch pelo CollectionContext.
+        # Fica declarado aqui para o proxy continuar transparente e tipável.
+        self._metric_batch_coordinator: Any = None
 
     def __getattr__(self, name):
         target = getattr(self._client, name)
@@ -132,6 +190,7 @@ class InstrumentedClient:
                 operation,
                 self._telemetry,
                 self._cache,
+                self._cache_lock,
             )
         if not callable(target):
             return target
@@ -139,9 +198,12 @@ class InstrumentedClient:
         def call(*args, **kwargs):
             stat = self._telemetry.stat(self._service, name)
             cache_key = _cache_key(self._service, name, args, kwargs)
-            if self._service == "ce" and cache_key in self._cache:
-                stat.add(cache_hits=1)
-                return self._cache[cache_key]
+            if self._service == "ce":
+                with self._cache_lock:
+                    cached = self._cache.get(cache_key)
+                if cached is not None:
+                    stat.add(cache_hits=1)
+                    return cached
             started = perf_counter()
             try:
                 result = target(*args, **kwargs)
@@ -180,27 +242,32 @@ class InstrumentedClient:
                     )
                 )
             if self._service == "ce":
-                self._cache[cache_key] = result
+                with self._cache_lock:
+                    self._cache[cache_key] = result
             return result
 
         return call
 
 
 class _InstrumentedPaginator:
-    def __init__(self, paginator, service, operation, telemetry, cache):
+    def __init__(self, paginator, service, operation, telemetry, cache, cache_lock):
         self._paginator = paginator
         self._service = service
         self._operation = operation
         self._telemetry = telemetry
         self._cache = cache
+        self._cache_lock = cache_lock
 
     def paginate(self, **kwargs):
         stat = self._telemetry.stat(self._service, self._operation)
         cache_key = _cache_key(self._service, self._operation, (), kwargs)
-        if self._service == "ce" and cache_key in self._cache:
-            stat.add(cache_hits=1)
-            yield from self._cache[cache_key]
-            return
+        if self._service == "ce":
+            with self._cache_lock:
+                cached = self._cache.get(cache_key)
+            if cached is not None:
+                stat.add(cache_hits=1)
+                yield from cached
+                return
         pages = []
         started = perf_counter()
         try:
@@ -216,7 +283,8 @@ class _InstrumentedPaginator:
         finally:
             stat.add(duration_ms=round((perf_counter() - started) * 1000))
             if self._service == "ce":
-                self._cache[cache_key] = pages
+                with self._cache_lock:
+                    self._cache[cache_key] = pages
 
 
 def _cache_key(service: str, operation: str, args, kwargs) -> str:

@@ -99,6 +99,17 @@ def build_agent_context(
                     "coverage": item.coverage,
                     "error_category": item.error_category,
                     "impact": item.impact,
+                    "iam_gaps": [
+                        {
+                            "service": gap.service,
+                            "operation": gap.operation,
+                            "iam_action": gap.iam_action,
+                            "category": gap.category,
+                            "affected_resources": gap.affected_resources,
+                            "examples": gap.examples,
+                        }
+                        for gap in item.iam_gaps
+                    ],
                 }
                 for item in analysis.account.collection_health
             ],

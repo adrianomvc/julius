@@ -69,6 +69,9 @@ class Account:
     financial_period: str = ""
     lookback_days: int = ANALYSIS_WINDOW_DAYS
     generated_at: str = ""
+    # Identificador comum entre coleta, checkpoints e análise contextual.
+    # Vazio mantém compatibilidade com datasets anteriores.
+    scan_id: str = ""
     # Janela de análise sob a qual a conta foi coletada. Persistida no dataset
     # para que a mesma medição possa ser reinterpretada depois.
     window_start: str = ""

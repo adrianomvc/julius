@@ -86,6 +86,16 @@ class AthenaTelemetry:
         self.partials[source] = category
         self.coverage.gaps.append(f"{source}: {detail}")
 
+    def partial_failure(
+        self, source: str, exc: Exception, *, detail: str = ""
+    ) -> None:
+        """Falha recuperada por fallback, ainda bloqueante para reconciliação."""
+        self.partial(
+            source,
+            category=error_category(exc),
+            detail=detail or type(exc).__name__,
+        )
+
     def failed(self, source: str, exc: Exception, *, detail: str = "") -> None:
         self.used(source)
         self.failures.setdefault(source, error_category(exc))
@@ -100,7 +110,9 @@ class AthenaTelemetry:
 
     def blocked(self) -> bool:
         """Alguma fonte que impede reconciliação falhou?"""
-        return any(source in self.failures for source in BLOCKING)
+        return any(
+            source in self.failures or source in self.partials for source in BLOCKING
+        )
 
     def entries(self, *, started: datetime | None = None) -> list[CollectionHealth]:
         """Uma entrada de saúde por dependência consultada."""

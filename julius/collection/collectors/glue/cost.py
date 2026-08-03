@@ -15,6 +15,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Any
 
+from julius.collection.collectors.billing_matrix import BillingMatrix
 from julius.collection.currency import non_usd_gap, usd_amount
 from julius.collection.models import Account, GlueCostCoverage
 from julius.collection.window import AnalysisWindow
@@ -43,6 +44,7 @@ def collect_glue_costs(
     window: AnalysisWindow,
     markers: Sequence[tuple[str, str]],
     version: str = "",
+    matrix: BillingMatrix | None = None,
 ) -> GlueCostCoverage:
     """Cobrança Glue da janela de análise por bucket, em USD.
 
@@ -57,36 +59,47 @@ def collect_glue_costs(
     )
 
     for metric in _METRICS:
-        try:
-            response = ce_client.get_cost_and_usage(
-                TimePeriod={
-                    "Start": window.start_date.isoformat(),
-                    "End": window.end_date.isoformat(),
-                },
-                Granularity="MONTHLY",
-                Metrics=[metric],
-                Filter={"Dimensions": {"Key": "SERVICE", "Values": ["AWS Glue"]}},
-                GroupBy=[{"Type": "DIMENSION", "Key": "USAGE_TYPE"}],
-            )
-        except Exception as exc:
-            coverage.gaps.append(f"Cost Explorer {metric}: {type(exc).__name__}")
+        responses = matrix.for_service("AWS Glue", metric) if matrix else None
+        if matrix is not None and responses is None:
             continue
+        if matrix is None:
+            try:
+                responses = [
+                    ce_client.get_cost_and_usage(
+                        TimePeriod={
+                            "Start": window.start_date.isoformat(),
+                            "End": window.end_date.isoformat(),
+                        },
+                        Granularity="MONTHLY",
+                        Metrics=[metric],
+                        Filter={
+                            "Dimensions": {"Key": "SERVICE", "Values": ["AWS Glue"]}
+                        },
+                        GroupBy=[{"Type": "DIMENSION", "Key": "USAGE_TYPE"}],
+                    )
+                ]
+            except Exception as exc:
+                coverage.gaps.append(
+                    f"Cost Explorer {metric}: {type(exc).__name__}"
+                )
+                continue
 
         buckets: dict[str, float] = {}
         unknown: list[str] = []
-        for period in response.get("ResultsByTime", []):
-            for group in period.get("Groups", []):
-                usage_type = next(iter(group.get("Keys", [])), "")
-                value = (group.get("Metrics") or {}).get(metric, {})
-                amount = usd_amount(value.get("Amount"), value.get("Unit"))
-                if amount is None:
-                    coverage.gaps.append(non_usd_gap(value.get("Unit")))
-                    return coverage
-                bucket = classify_usage_type(usage_type, markers)
-                if bucket == "other" and usage_type:
-                    # Usage type desconhecido nunca é descartado em silêncio.
-                    unknown.append(str(usage_type))
-                buckets[bucket] = buckets.get(bucket, 0.0) + amount
+        for response in responses or []:
+            for period in response.get("ResultsByTime", []):
+                for group in period.get("Groups", []):
+                    usage_type = next(iter(group.get("Keys", [])), "")
+                    value = (group.get("Metrics") or {}).get(metric, {})
+                    amount = usd_amount(value.get("Amount"), value.get("Unit"))
+                    if amount is None:
+                        coverage.gaps.append(non_usd_gap(value.get("Unit")))
+                        return coverage
+                    bucket = classify_usage_type(usage_type, markers)
+                    if bucket == "other" and usage_type:
+                        # Usage type desconhecido nunca é descartado em silêncio.
+                        unknown.append(str(usage_type))
+                    buckets[bucket] = buckets.get(bucket, 0.0) + amount
 
         coverage.cost_metric = metric
         coverage.buckets = {name: round(value, 6) for name, value in buckets.items()}

@@ -175,7 +175,7 @@ def analyze_account(
     code_artifacts: list[CodeArtifact] | None = None,
     ledger: SignalLedger | None = None,
 ) -> Analysis:
-    scan_id = scan_id or new_scan_id()
+    scan_id = scan_id or account.scan_id or new_scan_id()
     # Governança: candidatos a Producer calculados quando não fornecidos.
     if not account.producer_candidates:
         account.producer_candidates = compute_candidates(account)

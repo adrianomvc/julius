@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
@@ -24,6 +25,8 @@ class AccountTarget:
     sso_profile: str
     enabled: bool
     scope_profile: str = CONSUMER_DATAMESH
+    athena_workgroups: tuple[str, ...] = ()
+    athena_workgroup_roles: tuple[tuple[str, str], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -43,13 +46,20 @@ def load_account_targets(
     if not file_path.exists():
         raise FileNotFoundError(f"cadastro de contas não encontrado: {file_path}")
     raw = json.loads(file_path.read_text(encoding="utf-8"))
-    if not isinstance(raw, dict) or raw.get("schema_version") not in {"1.0", "1.1"}:
-        raise AccountTargetError("schema_version do cadastro de contas deve ser 1.0 ou 1.1")
+    if not isinstance(raw, dict) or raw.get("schema_version") not in {
+        "1.0",
+        "1.1",
+        "1.2",
+        "1.3",
+    }:
+        raise AccountTargetError(
+            "schema_version do cadastro de contas deve ser 1.0, 1.1, 1.2 ou 1.3"
+        )
     items = raw.get("accounts")
     if not isinstance(items, list):
         raise AccountTargetError("accounts deve ser uma lista")
     required_fields = {"name", "expected_account_id", "sso_profile", "enabled"}
-    allowed_fields = required_fields | {"scope_profile"}
+    allowed_fields = required_fields | {"scope_profile", "athena_workgroups"}
     targets = []
     names: set[str] = set()
     profiles: set[str] = set()
@@ -71,6 +81,39 @@ def load_account_targets(
         account_id = item["expected_account_id"].strip()
         sso_profile = item["sso_profile"].strip()
         scope_profile = str(item.get("scope_profile") or CONSUMER_DATAMESH).strip()
+        workgroups_raw = item.get("athena_workgroups", [])
+        if not isinstance(workgroups_raw, list):
+            raise AccountTargetError("athena_workgroups deve ser uma lista")
+        parsed_workgroups: list[tuple[str, str]] = []
+        allowed_roles = {"preferred", "legacy", "unused_expected", "unclassified"}
+        for value in workgroups_raw:
+            if isinstance(value, str):
+                name, role = value.strip(), "unclassified"
+            elif (
+                isinstance(value, dict)
+                and set(value) == {"name", "role"}
+                and isinstance(value["name"], str)
+                and isinstance(value["role"], str)
+            ):
+                name, role = value["name"].strip(), value["role"].strip()
+            else:
+                raise AccountTargetError(
+                    "athena_workgroups aceita nomes ou objetos {name, role}"
+                )
+            if name:
+                parsed_workgroups.append((name, role or "unclassified"))
+        athena_workgroups = tuple(dict.fromkeys(name for name, _ in parsed_workgroups))
+        athena_workgroup_roles = tuple(
+            (name, next(role for candidate, role in parsed_workgroups if candidate == name))
+            for name in athena_workgroups
+        )
+        if any(
+            re.fullmatch(r"[A-Za-z0-9._-]{1,128}", value) is None
+            for value in athena_workgroups
+        ):
+            raise AccountTargetError("nome inválido em athena_workgroups")
+        if any(role not in allowed_roles for _, role in athena_workgroup_roles):
+            raise AccountTargetError("role inválido em athena_workgroups")
         try:
             policy_for_profile(scope_profile)
         except ValueError as exc:
@@ -92,6 +135,8 @@ def load_account_targets(
                 sso_profile=sso_profile,
                 enabled=item["enabled"],
                 scope_profile=scope_profile,
+                athena_workgroups=athena_workgroups,
+                athena_workgroup_roles=athena_workgroup_roles,
             )
         )
     enabled = [target for target in targets if target.enabled]
@@ -139,6 +184,48 @@ def resolve_scope_profile(
             if target.sso_profile == profile:
                 return target.scope_profile
     return policy_for_profile(None).profile
+
+
+def resolve_athena_workgroups(
+    *,
+    explicit_names: str = "",
+    sso_profile: str = "",
+    config_path: str | Path = DEFAULT_ACCOUNT_TARGETS_PATH,
+) -> tuple[str, ...]:
+    """CLI explícito vence cadastro; vazio mantém descoberta automática."""
+    if explicit_names.strip():
+        names = tuple(
+            dict.fromkeys(
+                value.strip() for value in explicit_names.split(",") if value.strip()
+            )
+        )
+        if any(
+            re.fullmatch(r"[A-Za-z0-9._-]{1,128}", value) is None for value in names
+        ):
+            raise AccountTargetError("nome inválido em --athena-history-workgroups")
+        return names
+    profile = sso_profile.strip()
+    path = Path(config_path).expanduser()
+    if profile and path.exists():
+        for target in load_account_targets(path, require_enabled=False):
+            if target.sso_profile == profile:
+                return target.athena_workgroups
+    return ()
+
+
+def resolve_athena_workgroup_roles(
+    *,
+    sso_profile: str = "",
+    config_path: str | Path = DEFAULT_ACCOUNT_TARGETS_PATH,
+) -> dict[str, str]:
+    """Contexto operacional; não altera uso, custo ou prioridade."""
+    profile = sso_profile.strip()
+    path = Path(config_path).expanduser()
+    if profile and path.exists():
+        for target in load_account_targets(path, require_enabled=False):
+            if target.sso_profile == profile:
+                return dict(target.athena_workgroup_roles)
+    return {}
 
 
 def verify_account_targets(

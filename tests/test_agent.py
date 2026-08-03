@@ -21,6 +21,7 @@ from julius.collection.redaction import redact_secrets
 from julius.pipeline import analyze
 from julius.reporting import renderer
 from julius.reporting.contextual import attach_contextual_analysis
+from julius.state import RunStore, file_sha256
 
 SAMPLE = Path(__file__).resolve().parents[1] / "data" / "sample" / "consumer-avi.json"
 
@@ -219,6 +220,97 @@ def test_agent_cli_prepares_workspace_without_external_service(tmp_path):
     assert validation.exit_code == 0, validation.output
     assert "Análise Devin válida" in validation.output
     assert (tmp_path / "validated-result.json").exists()
+
+
+def test_agent_cli_persists_async_job_until_validated_result(tmp_path):
+    workspace = tmp_path / "agent"
+    run_store = tmp_path / "runs.duckdb"
+    prepared_result = CliRunner().invoke(
+        app,
+        [
+            "agent",
+            "prepare",
+            "--input",
+            str(SAMPLE),
+            "--output",
+            str(workspace),
+            "--top",
+            "2",
+            "--run-store",
+            str(run_store),
+        ],
+    )
+
+    assert prepared_result.exit_code == 0, prepared_result.output
+    assert "Análise contextual enfileirada" in prepared_result.output
+    prepared = load_agent_context(workspace / "context.json")
+    with RunStore(run_store) as store:
+        assert store.run_status(prepared.account["id"], prepared.scan_id) == "ai_pending"
+        assert len(store.tasks()) == 1
+
+    result_path = workspace / "result.json"
+    result_path.write_text(
+        json.dumps(_valid_result(prepared), ensure_ascii=False),
+        encoding="utf-8",
+    )
+    validation = CliRunner().invoke(
+        app,
+        [
+            "agent",
+            "validate",
+            "--context",
+            str(workspace / "context.json"),
+            "--result",
+            str(result_path),
+            "--rule-candidates",
+            str(tmp_path / "candidates.json"),
+            "--signal-ledger",
+            str(tmp_path / "signals.json"),
+            "--run-store",
+            str(run_store),
+        ],
+    )
+
+    assert validation.exit_code == 0, validation.output
+    with RunStore(run_store) as store:
+        assert store.run_status(prepared.account["id"], prepared.scan_id) == "enriched"
+        assert len(store.tasks(status="completed")) == 1
+
+
+def test_agent_next_claims_only_a_verified_checkpoint(tmp_path):
+    run_store = tmp_path / "runs.duckdb"
+    payload = tmp_path / "athena.json"
+    payload.write_text('{"domain":"athena"}', encoding="utf-8")
+    digest = file_sha256(payload)
+    with RunStore(run_store) as store:
+        store.create_run("123456789012", "scan-a", status="deterministic_published")
+        store.checkpoint(
+            "123456789012",
+            "scan-a",
+            "athena",
+            status="ready",
+            payload_path=str(payload),
+            payload_hash=digest,
+            sources={"Athena Queries": "ok"},
+        )
+        store.enqueue_ai(
+            "123456789012",
+            "scan-a",
+            "athena",
+            context_hash=digest,
+            payload_path=str(payload),
+        )
+
+    result = CliRunner().invoke(
+        app,
+        ["agent", "next", "--run-store", str(run_store)],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "domínio athena" in result.output
+    assert "Nenhum cliente boto3" in result.output
+    with RunStore(run_store) as store:
+        assert len(store.tasks(status="running")) == 1
 
 
 def test_validated_ai_context_enriches_delivery_without_changing_priority(context):

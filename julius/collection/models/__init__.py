@@ -48,7 +48,7 @@ from julius.collection.models.glue import (
     GlueTrigger,
     InteractiveSession,
 )
-from julius.collection.models.health import CollectionHealth
+from julius.collection.models.health import CollectionHealth, IamGap
 from julius.collection.models.s3 import (
     LAST_ACCESS_SOURCES,
     PREFIX_KINDS,
@@ -69,6 +69,7 @@ __all__ = [
     "AthenaCoverage",
     "AthenaQuery",
     "CollectionHealth",
+    "IamGap",
     "DataBrewJob",
     "GlueCostCoverage",
     "RedshiftCostCoverage",

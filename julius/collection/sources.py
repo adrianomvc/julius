@@ -13,11 +13,13 @@ jobs, e o grafo de processos precisa dos schedules.
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass, field, replace
+from dataclasses import asdict, dataclass, field, replace
 from datetime import datetime, timezone
+from threading import Lock
 from typing import Any
 
 from julius.collection.collectors import (
+    billing_matrix,
     cloudtrail,
     cloudwatch,
     cost_explorer,
@@ -46,13 +48,15 @@ from julius.collection.collectors.glue import (
     spark_logs,
     triggers,
 )
+from julius.collection.collectors.metrics import MetricBatchCoordinator
 from julius.collection.collectors.s3_evidence import MAX_LIST_PAGES
-from julius.collection.health import CollectionRecorder
-from julius.collection.models import Account, CollectionHealth
+from julius.collection.health import CollectionRecorder, RequiredCollectionError
+from julius.collection.models import Account, CollectionHealth, IamGap, S3BucketConfig
 from julius.collection.policy import ScopePolicy, policy_for_profile
 from julius.collection.scope import CatalogScope
 from julius.collection.session import S3_LISTING_WORKERS, make_client
 from julius.collection.settings import retention_ceiling
+from julius.collection.snapshot import CollectionSnapshotStore, SnapshotPolicy
 from julius.collection.telemetry import InstrumentedClient, RunTelemetry
 from julius.collection.window import AnalysisWindow, BillingMonth
 
@@ -83,6 +87,8 @@ class CollectionContext:
     sagemaker_cost_version: str = ""
     touches_table: str = ""
     athena_workgroup: str = "julius"
+    athena_history_workgroups: tuple[str, ...] = ()
+    athena_workgroup_roles: dict[str, str] = field(default_factory=dict)
     athena_output: str | None = None
     include_cloudtrail: bool = False
     datawarm_job: str = ""
@@ -107,8 +113,13 @@ class CollectionContext:
     # limpa antes de cada fonte e lê depois, então o coletor só precisa receber
     # `gaps=ctx.gaps` e nunca sabe o nome da fonte em que está.
     gaps: list[str] = field(default_factory=list)
+    iam_gaps: dict[tuple[str, str], IamGap] = field(default_factory=dict)
     _clients: dict[str, Any] = field(default_factory=dict, repr=False)
     _response_cache: dict[str, Any] = field(default_factory=dict, repr=False)
+    _clients_lock: Any = field(default_factory=Lock, repr=False)
+    _response_cache_lock: Any = field(default_factory=Lock, repr=False)
+    _state_lock: Any = field(default_factory=Lock, repr=False)
+    snapshot_store: CollectionSnapshotStore | None = None
 
     def client(self, service: str) -> Any:
         """Um cliente por serviço, criado uma vez.
@@ -117,14 +128,25 @@ class CollectionContext:
         Athena sozinha pedia sete clientes, e `glue` era reconstruído em cinco
         fontes diferentes — trabalho repetido antes da primeira chamada AWS.
         """
-        if service not in self._clients:
-            self._clients[service] = InstrumentedClient(
-                make_client(self.session, service),
-                service,
-                self.telemetry,
-                self._response_cache,
-            )
-        return self._clients[service]
+        client = self._clients.get(service)
+        if client is not None:
+            return client
+        with self._clients_lock:
+            if service not in self._clients:
+                client = InstrumentedClient(
+                    make_client(self.session, service),
+                    service,
+                    self.telemetry,
+                    self._response_cache,
+                    cache_lock=self._response_cache_lock,
+                )
+                if service == "cloudwatch":
+                    client._metric_batch_coordinator = MetricBatchCoordinator(
+                        client,
+                        telemetry=self.telemetry,
+                    )
+                self._clients[service] = client
+            return self._clients[service]
 
 
 @dataclass(frozen=True)
@@ -138,7 +160,7 @@ class Source:
     required: bool = False
     required_capabilities: frozenset[str] = frozenset()
     # Família de retenção. Declarada em `_SOURCE_FAMILIES` e aplicada por
-    # `replace`, para não repetir metadado em 39 blocos.
+    # `replace`, para não repetir metadado em 40 blocos.
     family: str = ""
     # Onde o resultado aterrissa: um atributo do Account, ou uma função quando
     # a fonte enriquece algo já coletado em vez de devolver uma lista nova.
@@ -157,77 +179,174 @@ class Source:
     disabled_affects_status: Callable[[CollectionContext], bool] = lambda ctx: False
     # Ajuste da entrada de saúde depois do fato — evidência parcial, por exemplo.
     after: Callable[[CollectionContext, Any, CollectionHealth], None] | None = None
+    # Dependências do scheduler. Fontes sem dependência podem sobrepor latência;
+    # uma fonte só é liberada depois que todas as anteriores declaradas foram
+    # aplicadas ao Account.
+    depends_on: frozenset[str] = frozenset()
+    # Serviços boto3 usados pela fonte. O scheduler adquire limites em ordem
+    # estável para impedir deadlock quando uma fonte usa vários clientes.
+    services: frozenset[str] = frozenset()
+    # Conservador por default: fonte nova roda em série até provar que o collect
+    # não escreve em objetos compartilhados. O apply sempre ocorre no agregador.
+    parallel_safe: bool = False
+    # Cache é opt-in por fonte e exige serialização, escopo e versão explícitos.
+    snapshot_policy: SnapshotPolicy | None = None
+
+
+@dataclass
+class SourceResult:
+    """Resultado isolado de uma fonte, ainda não aplicado ao inventário."""
+
+    source: Source
+    context: CollectionContext
+    value: Any
+    entries: list[CollectionHealth]
+    should_apply: bool = True
+    cache_age_seconds: int | None = None
 
 
 def run(source: Source, ctx: CollectionContext, recorder: CollectionRecorder) -> None:
-    """Executa uma fonte e registra a saúde dela.
+    """Compatibilidade serial: executa e aplica uma fonte imediatamente."""
+    try:
+        result = execute(source, ctx)
+    except RequiredCollectionError as exc:
+        recorder.entries.extend(getattr(exc, "collection_entries", []))
+        raise
+    recorder.entries.extend(apply_result(result))
+
+
+def execute(source: Source, ctx: CollectionContext) -> SourceResult:
+    """Executa rede/coletor sem publicar resultado no ``Account``.
 
     A janela que a fonte recebe é recortada no teto de retenção da família dela.
     O recorte vale sempre, não só no bootstrap: é invariante — nunca pedir a uma
     fonte mais dias do que a AWS retém — e com a janela padrão de 30 dias ele não
     morde nenhuma família, então o caminho de sempre não muda.
     """
-    ctx = _scoped(ctx, source)
-    if not ctx.scope_policy.allows(*source.required_capabilities):
+    local = replace(_scoped(ctx, source), gaps=[], iam_gaps={}, pending_health=[])
+    recorder = CollectionRecorder()
+    if not local.scope_policy.allows(*source.required_capabilities):
         recorder.not_applicable(
             source.name,
             reason=(
-                f"fora do perfil {ctx.scope_policy.profile}: requer "
+                f"fora do perfil {local.scope_policy.profile}: requer "
                 f"{', '.join(sorted(source.required_capabilities))}"
             ),
         )
-        return
+        return SourceResult(source, local, source.default(), recorder.entries, False)
     if (
-        ctx.max_scan_cost_usd is not None
+        local.max_scan_cost_usd is not None
         and not source.required
-        and ctx.telemetry.estimate(ctx.config.pricing) >= ctx.max_scan_cost_usd
+        and local.telemetry.estimate(local.config.pricing) >= local.max_scan_cost_usd
     ):
         recorder.unavailable(
             source.name,
             category="budget_exceeded",
             impact=(
                 f"fonte opcional interrompida no orçamento de "
-                f"US$ {ctx.max_scan_cost_usd:.4f}"
+                f"US$ {local.max_scan_cost_usd:.4f}"
             ),
             next_action="aumentar --max-scan-cost somente após revisar a telemetria",
             affects_status=False,
         )
-        return
-    if source.enabled is not None and not source.enabled(ctx):
+        return SourceResult(source, local, source.default(), recorder.entries, False)
+    if source.enabled is not None and not source.enabled(local):
         recorder.unavailable(
             source.name,
             category=source.disabled_category,
             impact=source.disabled_impact or source.impact,
             next_action=source.disabled_next_action or source.next_action,
-            affects_status=source.disabled_affects_status(ctx),
+            affects_status=source.disabled_affects_status(local),
         )
-        return
+        return SourceResult(source, local, source.default(), recorder.entries, False)
 
-    ctx.gaps.clear()
-    result = recorder.capture(
-        source.name,
-        lambda: source.collect(ctx),
-        source.default(),
-        required=source.required,
-        count=source.count,
-        expected=source.expected(ctx) if source.expected else None,
-        data_through=source.data_through,
-        impact=source.impact,
-        next_action=source.next_action,
-    )
+    if source.snapshot_policy is not None and local.snapshot_store is not None:
+        policy = source.snapshot_policy
+        hit = local.snapshot_store.load(
+            account_id=local.account.account_id,
+            region=local.account.region,
+            source=source.name,
+            scope=policy.scope(local),
+            policy=policy,
+        )
+        local.telemetry.record_snapshot(hit=hit is not None)
+        if hit is not None:
+            value = recorder.capture(
+                source.name,
+                lambda: hit.value,
+                source.default(),
+                required=source.required,
+                count=source.count,
+                expected=source.expected(local) if source.expected else None,
+                data_through=source.data_through,
+                impact=source.impact,
+                next_action=source.next_action,
+            )
+            return SourceResult(
+                source,
+                local,
+                value,
+                recorder.entries,
+                cache_age_seconds=hit.age_seconds,
+            )
+
+    try:
+        value = recorder.capture(
+            source.name,
+            lambda: source.collect(local),
+            source.default(),
+            required=source.required,
+            count=source.count,
+            expected=source.expected(local) if source.expected else None,
+            data_through=source.data_through,
+            impact=source.impact,
+            next_action=source.next_action,
+        )
+    except RequiredCollectionError as exc:
+        exc.collection_entries = recorder.entries
+        raise
+    return SourceResult(source, local, value, recorder.entries)
+
+
+def apply_result(result: SourceResult) -> list[CollectionHealth]:
+    """Publica um ``SourceResult`` no agregador, nunca dentro do worker."""
+    source = result.source
+    ctx = result.context
+    if not result.should_apply:
+        return result.entries
+    value = result.value
     if source.into:
-        setattr(ctx.account, source.into, result)
+        setattr(ctx.account, source.into, value)
     if source.apply is not None:
-        source.apply(ctx, result)
+        source.apply(ctx, value)
+    entry = result.entries[-1]
     if source.after is not None:
-        source.after(ctx, result, recorder.entries[-1])
+        source.after(ctx, value, entry)
     # Com teto por família, "que janela esta fonte mediu" deixa de ser dedutível
     # da janela da conta e passa a ser dado.
-    recorder.entries[-1].window_days = ctx.window.days
-    _record_gaps(ctx, recorder.entries[-1])
+    entry.window_days = ctx.window.days
+    _record_gaps(ctx, entry)
+    if result.cache_age_seconds is not None:
+        entry.result_origin = "cached"
+        entry.cache_age_seconds = result.cache_age_seconds
+    elif (
+        source.snapshot_policy is not None
+        and ctx.snapshot_store is not None
+        and entry.status == "ok"
+    ):
+        policy = source.snapshot_policy
+        ctx.snapshot_store.save(
+            account_id=ctx.account.account_id,
+            region=ctx.account.region,
+            source=source.name,
+            scope=policy.scope(ctx),
+            policy=policy,
+            value=value,
+        )
     if ctx.pending_health:
-        recorder.entries.extend(ctx.pending_health)
+        result.entries.extend(ctx.pending_health)
         ctx.pending_health.clear()
+    return result.entries
 
 
 def _scoped(ctx: CollectionContext, source: Source) -> CollectionContext:
@@ -246,6 +365,7 @@ def _scoped(ctx: CollectionContext, source: Source) -> CollectionContext:
 
 _SOURCE_CAPABILITIES: dict[str, frozenset[str]] = {
     "Cost Explorer": frozenset({"billing"}),
+    "Cost Matrix": frozenset({"billing"}),
     "Glue Jobs": frozenset({"glue_jobs"}),
     "Glue Scripts": frozenset({"glue_jobs"}),
     "Spark Event Logs": frozenset({"glue_jobs", "s3_evidence"}),
@@ -295,6 +415,7 @@ _SOURCE_CAPABILITIES: dict[str, frozenset[str]] = {
 #: meses), então o teto é sempre o da telemetria da família.
 _SOURCE_FAMILIES: dict[str, str] = {
     "Cost Explorer": "billing",
+    "Cost Matrix": "billing",
     "Glue Jobs": "glue",
     "Glue Scripts": "glue",
     "Spark Event Logs": "glue",
@@ -365,6 +486,12 @@ def _record_gaps(ctx: CollectionContext, entry: CollectionHealth) -> None:
         )
     faltou = "não lido: " + "; ".join(anotados)
     entry.impact = f"{entry.impact} — {faltou}" if entry.impact else faltou
+    if ctx.iam_gaps:
+        entry.iam_gaps = sorted(
+            ctx.iam_gaps.values(), key=lambda gap: (gap.service, gap.operation)
+        )
+        actions = sorted({gap.iam_action for gap in entry.iam_gaps})
+        entry.next_action = "validar permissões read-only: " + ", ".join(actions)
 
 
 def _latest_data_through(items: Any) -> str:
@@ -379,6 +506,19 @@ def _enriched(fn: Callable[[], Any], value: Any) -> Any:
     """Coletor que enriquece em vez de devolver: a contagem olha o alvo."""
     fn()
     return value
+
+
+def _s3_config_snapshot_policy() -> SnapshotPolicy:
+    return SnapshotPolicy(
+        ttl_seconds=15 * 60,
+        collector_version="s3-config-v1",
+        serialize=lambda values: [asdict(value) for value in values],
+        deserialize=lambda values: [S3BucketConfig(**value) for value in values],
+        scope=lambda ctx: {
+            "buckets": sorted(s3.bucket_names(_s3_scope(ctx))),
+            "scope_profile": ctx.scope_policy.profile,
+        },
+    )
 
 
 # --------------------------------------------------------------------------
@@ -493,9 +633,13 @@ def _s3_scope(ctx: CollectionContext) -> list[tuple[str, str, str]]:
     Três fontes precisam da mesma lista, e ela depende de tabelas, jobs e
     workgroups — por isso as fontes de S3 rodam depois deles.
     """
-    if "s3_prefixes" not in ctx.flags:
-        ctx.flags["s3_prefixes"] = s3.known_prefixes(ctx.account)
-    return ctx.flags["s3_prefixes"]
+    cached = ctx.flags.get("s3_prefixes")
+    if cached is not None:
+        return cached
+    with ctx._state_lock:
+        if "s3_prefixes" not in ctx.flags:
+            ctx.flags["s3_prefixes"] = s3.known_prefixes(ctx.account)
+        return ctx.flags["s3_prefixes"]
 
 
 def _collect_s3_prefixes(ctx: CollectionContext) -> list:
@@ -679,6 +823,18 @@ SOURCES: tuple[Source, ...] = (
         ),
     ),
     Source(
+        name="Cost Matrix",
+        collect=lambda ctx: billing_matrix.collect(ctx.client("ce"), window=ctx.window),
+        default=lambda: None,
+        count=lambda matrix: 1 if matrix else 0,
+        apply=lambda ctx, matrix: ctx.flags.__setitem__("billing_matrix", matrix),
+        impact=(
+            "rateios de Glue, S3, SageMaker e Redshift voltam a consultar "
+            "Cost Explorer separadamente"
+        ),
+        next_action="validar ce:GetCostAndUsage agrupado por SERVICE e USAGE_TYPE",
+    ),
+    Source(
         name="Glue Jobs",
         collect=lambda ctx: jobs.collect_jobs(
             ctx.client("glue"), window=ctx.window, gaps=ctx.gaps
@@ -820,6 +976,7 @@ SOURCES: tuple[Source, ...] = (
                 window=ctx.window,
                 markers=ctx.glue_usage_markers,
                 version=ctx.glue_cost_version,
+                matrix=ctx.flags.get("billing_matrix"),
             ),
             ctx.config,
             allocatable_buckets=ctx.allocatable_glue_buckets,
@@ -845,6 +1002,8 @@ SOURCES: tuple[Source, ...] = (
             s3_client=ctx.client("s3"),
             ce_client=ctx.client("ce"),
             window=ctx.window,
+            configured_workgroups=ctx.athena_history_workgroups,
+            configured_workgroup_roles=ctx.athena_workgroup_roles,
         ),
         default=lambda: None,
         apply=_apply_athena_analysis,
@@ -900,6 +1059,7 @@ SOURCES: tuple[Source, ...] = (
             s3control_client=ctx.client("s3control"),
             account_id=ctx.account.account_id,
             gaps=ctx.gaps,
+            iam_gaps=ctx.iam_gaps,
         ),
         into="s3_bucket_configs",
         count=len,
@@ -915,9 +1075,12 @@ SOURCES: tuple[Source, ...] = (
         impact="recomendação de classe de armazenamento fica sem evidência de leitura",
         next_action=(
             "validar s3:GetBucketLogging, s3:GetLifecycleConfiguration, "
-            "s3:GetAnalyticsConfiguration e s3:GetIntelligentTieringConfiguration"
+            "s3:GetAnalyticsConfiguration, s3:GetIntelligentTieringConfiguration, "
+            "s3:GetBucketMetadataTableConfiguration e "
+            "s3:ListStorageLensConfigurations"
         ),
         after=_flag_buckets_without_access_evidence,
+        snapshot_policy=_s3_config_snapshot_policy(),
     ),
     Source(
         name="S3 Prefixes",
@@ -989,6 +1152,7 @@ SOURCES: tuple[Source, ...] = (
                 window=ctx.window,
                 markers=ctx.config.s3_cost.usage_type_markers,
                 version=ctx.config.s3_cost.version,
+                matrix=ctx.flags.get("billing_matrix"),
             ),
             ctx.config.s3_cost.storage_buckets,
         ),
@@ -1158,6 +1322,7 @@ SOURCES: tuple[Source, ...] = (
             markers=ctx.sagemaker_usage_markers,
             version=ctx.sagemaker_cost_version,
             allocatable=ctx.allocatable_sagemaker_buckets,
+            matrix=ctx.flags.get("billing_matrix"),
         ),
         into="sagemaker_cost_coverage",
         default=lambda: None,
@@ -1213,6 +1378,7 @@ SOURCES: tuple[Source, ...] = (
                 window=ctx.window,
                 markers=ctx.redshift_usage_markers,
                 version=ctx.redshift_cost_version,
+                matrix=ctx.flags.get("billing_matrix"),
             ),
             ctx.redshift_compute_buckets,
         ),
@@ -1302,7 +1468,156 @@ SOURCES: tuple[Source, ...] = (
     ),
 )
 
-# A declaração fica próxima do registro sem repetir metadados em 38 blocos.
+# Dependências reais do inventário. A ausência de uma chave é proibida abaixo:
+# fonte nova precisa declarar se é raiz ou de quem depende, em vez de herdar a
+# posição da tupla como uma dependência implícita.
+_SOURCE_DEPENDENCIES: dict[str, frozenset[str]] = {
+    "Cost Explorer": frozenset(),
+    "Cost Matrix": frozenset(),
+    "Glue Jobs": frozenset(),
+    "Glue Scripts": frozenset({"Glue Jobs"}),
+    "Spark Event Logs": frozenset({"Glue Jobs"}),
+    "Glue Catalog": frozenset(),
+    "Glue Crawlers": frozenset(),
+    "Glue Triggers": frozenset(),
+    "Glue DataBrew": frozenset(),
+    "CloudWatch Glue CPU": frozenset({"Glue Jobs"}),
+    "CloudWatch Glue Observability": frozenset({"Glue Jobs"}),
+    "Glue Interactive Sessions": frozenset(),
+    "Glue Cost Explorer": frozenset(
+        {
+            "Cost Matrix",
+            "Glue Jobs",
+            "Glue Crawlers",
+            "Glue DataBrew",
+            "Glue Interactive Sessions",
+        }
+    ),
+    # Ambos podem preencher moeda; a dependência preserva a precedência antiga.
+    "Athena Queries": frozenset({"Cost Explorer"}),
+    "Athena Provisioned Capacity": frozenset(),
+    "Amazon S3": frozenset({"Glue Jobs", "Glue Catalog", "Athena Queries"}),
+    "S3 Config": frozenset({"Amazon S3"}),
+    "S3 Prefixes": frozenset({"Amazon S3"}),
+    "S3 Access Evidence": frozenset({"S3 Config", "S3 Prefixes"}),
+    "S3 Multipart Uploads": frozenset({"Amazon S3"}),
+    "S3 Cost Explorer": frozenset({"Cost Matrix", "Amazon S3"}),
+    "SageMaker Studio": frozenset(),
+    "SageMaker Spaces": frozenset({"SageMaker Studio"}),
+    "SageMaker Domains": frozenset({"SageMaker Studio", "SageMaker Spaces"}),
+    "SageMaker Endpoints": frozenset(),
+    "SageMaker Notebooks": frozenset(),
+    "SageMaker Jobs": frozenset(),
+    "SageMaker Feature Store": frozenset(),
+    "SageMaker Pipelines": frozenset(),
+    "SageMaker Model Monitor": frozenset(),
+    "SageMaker Inference Recommender": frozenset(),
+    "SageMaker Cost Explorer": frozenset(
+        {
+            "SageMaker Studio",
+            "Cost Matrix",
+            "SageMaker Spaces",
+            "SageMaker Domains",
+            "SageMaker Endpoints",
+            "SageMaker Jobs",
+            "SageMaker Feature Store",
+        }
+    ),
+    "SageMaker Savings Plans": frozenset(),
+    "Amazon Redshift": frozenset(),
+    "Redshift Cost Explorer": frozenset({"Cost Matrix", "Amazon Redshift"}),
+    "Step Functions": frozenset(),
+    "EventBridge Schedules": frozenset(),
+    "Table Touches": frozenset({"Glue Catalog"}),
+    "DataWarm Mapping": frozenset({"Glue Jobs", "Glue Catalog"}),
+    "CloudTrail Ownership": frozenset(),
+}
+
+_SOURCE_SERVICES: dict[str, frozenset[str]] = {
+    "Cost Explorer": frozenset({"ce"}),
+    "Cost Matrix": frozenset({"ce"}),
+    "Glue Jobs": frozenset({"glue"}),
+    "Glue Scripts": frozenset(),
+    "Spark Event Logs": frozenset({"s3"}),
+    "Glue Catalog": frozenset({"glue"}),
+    "Glue Crawlers": frozenset({"glue"}),
+    "Glue Triggers": frozenset({"glue"}),
+    "Glue DataBrew": frozenset({"databrew"}),
+    "CloudWatch Glue CPU": frozenset({"cloudwatch"}),
+    "CloudWatch Glue Observability": frozenset({"cloudwatch"}),
+    "Glue Interactive Sessions": frozenset({"glue"}),
+    "Glue Cost Explorer": frozenset({"ce"}),
+    "Athena Queries": frozenset(
+        {"athena", "cloudwatch", "cloudtrail", "identitystore", "glue", "s3", "ce"}
+    ),
+    "Athena Provisioned Capacity": frozenset({"athena", "cloudwatch", "ce"}),
+    "Amazon S3": frozenset({"cloudwatch", "s3"}),
+    "S3 Config": frozenset({"s3", "s3control"}),
+    "S3 Prefixes": frozenset({"s3"}),
+    "S3 Access Evidence": frozenset({"s3"}),
+    "S3 Multipart Uploads": frozenset({"s3"}),
+    "S3 Cost Explorer": frozenset({"ce"}),
+    "SageMaker Studio": frozenset({"sagemaker", "cloudwatch"}),
+    "SageMaker Spaces": frozenset({"sagemaker"}),
+    "SageMaker Domains": frozenset({"sagemaker", "cloudwatch"}),
+    "SageMaker Endpoints": frozenset(
+        {"sagemaker", "cloudwatch", "application-autoscaling"}
+    ),
+    "SageMaker Notebooks": frozenset({"sagemaker"}),
+    "SageMaker Jobs": frozenset({"sagemaker", "cloudwatch"}),
+    "SageMaker Feature Store": frozenset({"sagemaker", "cloudwatch"}),
+    "SageMaker Pipelines": frozenset({"sagemaker"}),
+    "SageMaker Model Monitor": frozenset({"sagemaker"}),
+    "SageMaker Inference Recommender": frozenset({"sagemaker"}),
+    "SageMaker Cost Explorer": frozenset({"ce"}),
+    "SageMaker Savings Plans": frozenset({"ce"}),
+    "Amazon Redshift": frozenset({"redshift", "cloudwatch", "redshift-serverless"}),
+    "Redshift Cost Explorer": frozenset({"ce"}),
+    "Step Functions": frozenset({"stepfunctions", "cloudwatch"}),
+    "EventBridge Schedules": frozenset({"events"}),
+    "Table Touches": frozenset({"athena"}),
+    "DataWarm Mapping": frozenset(),
+    "CloudTrail Ownership": frozenset({"cloudtrail"}),
+}
+
+# Somente collectors que constroem um valor novo entram aqui. Enriquecimentos
+# sobre objetos existentes e rateios que mutam o Account permanecem seriais.
+_PARALLEL_SAFE_SOURCES = frozenset(
+    {
+        "Cost Explorer",
+        "Cost Matrix",
+        "Glue Jobs",
+        "Glue Scripts",
+        "Glue Catalog",
+        "Glue Crawlers",
+        "Glue Triggers",
+        "Glue DataBrew",
+        "Glue Interactive Sessions",
+        "Athena Queries",
+        "Athena Provisioned Capacity",
+        "Amazon S3",
+        "S3 Config",
+        "S3 Prefixes",
+        "S3 Multipart Uploads",
+        "SageMaker Studio",
+        "SageMaker Spaces",
+        "SageMaker Domains",
+        "SageMaker Endpoints",
+        "SageMaker Notebooks",
+        "SageMaker Jobs",
+        "SageMaker Feature Store",
+        "SageMaker Pipelines",
+        "SageMaker Model Monitor",
+        "SageMaker Inference Recommender",
+        "SageMaker Savings Plans",
+        "Amazon Redshift",
+        "EventBridge Schedules",
+        "Table Touches",
+        "CloudTrail Ownership",
+    }
+)
+
+# A declaração fica próxima do registro sem repetir metadados em 40 blocos.
 # `replace` mantém Source imutável e um teste garante que toda fonte foi classificada.
 if {source.name for source in SOURCES} != set(_SOURCE_CAPABILITIES):
     missing = {source.name for source in SOURCES} - set(_SOURCE_CAPABILITIES)
@@ -1316,11 +1631,30 @@ if {source.name for source in SOURCES} != set(_SOURCE_FAMILIES):
     extra = set(_SOURCE_FAMILIES) - {source.name for source in SOURCES}
     raise RuntimeError(f"famílias de fontes inconsistentes: missing={missing}, extra={extra}")
 
+for registry_name, registry in (
+    ("dependências", _SOURCE_DEPENDENCIES),
+    ("serviços", _SOURCE_SERVICES),
+):
+    if {source.name for source in SOURCES} != set(registry):
+        missing = {source.name for source in SOURCES} - set(registry)
+        extra = set(registry) - {source.name for source in SOURCES}
+        raise RuntimeError(
+            f"{registry_name} de fontes inconsistentes: missing={missing}, extra={extra}"
+        )
+if not _PARALLEL_SAFE_SOURCES <= {source.name for source in SOURCES}:
+    raise RuntimeError(
+        "fontes paralelas desconhecidas: "
+        f"{sorted(_PARALLEL_SAFE_SOURCES - {source.name for source in SOURCES})}"
+    )
+
 SOURCES = tuple(
     replace(
         source,
         required_capabilities=_SOURCE_CAPABILITIES[source.name],
         family=_SOURCE_FAMILIES[source.name],
+        depends_on=_SOURCE_DEPENDENCIES[source.name],
+        services=_SOURCE_SERVICES[source.name],
+        parallel_safe=source.name in _PARALLEL_SAFE_SOURCES,
     )
     for source in SOURCES
 )

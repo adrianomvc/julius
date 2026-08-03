@@ -37,6 +37,9 @@ from __future__ import annotations
 from collections.abc import Iterator
 from dataclasses import dataclass, field
 from datetime import datetime
+from threading import Event, Lock
+from time import sleep
+from typing import Any, TypeVar
 
 #: Teto da API para consultas numa única chamada `GetMetricData`.
 MAX_QUERIES_PER_CALL = 500
@@ -44,6 +47,12 @@ MAX_QUERIES_PER_CALL = 500
 #: Um ponto por dia. Período diário é o que mantém a série disponível por 455
 #: dias no CloudWatch — o corte de 63 dias vale para período de cinco minutos.
 DAILY_PERIOD_SECONDS = 86400
+
+# Janela curta para fontes que chegaram juntas ao mesmo cliente CloudWatch.
+# Dez milissegundos ficam muito abaixo da latência normal da API e permitem que
+# workers liberados pelo mesmo nível do DAG compartilhem a chamada.
+COALESCE_WINDOW_SECONDS = 0.01
+_BlockItem = TypeVar("_BlockItem")
 
 
 @dataclass
@@ -65,6 +74,112 @@ class MetricQuery:
     def points(self) -> list[tuple[object, float]]:
         """`(timestamp, valor)` na ordem em que a API respondeu."""
         return list(zip(self.timestamps, self.values, strict=False))
+
+
+@dataclass
+class _MetricRequest:
+    queries: list[MetricQuery]
+    done: Event = field(default_factory=Event)
+    problems: list[Exception] = field(default_factory=list)
+
+
+class MetricBatchCoordinator:
+    """Agrupa chamadas concorrentes e compatíveis de fontes diferentes.
+
+    O coordenador vive no cliente CloudWatch compartilhado pelo scan. Uma
+    requisição só se mistura com outra quando janela e ``ScanBy`` são idênticos;
+    isso preserva retenção, ordem temporal e redução de cada coletor. O chamador
+    continua bloqueado até suas próprias consultas terminarem, portanto nenhum
+    objeto parcialmente preenchido escapa para o agregador.
+    """
+
+    def __init__(
+        self,
+        cw_client,
+        *,
+        telemetry: Any = None,
+        coalesce_seconds: float = COALESCE_WINDOW_SECONDS,
+    ) -> None:
+        self._client = cw_client
+        self._telemetry = telemetry
+        self._coalesce_seconds = max(0.0, coalesce_seconds)
+        self._lock = Lock()
+        self._pending: dict[tuple[datetime, datetime, str], list[_MetricRequest]] = {}
+        self._active: set[tuple[datetime, datetime, str]] = set()
+
+    def collect(
+        self,
+        queries: list[MetricQuery],
+        *,
+        start: datetime,
+        end: datetime,
+        scan_by: str = "",
+    ) -> list[Exception]:
+        request = _MetricRequest(queries)
+        key = (start, end, scan_by)
+        with self._lock:
+            self._pending.setdefault(key, []).append(request)
+            leader = key not in self._active
+            if leader:
+                self._active.add(key)
+
+        if leader:
+            self._drain(key)
+        else:
+            request.done.wait()
+        return request.problems
+
+    def _drain(self, key: tuple[datetime, datetime, str]) -> None:
+        if self._coalesce_seconds:
+            sleep(self._coalesce_seconds)
+        while True:
+            with self._lock:
+                requests = self._pending.pop(key, [])
+            if requests:
+                self._execute(requests, key)
+                continue
+            with self._lock:
+                # Uma requisição pode ter chegado entre o primeiro teste e a
+                # aquisição deste lock. Nesse caso o líder permanece responsável.
+                if self._pending.get(key):
+                    continue
+                self._active.remove(key)
+                return
+
+    def _execute(
+        self,
+        requests: list[_MetricRequest],
+        key: tuple[datetime, datetime, str],
+    ) -> None:
+        start, end, scan_by = key
+        indexed = [
+            (request, query)
+            for request in requests
+            for query in request.queries
+        ]
+        if self._telemetry is not None:
+            self._telemetry.record_cloudwatch_batch(
+                requests=len(requests),
+                queries=len(indexed),
+                coalesced=len(requests) if len(requests) > 1 else 0,
+            )
+        for block in _blocks(indexed, MAX_QUERIES_PER_CALL):
+            if self._telemetry is not None:
+                self._telemetry.record_cloudwatch_batch(batches=1)
+            try:
+                _fetch(
+                    self._client,
+                    [query for _, query in block],
+                    start,
+                    end,
+                    scan_by,
+                )
+            except Exception as exc:  # noqa: BLE001 - isolado por lote
+                affected = {id(request): request for request, _ in block}
+                for request in affected.values():
+                    request.problems.append(exc)
+        for request in requests:
+            request.done.set()
 
 
 def collect(
@@ -92,6 +207,14 @@ def collect(
     """
     if cw_client is None:
         return []
+    coordinator = getattr(cw_client, "_metric_batch_coordinator", None)
+    if coordinator is not None:
+        return coordinator.collect(
+            queries,
+            start=start,
+            end=end,
+            scan_by=scan_by,
+        )
     problems: list[Exception] = []
     for block in _blocks(queries, MAX_QUERIES_PER_CALL):
         try:
@@ -101,7 +224,7 @@ def collect(
     return problems
 
 
-def _blocks(queries: list[MetricQuery], size: int) -> Iterator[list[MetricQuery]]:
+def _blocks(queries: list[_BlockItem], size: int) -> Iterator[list[_BlockItem]]:
     for começo in range(0, len(queries), size):
         yield queries[começo : começo + size]
 

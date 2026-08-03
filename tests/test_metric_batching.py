@@ -9,13 +9,16 @@ evidência que faltou.
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
+from threading import Barrier
 
 from julius.collection.collectors import metrics
 from julius.collection.collectors.metrics import (
     MAX_QUERIES_PER_CALL,
     MetricQuery,
 )
+from julius.collection.telemetry import RunTelemetry
 
 INICIO = datetime(2026, 7, 1, tzinfo=timezone.utc)
 FIM = datetime(2026, 7, 31, tzinfo=timezone.utc)
@@ -136,3 +139,86 @@ def test_points_pairs_timestamps_with_values():
     metrics.collect(client, queries, start=INICIO, end=FIM)
 
     assert queries[0].points() == [(INICIO, 1.0)]
+
+
+def test_coordinator_combines_compatible_concurrent_collectors():
+    client = _CloudWatch()
+    coordinator = metrics.MetricBatchCoordinator(client, coalesce_seconds=0.02)
+    client._metric_batch_coordinator = coordinator
+    barrier = Barrier(2)
+    first = _consultas(120)
+    second = _consultas(80)
+
+    def run(queries):
+        barrier.wait()
+        return metrics.collect(client, queries, start=INICIO, end=FIM)
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = list(pool.map(run, (first, second)))
+
+    assert results == [[], []]
+    assert client.chamadas == 1
+    assert client.tamanhos == [200]
+    assert all(query.values == [1.0] for query in first + second)
+
+
+def test_coordinator_does_not_mix_different_scan_order():
+    client = _CloudWatch()
+    coordinator = metrics.MetricBatchCoordinator(client, coalesce_seconds=0.02)
+    client._metric_batch_coordinator = coordinator
+    barrier = Barrier(2)
+
+    def run(scan_by):
+        barrier.wait()
+        return metrics.collect(
+            client,
+            _consultas(1),
+            start=INICIO,
+            end=FIM,
+            scan_by=scan_by,
+        )
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        list(pool.map(run, ("", "TimestampAscending")))
+
+    assert client.chamadas == 2
+
+
+def test_coordinator_reports_failed_shared_block_to_each_collector():
+    client = _CloudWatch(falhar_em={1})
+    coordinator = metrics.MetricBatchCoordinator(client, coalesce_seconds=0.02)
+    client._metric_batch_coordinator = coordinator
+    barrier = Barrier(2)
+
+    def run(_):
+        barrier.wait()
+        return metrics.collect(client, _consultas(1), start=INICIO, end=FIM)
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = list(pool.map(run, (1, 2)))
+
+    assert [len(problems) for problems in results] == [1, 1]
+
+
+def test_coordinator_records_logical_requests_and_physical_batches():
+    client = _CloudWatch()
+    telemetry = RunTelemetry()
+    coordinator = metrics.MetricBatchCoordinator(
+        client,
+        telemetry=telemetry,
+        coalesce_seconds=0.02,
+    )
+    client._metric_batch_coordinator = coordinator
+    barrier = Barrier(2)
+
+    def run(amount):
+        barrier.wait()
+        return metrics.collect(client, _consultas(amount), start=INICIO, end=FIM)
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        list(pool.map(run, (300, 300)))
+
+    assert telemetry.cloudwatch_metric_requests == 2
+    assert telemetry.cloudwatch_metric_queries == 600
+    assert telemetry.cloudwatch_metric_batches == 2
+    assert telemetry.cloudwatch_coalesced_requests == 2

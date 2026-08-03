@@ -27,7 +27,6 @@ from julius.collection.collectors.metrics import MetricQuery
 from julius.collection.collectors.s3_evidence import (
     MAX_LIST_PAGES,
     as_utc,
-    list_objects,
     parse_location,
 )
 from julius.collection.models import S3Bucket, S3MultipartUpload, S3Prefix
@@ -163,20 +162,139 @@ def collect_prefixes(
     if not alvos:
         return []
 
-    def coletar(alvo: tuple[str, str, str, str]) -> S3Prefix:
-        bucket, prefix, kind, source = alvo
-        objects, complete = list_objects(
-            s3_client, bucket, prefix, max_pages=max_pages
+    # Só a listagem completa pode compartilhar um pai. Com teto, as primeiras
+    # páginas do pai podem terminar antes da faixa lexicográfica de um filho;
+    # reaproveitá-las faria o filho parecer vazio. No full, cada chave do pai é
+    # vista e pode alimentar todos os filhos sem ser retida em memória.
+    groups = (
+        _overlapping_groups(alvos)
+        if max_pages is None
+        else [[(index, alvo)] for index, alvo in enumerate(alvos)]
+    )
+
+    def coletar(group: list[tuple[int, tuple[str, str, str, str]]]):
+        return _stream_group(s3_client, group, cutoff, max_pages=max_pages)
+
+    if workers <= 1 or len(groups) == 1:
+        resolved = [coletar(group) for group in groups]
+    else:
+        with ThreadPoolExecutor(max_workers=min(workers, len(groups))) as pool:
+            resolved = list(pool.map(coletar, groups))
+    # Ordem do inventário, não ordem dos grupos ou das respostas.
+    by_index = {index: item for group in resolved for index, item in group}
+    return [by_index[index] for index in range(len(alvos))]
+
+
+def _overlapping_groups(
+    targets: list[tuple[str, str, str, str]],
+) -> list[list[tuple[int, tuple[str, str, str, str]]]]:
+    """Agrupa filhos sob o menor prefixo pai já autorizado no inventário."""
+    groups: list[list[tuple[int, tuple[str, str, str, str]]]] = []
+    ordered = sorted(
+        enumerate(targets), key=lambda item: (item[1][0], len(item[1][1]), item[1][1])
+    )
+    for indexed in ordered:
+        _index, (bucket, prefix, _kind, _source) = indexed
+        parent = next(
+            (
+                group
+                for group in groups
+                if group[0][1][0] == bucket and prefix.startswith(group[0][1][1])
+            ),
+            None,
         )
-        return _agregar(bucket, prefix, kind, source, objects, complete, cutoff)
+        if parent is None:
+            groups.append([indexed])
+        else:
+            parent.append(indexed)
+    return groups
 
-    if workers <= 1 or len(alvos) == 1:
-        return [coletar(alvo) for alvo in alvos]
 
-    with ThreadPoolExecutor(max_workers=min(workers, len(alvos))) as pool:
-        # `map` preserva a ordem da entrada: dois scans do mesmo inventário
-        # produzem o mesmo dataset, e o diff entre eles continua legível.
-        return list(pool.map(coletar, alvos))
+def _stream_group(
+    s3_client,
+    group: list[tuple[int, tuple[str, str, str, str]]],
+    cutoff: datetime,
+    *,
+    max_pages: int | None,
+) -> list[tuple[int, S3Prefix]]:
+    if len(group) == 1:
+        index, (bucket, prefix, kind, source) = group[0]
+        return [(
+            index,
+            _stream_prefix(
+                s3_client,
+                bucket,
+                prefix,
+                kind,
+                source,
+                cutoff,
+                max_pages=max_pages,
+            ),
+        )]
+
+    root_index, (bucket, root_prefix, root_kind, root_source) = group[0]
+    aggregates = [
+        (
+            index,
+            target_prefix,
+            _PrefixAggregate(
+                target_bucket, target_prefix, target_kind, target_source, cutoff
+            ),
+        )
+        for index, (target_bucket, target_prefix, target_kind, target_source) in group
+    ]
+    token = None
+    requests = 0
+    complete = True
+    while True:
+        requests += 1
+        kwargs: dict[str, Any] = {
+            "Bucket": bucket,
+            "Prefix": root_prefix,
+            "MaxKeys": 1000,
+        }
+        if token:
+            kwargs["ContinuationToken"] = token
+        try:
+            response = s3_client.list_objects_v2(**kwargs)
+        except Exception:
+            complete = False
+            break
+        for item in response.get("Contents", []) or []:
+            key = str(item.get("Key") or "")
+            for _index, target_prefix, aggregate in aggregates:
+                if key.startswith(target_prefix):
+                    aggregate.add(item)
+        token = response.get("NextContinuationToken")
+        if not response.get("IsTruncated") or not token:
+            break
+
+    if not complete:
+        # O pai parcial não prova que um filho sem item observado esteja vazio.
+        # Releitura individual preserva a cobertura que existia antes do merge.
+        root = aggregates[0][2].finish(complete=False, requests=requests)
+        out = [(root_index, root)]
+        for index, (_target_bucket, prefix, kind, source) in group[1:]:
+            out.append((
+                index,
+                _stream_prefix(
+                    s3_client,
+                    bucket,
+                    prefix,
+                    kind,
+                    source,
+                    cutoff,
+                    max_pages=max_pages,
+                ),
+            ))
+        return out
+
+    out = []
+    for position, (index, _prefix, aggregate) in enumerate(aggregates):
+        aggregate.observe_page()
+        # Apenas o pai pagou requests; filhos foram derivados no mesmo stream.
+        out.append((index, aggregate.finish(complete=True, requests=requests if position == 0 else 0)))
+    return out
 
 
 #: Chaves de partição temporal, no estilo Hive. Cobre português porque o
@@ -212,82 +330,143 @@ def _agregar(
     cutoff: datetime,
 ) -> S3Prefix:
     """Transforma a listagem em agregado. Nenhuma chave de objeto sobe daqui."""
-    entry = S3Prefix(
-        bucket=bucket,
-        prefix=prefix,
-        kind=kind,
-        source_asset=source,
-        listing_complete=complete,
-    )
-    entry.list_requests = max(1, -(-len(objects) // 1000)) if objects else 1
-    if not objects and not complete:
-        # Listagem falhou: sem contagem, e nenhuma regra vai afirmar.
-        return entry
-    entry.object_count = len(objects)
-    entry.date_partitioned = _particionado_por_data(objects)
-    entry.total_bytes = sum(int(item.get("Size") or 0) for item in objects)
-    entry.nonzero_object_count = sum(
-        1 for item in objects if int(item.get("Size") or 0) > 0
-    )
-    entry.average_object_bytes = (
-        round(entry.total_bytes / entry.nonzero_object_count)
-        if entry.nonzero_object_count
-        else None
-    )
-
-    idades = [idade for item in objects if (idade := _age_days(item)) is not None]
-    entry.oldest_object_age_days = max(idades) if idades else None
-
-    antigos = [
-        item
-        for item in objects
-        if (modified := as_utc(item.get("LastModified"))) is not None
-        and modified < cutoff
-    ]
-    entry.stale_object_count = len(antigos)
-    entry.stale_bytes = sum(int(item.get("Size") or 0) for item in antigos)
-
-    por_classe: dict[str, float] = {}
-    contagem_classe: dict[str, int] = {}
-    por_idade: dict[str, float] = {}
-    contagem_idade: dict[str, int] = {}
-    por_tamanho: dict[str, float] = {}
-    contagem_tamanho: dict[str, int] = {}
-    classe_tamanho: dict[str, dict[str, float]] = {}
-    contagem_classe_tamanho: dict[str, dict[str, int]] = {}
+    aggregate = _PrefixAggregate(bucket, prefix, kind, source, cutoff)
+    aggregate.observe_page()
     for item in objects:
-        tamanho = int(item.get("Size") or 0)
-        # `StorageClass` vem junto no `ListObjectsV2` e era descartado; ausente
-        # significa STANDARD, que é como a própria API o omite.
-        classe = str(item.get("StorageClass") or "STANDARD")
-        por_classe[classe] = por_classe.get(classe, 0.0) + tamanho
-        contagem_classe[classe] = contagem_classe.get(classe, 0) + 1
-        faixa_tamanho = size_bucket(tamanho)
-        por_tamanho[faixa_tamanho] = por_tamanho.get(faixa_tamanho, 0.0) + tamanho
-        contagem_tamanho[faixa_tamanho] = (
-            contagem_tamanho.get(faixa_tamanho, 0) + 1
+        aggregate.add(item)
+    requests = max(1, -(-len(objects) // 1000)) if objects else 1
+    return aggregate.finish(complete=complete, requests=requests)
+
+
+def _stream_prefix(
+    s3_client,
+    bucket: str,
+    prefix: str,
+    kind: str,
+    source: str,
+    cutoff: datetime,
+    *,
+    max_pages: int | None,
+) -> S3Prefix:
+    """Agrega página a página; memória não cresce com o total de objetos."""
+    aggregate = _PrefixAggregate(bucket, prefix, kind, source, cutoff)
+    token = None
+    requests = 0
+    complete = True
+    page_number = 0
+    while max_pages is None or page_number < max_pages:
+        page_number += 1
+        requests += 1
+        kwargs: dict[str, Any] = {"Bucket": bucket, "Prefix": prefix, "MaxKeys": 1000}
+        if token:
+            kwargs["ContinuationToken"] = token
+        try:
+            response = s3_client.list_objects_v2(**kwargs)
+        except Exception:
+            complete = False
+            break
+        aggregate.observe_page()
+        for item in response.get("Contents", []) or []:
+            aggregate.add(item)
+        token = response.get("NextContinuationToken")
+        if not response.get("IsTruncated") or not token:
+            break
+    else:
+        complete = False
+    return aggregate.finish(complete=complete, requests=requests)
+
+
+class _PrefixAggregate:
+    """Acumulador sem chaves: retém apenas contagens e somas normalizadas."""
+
+    def __init__(
+        self,
+        bucket: str,
+        prefix: str,
+        kind: str,
+        source: str,
+        cutoff: datetime,
+    ) -> None:
+        self.entry = S3Prefix(
+            bucket=bucket,
+            prefix=prefix,
+            kind=kind,
+            source_asset=source,
         )
-        classe_tamanho.setdefault(classe, {})[faixa_tamanho] = (
-            classe_tamanho.setdefault(classe, {}).get(faixa_tamanho, 0.0)
-            + tamanho
+        # Inicialização explícita mantém o contrato "campo medido tem escritor"
+        # verificável por AST, além de garantir um acumulador novo por prefixo.
+        self.entry.bytes_by_size = {}
+        self.entry.object_count_by_size = {}
+        self.entry.bytes_by_class_size = {}
+        self.entry.object_count_by_class_size = {}
+        self.cutoff = cutoff
+        self.observed = False
+
+    def observe_page(self) -> None:
+        if self.observed:
+            return
+        self.observed = True
+        self.entry.object_count = 0
+        self.entry.total_bytes = 0
+        self.entry.nonzero_object_count = 0
+        self.entry.stale_object_count = 0
+        self.entry.stale_bytes = 0
+
+    def add(self, item: dict) -> None:
+        self.observe_page()
+        entry = self.entry
+        size = int(item.get("Size") or 0)
+        entry.object_count = int(entry.object_count or 0) + 1
+        entry.total_bytes = int(entry.total_bytes or 0) + size
+        if size > 0:
+            entry.nonzero_object_count = int(entry.nonzero_object_count or 0) + 1
+        key = str(item.get("Key") or "")
+        entry.date_partitioned = entry.date_partitioned or bool(
+            _PARTICAO_TEMPORAL.search(key)
         )
-        contagem_classe_tamanho.setdefault(classe, {})[faixa_tamanho] = (
-            contagem_classe_tamanho.setdefault(classe, {}).get(faixa_tamanho, 0)
-            + 1
+        age = _age_days(item)
+        if age is not None:
+            entry.oldest_object_age_days = max(
+                entry.oldest_object_age_days or age, age
+            )
+            age_range = age_bucket(age)
+            entry.bytes_by_age[age_range] = (
+                entry.bytes_by_age.get(age_range, 0.0) + size
+            )
+            entry.object_count_by_age[age_range] = (
+                entry.object_count_by_age.get(age_range, 0) + 1
+            )
+        modified = as_utc(item.get("LastModified"))
+        if modified is not None and modified < self.cutoff:
+            entry.stale_object_count = int(entry.stale_object_count or 0) + 1
+            entry.stale_bytes = int(entry.stale_bytes or 0) + size
+
+        storage_class = str(item.get("StorageClass") or "STANDARD")
+        entry.bytes_by_class[storage_class] = (
+            entry.bytes_by_class.get(storage_class, 0.0) + size
         )
-        if (idade := _age_days(item)) is not None:
-            faixa = age_bucket(idade)
-            por_idade[faixa] = por_idade.get(faixa, 0.0) + tamanho
-            contagem_idade[faixa] = contagem_idade.get(faixa, 0) + 1
-    entry.bytes_by_class = por_classe
-    entry.object_count_by_class = contagem_classe
-    entry.bytes_by_age = por_idade
-    entry.object_count_by_age = contagem_idade
-    entry.bytes_by_size = por_tamanho
-    entry.object_count_by_size = contagem_tamanho
-    entry.bytes_by_class_size = classe_tamanho
-    entry.object_count_by_class_size = contagem_classe_tamanho
-    return entry
+        entry.object_count_by_class[storage_class] = (
+            entry.object_count_by_class.get(storage_class, 0) + 1
+        )
+        size_range = size_bucket(size)
+        entry.bytes_by_size[size_range] = entry.bytes_by_size.get(size_range, 0.0) + size
+        entry.object_count_by_size[size_range] = (
+            entry.object_count_by_size.get(size_range, 0) + 1
+        )
+        class_bytes = entry.bytes_by_class_size.setdefault(storage_class, {})
+        class_bytes[size_range] = class_bytes.get(size_range, 0.0) + size
+        class_count = entry.object_count_by_class_size.setdefault(storage_class, {})
+        class_count[size_range] = class_count.get(size_range, 0) + 1
+
+    def finish(self, *, complete: bool, requests: int) -> S3Prefix:
+        entry = self.entry
+        entry.listing_complete = complete
+        entry.list_requests = max(0, requests)
+        if self.observed and entry.nonzero_object_count:
+            entry.average_object_bytes = round(
+                int(entry.total_bytes or 0) / entry.nonzero_object_count
+            )
+        return entry
 
 
 def collect_multipart_uploads(

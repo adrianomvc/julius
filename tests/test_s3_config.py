@@ -13,6 +13,9 @@ saber se são lidos".
 
 from __future__ import annotations
 
+from threading import Lock
+from time import sleep
+
 import boto3
 import pytest
 from botocore.stub import Stubber
@@ -280,9 +283,21 @@ def test_the_same_missing_permission_is_reported_once_not_once_per_bucket():
             _negar(stub, "get_bucket_metadata_configuration")
 
         gaps: list[str] = []
-        collect_bucket_configs(s3, names=["a", "b", "c"], gaps=gaps)
+        iam_gaps = {}
+        collect_bucket_configs(
+            s3,
+            names=["a", "b", "c"],
+            gaps=gaps,
+            iam_gaps=iam_gaps,
+        )
 
     assert gaps.count("get_bucket_logging: permission_denied") == 1
+    logging = iam_gaps[("get_bucket_logging", "permission_denied")]
+    assert logging.iam_action == "s3:GetBucketLogging"
+    assert logging.affected_resources == 3
+    assert logging.examples == ["a", "b", "c"]
+    metadata = iam_gaps[("get_bucket_metadata_configuration", "permission_denied")]
+    assert metadata.iam_action == "s3:GetBucketMetadataTableConfiguration"
 
 
 def test_the_buckets_that_cannot_prove_a_read_are_named():
@@ -293,3 +308,34 @@ def test_the_buckets_that_cannot_prove_a_read_are_named():
     ]
 
     assert buckets_without_access_evidence(configs) == ["cego", "tambem-cego"]
+
+
+class _ConcurrentS3:
+    def __init__(self):
+        self.active = 0
+        self.peak = 0
+        self.lock = Lock()
+
+    def __getattr__(self, operation):
+        def call(**_kwargs):
+            with self.lock:
+                self.active += 1
+                self.peak = max(self.peak, self.active)
+            sleep(0.005)
+            with self.lock:
+                self.active -= 1
+            if operation == "get_bucket_lifecycle_configuration":
+                return {"Rules": []}
+            return {}
+
+        return call
+
+
+def test_bucket_configurations_overlap_latency_but_keep_input_order():
+    client = _ConcurrentS3()
+    names = [f"bucket-{index}" for index in range(12)]
+
+    configs = collect_bucket_configs(client, names=names, workers=4)
+
+    assert [config.bucket for config in configs] == names
+    assert client.peak > 1
