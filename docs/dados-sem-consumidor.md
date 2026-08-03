@@ -29,7 +29,6 @@ lê o campo. A distinção é editorial e mora aqui.
 | `AthenaQuery.p50_ms`, `p95_ms` | **não** viram cifra: o Athena on-demand cobra por bytes lidos, não por tempo, e uma regra que transformasse latência em dinheiro estaria inventando o mecanismo. Servem como evidência de impacto num achado que já tem cifra própria — a pressão de fila das reservas as regras de capacidade já leem, por `query_queue_p95_ms` | **ligado** como evidência |
 | `StateMachine.duration_p95_ms` | uma máquina cujo p95 passa de 300 s tem execuções que o Express mataria, mesmo com média dentro do limiar — vira motivo em `express_blockers` | ligado, mas **continua na lista**: quem o consome é a própria coleta, e o guard só conta leitor a jusante — é balde (b), não (a) |
 | `GlueJob.max_execution_sec` | piso do timeout sugerido por `GLUE-TIMEOUT-EXCESSIVE`: dobrar o p95 podia propor um limite abaixo de uma execução que a janela registrou completando, e aplicá-lo cortaria um pico legítimo | **ligado** |
-| `GlueJob.bytes_written_window` | sem mecanismo de cobrança que sustente afirmação — o Glue cobra DPU-hora, não bytes escritos. Candidato ao balde (c) na próxima revisão, junto da chamada que o preenche | pendente |
 
 ### (b) Intermediário legítimo da coleta
 
@@ -43,6 +42,7 @@ auditoria os classifica como mortos de novo.
 | `AthenaQuery.exact_fingerprint` | agregação de padrões em `collectors/athena/aggregate.py` |
 | `CollectionHealth.started_at`, `completed_at` | janela da própria coleta, exibida via resumo |
 | `StateMachine.definition_available`, `execution_history_available` | distinguem "não usa" de "não foi lido" dentro da coleta |
+| `GlueJob.bytes_written_window` | `average_output_file_bytes`, a propriedade que decide se o job produz arquivo pequeno — o Glue cobra DPU-hora, não bytes escritos, então sozinho o campo não sustenta afirmação nenhuma |
 | `StateMachine.duration_p95_ms` | `_apply_measured_express_blocker`, que o converte em motivo de bloqueio do Express |
 
 ### (c) Custo puro — removido
