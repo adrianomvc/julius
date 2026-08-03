@@ -91,21 +91,21 @@ def collect_technical_artifacts(
                 }
             )
 
-    for job in account.sagemaker_jobs:
-        if not job.code_location:
+    for sagemaker_job in account.sagemaker_jobs:
+        if not sagemaker_job.code_location:
             continue
         try:
             content, truncated = _read_code(
                 s3,
-                job.code_location,
-                entry_point=job.code_entry_point,
+                sagemaker_job.code_location,
+                entry_point=sagemaker_job.code_entry_point,
                 max_bytes=max_bytes,
             )
             bundle.artifacts.append(
                 TechnicalArtifact(
                     kind="sagemaker_script",
-                    asset_name=job.name,
-                    source=job.code_location,
+                    asset_name=sagemaker_job.name,
+                    source=sagemaker_job.code_location,
                     content=content,
                     truncated=truncated,
                 )
@@ -114,7 +114,7 @@ def collect_technical_artifacts(
             bundle.errors.append(
                 {
                     "kind": "sagemaker_script",
-                    "asset_name": job.name,
+                    "asset_name": sagemaker_job.name,
                     "error": type(exc).__name__,
                 }
             )
