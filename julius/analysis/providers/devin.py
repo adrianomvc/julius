@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from julius.analysis.guardrails import build_devin_prompt
+from julius.analysis.guardrails import build_agent_prompt
 from julius.analysis.providers.base import AnalysisProvider, Workspace
 from julius.analysis.response_validator import ContextualAnalysis
 from julius.analysis.workspace import collect_result, write_package
@@ -23,7 +23,9 @@ class DevinProvider(AnalysisProvider):
             analysis,
             workspace,
             top=top,
-            instructions=build_devin_prompt,
+            instructions=lambda context, **kwargs: build_agent_prompt(
+                context, host="devin", **kwargs
+            ),
         )
 
     def collect(self, workspace: Workspace) -> ContextualAnalysis:

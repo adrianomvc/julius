@@ -33,8 +33,14 @@ RAIZ = Path(__file__).resolve().parents[2]
 CANONICO = RAIZ / "docs" / "ai"
 
 #: Host → onde o artefato daquele host é instalado no repositório.
+#:
+#: Acrescentar um host é acrescentar uma linha aqui e um bloco em
+#: `docs/ai/hosts/`. Nada de conteúdo se duplica: o corpo canônico é o mesmo nos
+#: dois artefatos, e um teste cobra essa igualdade. Foi essa a razão de inverter
+#: a direção fonte → artefato, e é aqui que ela se paga.
 HOSTS = {
     "devin": RAIZ / ".agents" / "skills",
+    "claude": RAIZ / ".claude" / "skills",
 }
 
 _AVISO = (

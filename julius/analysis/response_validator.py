@@ -1,4 +1,4 @@
-"""Contrato estruturado da análise contextual produzida pelo Devin."""
+"""Contrato estruturado da análise contextual, igual para qualquer provedor."""
 
 from __future__ import annotations
 
@@ -24,7 +24,7 @@ _EVIDENCE_REF_SCHEMA: dict = {
     },
 }
 
-DEVIN_OUTPUT_SCHEMA: dict = {
+ANALYSIS_OUTPUT_SCHEMA: dict = {
     "type": "object",
     "additionalProperties": False,
     "required": [
@@ -240,6 +240,11 @@ DEVIN_OUTPUT_SCHEMA: dict = {
         },
     },
 }
+
+#: Nome antigo, de quando havia um host só. O schema nunca foi do Devin — é o
+#: contrato de saída da análise contextual, igual para qualquer provedor. Fica
+#: como alias porque quebrar um import por causa de um nome não paga.
+DEVIN_OUTPUT_SCHEMA = ANALYSIS_OUTPUT_SCHEMA
 
 _LIST_FIELDS = (
     "implementation_steps",

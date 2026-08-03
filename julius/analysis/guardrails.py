@@ -179,15 +179,29 @@ O que procurar, por tipo de ativo:
 {questions}"""
 
 
-def build_devin_prompt(
+#: Onde cada host encontra a Skill instalada. É a única coisa que muda no
+#: briefing entre um host e outro — o resto do texto vem do mesmo lugar, e
+#: manter essa lista curta é o que impede o prompt de virar host-específico.
+SKILL_PATH_BY_HOST = {
+    "devin": ".agents/skills/julius-aws-analysis/SKILL.md",
+    "claude": ".claude/skills/julius-aws-analysis/SKILL.md",
+    "manual": "docs/ai/skills/julius-aws-analysis/SKILL.md",
+}
+
+
+def build_agent_prompt(
     context: AgentContext,
     *,
     context_file: str = "context.json",
     schema_file: str = "output-schema.json",
     result_file: str = "result.json",
+    host: str = "devin",
 ) -> str:
     ativos = asset_types_in_context(context.opportunities, context.signals)
+    skill_path = SKILL_PATH_BY_HOST.get(host, SKILL_PATH_BY_HOST["manual"])
     return f"""Você está executando a Skill Julius AWS Analysis, prompt v{PROMPT_VERSION}.
+
+Skill deste host: {skill_path}
 
 Objetivo: enriquecer contextualmente as oportunidades determinísticas do Julius
 e julgar os sinais que ele não consegue fechar sozinho.
@@ -212,6 +226,12 @@ Depois de produzir `{result_file}`, execute:
 
     julius agent validate --context {context_file} --result {result_file}
 """
+
+
+#: Nome antigo, quando havia um host só. Mantido porque `build_devin_prompt` é
+#: importado em `julius/analysis/__init__.py` e citado em teste; remover agora
+#: seria quebrar chamador por causa de um nome.
+build_devin_prompt = build_agent_prompt
 
 
 def build_manual_instructions(

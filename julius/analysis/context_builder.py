@@ -1,4 +1,4 @@
-"""Pacote mínimo, auditável e sem credenciais enviado ao agente Devin."""
+"""Pacote mínimo, auditável e sem credenciais entregue ao provedor de análise."""
 
 from __future__ import annotations
 
