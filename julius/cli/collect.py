@@ -99,6 +99,14 @@ def collect(
             "total gasto aparece na saúde da coleta."
         ),
     ),
+    s3_inventory: bool = typer.Option(
+        False,
+        "--s3-inventory",
+        help=(
+            "Consome S3 Inventory CSV já configurado para acelerar prefixos; "
+            "manifesto ausente ou incompatível mantém o fallback atual."
+        ),
+    ),
     sagemaker_full_metrics: bool = typer.Option(
         False,
         "--sagemaker-full-metrics",
@@ -259,6 +267,7 @@ def collect(
             datawarm_job=datawarm_job,
             catalog_scope=scope,
             s3_full_listing=s3_full_listing,
+            s3_inventory=s3_inventory,
             sagemaker_full_metrics=sagemaker_full_metrics,
             scope_policy=policy,
             max_scan_cost_usd=max_scan_cost,

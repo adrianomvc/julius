@@ -38,6 +38,7 @@ IAM_ACTIONS: dict[str, str] = {
     "list_bucket_intelligent_tiering_configurations": (
         "s3:GetIntelligentTieringConfiguration"
     ),
+    "list_bucket_inventory_configurations": "s3:GetInventoryConfiguration",
     "list_crawls": "glue:ListCrawls",
     "list_executions": "states:ListExecutions",
     "list_job_runs": "databrew:ListJobRuns",

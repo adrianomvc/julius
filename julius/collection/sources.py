@@ -30,6 +30,7 @@ from julius.collection.collectors import (
     s3_access,
     s3_config,
     s3_cost,
+    s3_inventory,
     sagemaker,
     sagemaker_cost,
     sagemaker_extended,
@@ -49,7 +50,7 @@ from julius.collection.collectors.glue import (
     triggers,
 )
 from julius.collection.collectors.metrics import MetricBatchCoordinator
-from julius.collection.collectors.s3_evidence import MAX_LIST_PAGES
+from julius.collection.collectors.s3_evidence import MAX_LIST_PAGES, parse_location
 from julius.collection.health import CollectionRecorder, RequiredCollectionError
 from julius.collection.iam import gaps_from_text
 from julius.collection.models import Account, CollectionHealth, IamGap, S3BucketConfig
@@ -101,6 +102,9 @@ class CollectionContext:
     # responde "pelo menos X GB", e é o operador que decide pagar pela resposta
     # exata. Ver `S3 Prefixes` em `SOURCES`.
     s3_full_listing: bool = False
+    # Consome somente S3 Inventory já configurado; incompatibilidade mantém o
+    # fallback atual por ListObjectsV2.
+    s3_inventory: bool = False
     # Inventário de jobs é sempre completo; esta opção remove o limite de 100
     # jobs com métricas CloudWatch detalhadas.
     sagemaker_full_metrics: bool = False
@@ -680,19 +684,40 @@ def _collect_s3_prefixes(ctx: CollectionContext) -> list:
         conhecidos = [item for item in _s3_scope(ctx) if item[1] == kind]
         if not conhecidos:
             continue
-        out.extend(
-            s3.collect_prefixes(
+        ordem = list(conhecidos)
+        coletados: list = []
+        if ctx.s3_inventory:
+            inventory, conhecidos = s3_inventory.collect_prefixes(
                 client,
                 known=conhecidos,
                 window=ctx.window,
                 stale_after_days=stale_after,
-                max_pages=None if ctx.s3_full_listing else MAX_LIST_PAGES,
-                # O teto de páginas limita custo e cobertura; concorrência só
-                # sobrepõe a latência de prefixos independentes e não cria uma
-                # chamada adicional. Por isso vale também no modo limitado.
-                workers=S3_LISTING_WORKERS,
+                gaps=ctx.gaps,
             )
-        )
+            coletados.extend(inventory)
+        if conhecidos:
+            coletados.extend(
+                s3.collect_prefixes(
+                    client,
+                    known=conhecidos,
+                    window=ctx.window,
+                    stale_after_days=stale_after,
+                    max_pages=None if ctx.s3_full_listing else MAX_LIST_PAGES,
+                    # O teto limita custo e cobertura; concorrência apenas
+                    # sobrepõe latência de prefixos independentes.
+                    workers=S3_LISTING_WORKERS,
+                )
+            )
+        por_alvo = {
+            (item.bucket, item.prefix, item.kind, item.source_asset): item
+            for item in coletados
+        }
+        for location, target_kind, source in ordem:
+            parsed = parse_location(location)
+            if parsed is not None:
+                item = por_alvo.get((parsed[0], parsed[1], target_kind, source))
+                if item is not None:
+                    out.append(item)
     return out
 
 

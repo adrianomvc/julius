@@ -120,6 +120,9 @@ OPERACOES_PERMITIDAS = {
     "list_parts",
     "get_object",
     "get_bucket_versioning",
+    # Descobre somente configurações de Inventory já habilitadas. O Julius lê
+    # seus manifestos; nunca chama PutBucketInventoryConfiguration.
+    "list_bucket_inventory_configurations",
     # S3 — configuração declarada do bucket. Lê o que está **ligado**, nunca
     # liga nada: o S3 não expõe último acesso por objeto, e sem saber se há
     # server access logs, Storage Lens, Storage Class Analysis ou

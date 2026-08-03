@@ -343,9 +343,9 @@ O trabalho de performance continua nesta ordem:
 ### P1 — S3 em contas grandes
 
 - manter streaming e deduplicação de prefixos já implementados;
-- adicionar adapter para S3 Inventory já existente;
-- incluir futuramente `s3:GetInventoryConfiguration` somente quando o adapter
-  estiver implementado e o time aprovar essa cobertura;
+- adapter opt-in para S3 Inventory CSV já existente implementado localmente;
+- mapear `s3:GetInventoryConfiguration`, mantendo a chamada desativada sem
+  `--s3-inventory` e a homologação real sujeita à aprovação humana;
 - nunca criar ou alterar Inventory;
 - validar idade, manifesto, schema, bucket e prefixo antes de consumir;
 - Inventory incompatível ou atrasado vira parcial e recua para o modo autorizado.
@@ -463,7 +463,7 @@ homologação na mesma conta, janela e cobertura.
 | P1 | Concorrência S3 Config sem contaminação | Implementada localmente |
 | P1 | Evitar repetição de negação global comprovada | Planejado; exige prova segura |
 | P1 | Batching global CloudWatch | Planejado após IAM-1/IAM-3 |
-| P1 | S3 Inventory existente | Planejado |
+| P1 | S3 Inventory existente | Implementado localmente; homologação pendente |
 | P2 | Expandir snapshots elegíveis | Parcial: `S3 Config` pronto |
 | P2 | Checkpoints por domínio e retomada | Parcial: `RunStore` pronto |
 | P2 | Worker assíncrono e merge da IA | Planejado |
@@ -472,7 +472,7 @@ homologação na mesma conta, janela e cobertura.
 
 ## 14. Próxima execução de implementação
 
-1. concluir a homologação local de concorrência e papéis Athena;
-2. definir uma prova segura ou manifesto explícito para negação IAM global;
-3. iniciar o planejador global CloudWatch;
-4. homologar a policy read-only na conta somente com aprovação humana.
+1. antecipar artefatos por domínio enquanto fontes lentas continuam coletando;
+2. separar worker/merge da IA do pool boto3;
+3. expandir snapshots e retomada incremental por domínio;
+4. homologar Inventory e a policy read-only na conta somente com aprovação humana.
