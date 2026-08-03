@@ -4,7 +4,7 @@
 > portfólio é alterado por este documento.
 >
 > **Estado de execução:** as **Ondas 1 a 11 foram implementadas em 2026-08-03** — ver §34.
-> O plano está executado. Os trechos que descrevem P4 e D1 ficaram como
+> O plano está executado, mais duas decisões pendentes fechadas (4 e 8). Os trechos que descrevem P4 e D1 ficaram como
 > registro histórico, marcados **[Resolvido]**.
 >
 > **Base analisada:** Julius na branch `agent/pending-followups` (contém `origin/main`,
@@ -1810,8 +1810,9 @@ do relatório mantendo-os no `result.json` para auditoria.
 3. **Granularidade de versão.** `PROMPT_VERSION` passa a versionar Skill, playbook, contrato
    de estimativa e schema juntos, ou cada um ganha versão própria? A resposta muda o
    `estimate_id` (§17).
-4. **`AGENTS.md` em português.** Traduzir muda o arquivo que hosts de terceiros leem por
-   convenção aberta. Traduzir, manter em inglês, ou manter os dois?
+4. ~~**`AGENTS.md` em português.**~~ **Resolvido: traduzido em 2026-08-03**, seguindo a
+   decisão de idioma dada no início ("tudo em português, iterações e MDs"). O arquivo ganhou
+   também a tabela de artefatos por host e a regra de conteúdo externo.
 5. **Quais 3 `rule_id` abrem a Onda 7.** A proposta é `GLUE-CODE-PYTHON-UDF`,
    `GLUE-CODE-DRIVER-MATERIALIZATION` e `SM-CODE-FIXED-EPOCHS` — os três com baseline mais
    confiável e mecanismo de cobrança mais direto. Precisa de confirmação.
@@ -1819,8 +1820,11 @@ do relatório mantendo-os no `result.json` para auditoria.
    não o consome. Entra no roadmap ou sai da lista?
 7. **Alfred como referência viva ou congelada.** Congelar na v2.0.0 dá reprodutibilidade;
    acompanhar dá correções. A proposta é congelar e revisar por decisão explícita.
-8. **`suspected_injections` (§27).** Campo novo no schema de saída, ou registro só em log?
-   Campo no schema custa uma versão de contrato.
+8. ~~**`suspected_injections` (§27).**~~ **Resolvido em 2026-08-03: campo no schema.**
+   A alternativa (log) foi descartada porque a regra em `docs/ai/precedencia.md` mandava
+   registrar e não havia onde — prosa sem quem a cumprisse. O campo é **obrigatório**: lista
+   vazia afirma "procurei e não achei", e a ausência se leria como "não procurei", que é o
+   default perigoso. Custou atualizar duas fixtures de teste.
 9. **Habilitar fonte de acesso é infraestrutura?** *(surgiu na Onda 2)* O sinal
    `S3-STORAGE-CLASS-TRANSITION` lista em `missing_evidence` o que ligar para obter
    evidência de leitura — *"server access logging, Storage Lens advanced, Storage Class

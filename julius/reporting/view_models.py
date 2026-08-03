@@ -424,6 +424,11 @@ class ReportViewModel:
     signals: list[dict] = field(default_factory=list)
     ai_signal_verdicts: list[dict] = field(default_factory=list)
     ai_uncovered_findings: list[dict] = field(default_factory=list)
+    #: Instrução dirigida ao agente encontrada dentro de um artefato analisado.
+    #: Não é achado de custo: é registro de que alguém escreveu aquilo ali. O
+    #: texto é dado hostil por definição e o template o escapa como qualquer
+    #: outro conteúdo — ele nunca é reinterpretado como instrução.
+    ai_suspected_injections: list[dict] = field(default_factory=list)
     ai_investigations: list[dict] = field(default_factory=list)
     athena_coverage: dict = field(default_factory=dict)
     athena_queries: list[dict] = field(default_factory=list)
