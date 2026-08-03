@@ -28,6 +28,36 @@ _LOW = 0.4
 _EXPECTED = 0.7
 
 
+def potential_from_estimate(
+    estimation,
+    *,
+    basis: str,
+    caveat: str,
+) -> PotentialRange | None:
+    """Faixa a partir de um cálculo que o motor já sabe fazer.
+
+    Alguns sinais não existem porque o dinheiro é desconhecido — existem porque
+    falta confiança de que a condição **persiste**. `SM-APP-IDLE-CANDIDATE` é o
+    caso: `idle_hours_per_day` é medido, o custo do app é rateado, e
+    `idle_app_saving` fecha a conta. O que `_financial_ready` recusa é a
+    persistência, não a aritmética.
+
+    Aí a fração não é arbitrada: o teto é o próprio cálculo do motor, e o que a
+    faixa abre para baixo é a chance de o padrão não se sustentar na janela
+    seguinte. Isso é diferente de multiplicar custo por uma constante escolhida
+    à mão, e é por isso que existe uma função separada em vez de `fraction=1.0`
+    passado de canto.
+    """
+    if estimation is None or getattr(estimation, "saving_quality", "") == "unavailable":
+        return None
+    return potential(
+        getattr(estimation, "estimated_saving", 0.0),
+        fraction=1.0,
+        basis=basis,
+        caveat=caveat,
+    )
+
+
 def potential(
     baseline: float | None,
     *,

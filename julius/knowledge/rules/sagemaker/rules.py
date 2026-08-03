@@ -22,6 +22,7 @@ from julius.findings.opportunity import Opportunity
 from julius.findings.recommendation import Recommendation
 from julius.findings.signal import Signal
 from julius.knowledge.rules.sagemaker import estimation as sm_est
+from julius.knowledge.signal_potential import potential_from_estimate
 
 _DOC_IDLE = (
     "https://docs.aws.amazon.com/sagemaker/latest/dg/"
@@ -702,6 +703,7 @@ def signals(account: Account, config: Config) -> list[Signal]:
                         "O padrão permanece após 90 dias ou três scans mensais?",
                         ["histórico de 90 dias ou três scans consistentes"],
                         [_DOC_IDLE],
+                        sm_est.idle_app_saving(app, config),
                     )
                 )
             out.append(_app_fit_signal(app))
@@ -732,6 +734,7 @@ def signals(account: Account, config: Config) -> list[Signal]:
                     ),
                     ["necessidade dos dados, backup e aprovação do owner"],
                     [_DOC_SPACE_STORAGE],
+                    sm_est.space_storage_saving(space, config),
                 )
             )
 
@@ -770,6 +773,7 @@ def signals(account: Account, config: Config) -> list[Signal]:
                         "90 dias ou três scans consistentes",
                     ],
                     [_DOC_SPACE_STORAGE, _DOC_EFS_METRICS],
+                    sm_est.domain_storage_saving(domain, config),
                 )
             )
 
@@ -791,6 +795,9 @@ def signals(account: Account, config: Config) -> list[Signal]:
                     "O tráfego continua zero após 90 dias ou três scans?",
                     ["histórico de 90 dias ou três scans consistentes"],
                     [_DOC_METRICS],
+                    sm_est.endpoint_idle_saving(
+                        endpoint, config, "sm_endpoint_zero_traffic_v1"
+                    ),
                 )
             )
         if _endpoint_low_utilization(endpoint, config):
@@ -1084,7 +1091,20 @@ def _signal(
     question: str,
     missing: list[str],
     docs: list[str],
+    estimation=None,
 ) -> Signal:
+    """`estimation` entra só quando o motor já sabe fazer a conta do ativo.
+
+    Nem todo sinal daqui é uma incógnita financeira. Vários existem porque falta
+    confiança de que a condição **persiste** — `_financial_ready` recusa por
+    cobertura curta ou por scan único, não porque o dinheiro seja desconhecido.
+    Nesses, a faixa vem do próprio estimador determinístico e o que ela abre
+    para baixo é a chance de o padrão não se repetir.
+
+    Onde não há estimador — versão de runtime, resize de cluster —, o argumento
+    fica de fora, e o sinal segue sem faixa. Arbitrar uma fração ali seria
+    inventar o número que este produto passou a rodada inteira removendo.
+    """
     return Signal(
         kind="config",
         rule_id=rule_id,
@@ -1094,4 +1114,12 @@ def _signal(
         question=question,
         missing_evidence=missing,
         doc_links=docs,
+        potential_range=potential_from_estimate(
+            estimation,
+            basis="cálculo determinístico do ativo sobre custo rateado",
+            caveat=(
+                "condicionada à persistência do padrão: o valor é o que o motor "
+                "calcularia hoje, não o que a próxima janela vai confirmar"
+            ),
+        ),
     )
