@@ -20,7 +20,7 @@ from julius.analysis.context_builder import AgentContext
 from julius.analysis.playbook import asset_types_in_context
 from julius.analysis.playbook import render as render_playbooks
 
-PROMPT_VERSION = "1.10.0"
+PROMPT_VERSION = "2.0.0"
 
 #: As regras em si, separadas do texto que as apresenta — o validador de
 #: resposta verifica o resultado das mesmas restrições.
@@ -106,6 +106,36 @@ def _estimation_methods() -> str:
     return "\n".join(linhas)
 
 
+def _generative_eligibility() -> str:
+    """Onde não há fórmula, e mesmo assim há o que dizer sobre grandeza.
+
+    Lida da mesma fonte que o motor consulta, pelo mesmo motivo de
+    `_estimation_methods`: uma lista escrita à mão aqui envelhece sem avisar. E
+    quando o mapa está vazio a funcionalidade some do briefing junto — desligar é
+    esvaziar o mapa, sem tocar em texto.
+    """
+    from julius.knowledge.generative_estimation import eligible, eligible_rule_ids
+
+    elegiveis = eligible_rule_ids()
+    if not elegiveis:
+        return ""
+    linhas = [
+        "",
+        "   Para estes, e só estes, não existe fórmula no motor e você pode devolver",
+        "   `contextual_estimate` — uma faixa com raciocínio, entradas nomeadas, plano",
+        "   de validação e documentação oficial. O baseline vem do pacote e não se",
+        "   propõe; a faixa nunca passa dele; e nada disso entra no total oficial:",
+    ]
+    for rule_id in elegiveis:
+        candidato = eligible(rule_id)
+        assert candidato is not None  # vem de `eligible_rule_ids`
+        linhas.append(
+            f"   - `{rule_id}` → cobrança por `{candidato.mechanism}`; "
+            f"sem fórmula porque {candidato.why_no_formula}"
+        )
+    return "\n".join(linhas)
+
+
 def _division_of_labour(asset_types: set[str] | None = None) -> str:
     """O texto que separa o que já está resolvido do que falta responder.
 
@@ -137,6 +167,7 @@ Suas quatro tarefas, nesta ordem:
    cenário, nunca o número:
 
 {_estimation_methods()}
+{_generative_eligibility()}
 2. Enriquecer as oportunidades determinísticas: causa provável a partir da
    evidência citada, passos, dependências, conflitos e ordem de implementação.
 3. Escolher o lado quando a recomendação admite dois caminhos, dizendo quem

@@ -3,8 +3,8 @@
 > **Escopo desta versão:** análise e proposta. Nenhum schema, regra financeira ou item do
 > portfólio é alterado por este documento.
 >
-> **Estado de execução:** as **Ondas 1, 2, 3, 4, 5, 6 e 8 foram implementadas em 2026-08-03**
-> — ver §34. As Ondas 7, 9, 10 e 11 continuam propostas. Os trechos que descrevem P4 e D1 ficaram como
+> **Estado de execução:** as **Ondas 1 a 8 foram implementadas em 2026-08-03** — ver §34.
+> As Ondas 9, 10 e 11 continuam propostas. Os trechos que descrevem P4 e D1 ficaram como
 > registro histórico, marcados **[Resolvido]**.
 >
 > **Base analisada:** Julius na branch `agent/pending-followups` (contém `origin/main`,
@@ -1589,7 +1589,7 @@ regex e acusou a própria mensagem de erro que **reporta** a violação
 que o código faz.
 **Rollback:** as guardas são verificações adicionais; desligá-las restaura o comportamento.
 
-### Onda 7 — Estimativa contextual generativa
+### Onda 7 — Estimativa contextual generativa ✅ **CONCLUÍDA em 2026-08-03**
 
 **Objetivo:** eliminar P7. Criar `julius-signal-economic-analysis` e o tipo
 `GENERATIVE_CONTEXTUAL_ESTIMATE`.
@@ -1605,9 +1605,28 @@ poder receber faixa contextual.
 `portfolio_eligibility = "not_eligible"` é constante neste tipo, e há teste dedicado.
 **Compatibilidade:** `prompt_version` sobe para maior; pacotes anteriores são recusados,
 como já acontece na transição 1.0 → 1.x documentada no `README.md`.
-**Testes:** os 17 evals; e um teste específico de que nenhuma estimativa deste tipo aparece
-em `identified_monthly`, no realizável ou no ranking — espelhando
-`test_signal_range_never_enters_portfolio.py`.
+**Testes (implementados):** 28 em `tests/test_generative_estimate.py`.
+Suíte: 935 passed (era 907).
+
+O que mais importa: `test_a_generative_estimate_never_enters_the_portfolio`, espelhando
+`test_signal_range_never_enters_portfolio` de propósito — mesma trava, caminho novo. E dois
+testes de rollback: esvaziar `_ELEGIVEIS` desliga o motor **e** apaga o bloco do briefing,
+porque um rollback que alcança só o que o motor aceita deixa a IA continuando a oferecer o
+que ninguém mais recebe.
+
+**Decisão pendente 5 resolvida.** Os três `rule_id` piloto são os que o plano propunha:
+`GLUE-CODE-PYTHON-UDF`, `GLUE-CODE-DRIVER-MATERIALIZATION` e `SM-CODE-FIXED-EPOCHS`.
+Verificados um a um: os três existem como sinal, e ambos os construtores
+(`glue/code/rules.py::_code_signal` e `sagemaker/code.py::_code_signal`) já resolvem baseline
+real. `test_no_eligible_rule_also_has_a_deterministic_method` garante que nenhum deles esteja
+também em `_ALLOWED` — havendo fórmula, o caminho é o cenário, e deixar o `rule_id` nos dois
+mapas faria a IA escolher entre dar o cenário e dar o número, escolha que nunca seria dela.
+
+**Colisão de nome encontrada na execução.** O campo `expression` de `AIContextualEstimate`
+colidia com o `expression` de `collection/models/assets.py:488`, que está na lista de dívida
+de `test_no_dead_fields.py`. Como aquele teste casa **por nome e não por modelo** — o
+docstring dele avisa —, meu campo novo teria mascarado a dívida alheia, fazendo-a parecer
+consumida. Renomeado para `reasoning`, que também descreve melhor o que é.
 **Riscos:** **o maior do plano.** É onde a IA produz número. Mitigações: allowlist de
 `rule_id` elegíveis (nenhum por padrão); as 7 condições cumulativas; `high ≤ baseline`;
 `validation_plan` obrigatório; `confidence` calculado pelo Python; exclusão permanente do
@@ -1840,7 +1859,7 @@ O plano está cumprido quando:
 | ~~**P2**~~ ✅ | ~~Playbooks + JIT~~ **feito em 2026-08-03** | 4 | P3 | Indireto |
 | ~~**P2**~~ ✅ | ~~Contrato de estimativa + 22 proibições~~ **feito em 2026-08-03** | 6 | P6, P9 | Nenhum |
 | ~~**P3**~~ ✅ | ~~Fatos semânticos tipados~~ **feito em 2026-08-03** | 8 | P8 | Nenhum — ver correção |
-| **P3** | Estimativa contextual generativa | 7 | P7 | Zero no portfólio |
+| ~~**P3**~~ ✅ | ~~Estimativa contextual generativa~~ **feito em 2026-08-03** | 7 | P7 | Zero no portfólio |
 | **P4** | Evals versionados | 9 | §29, §30 | Nenhum |
 | **P4** | Adapter de host adicional | 10 | P2, P11 | Nenhum |
 | **P5** | Dívida `evidence_only` | 11 | P10 | A decidir |
