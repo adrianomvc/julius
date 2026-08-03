@@ -49,6 +49,23 @@ def age_bucket(days: int) -> str:
     return f"{AGE_BUCKETS[-1][0]}+"
 
 
+def small_size_buckets(limite_bytes: int) -> tuple[str, ...]:
+    """Os rótulos de `SIZE_BUCKETS` inteiramente abaixo do limiar.
+
+    Derivado do limiar em vez de escrito à mão: reconfigurar
+    `s3_small_file_max_bytes` sem mexer aqui deixaria quem conta objetos
+    pequenos medindo outra coisa que quem projeta a compactação, e nada avisaria.
+
+    Mora junto dos buckets, e não na regra, porque duas regras precisam da mesma
+    resposta — e uma delas já importa a outra, então a terceira casa é esta.
+    """
+    return tuple(
+        rotulo
+        for _, fim, rotulo in SIZE_BUCKETS
+        if fim is not None and fim <= limite_bytes
+    ) + ("zero",)
+
+
 def size_bucket(size: int) -> str:
     """Faixa de tamanho de um objeto, com limites inclusivo/exclusivo."""
     if size <= 0:

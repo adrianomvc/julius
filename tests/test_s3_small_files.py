@@ -12,6 +12,7 @@ vira um prefixo `table_location` que a coleta de S3 lista. Faltava a regra.
 
 from __future__ import annotations
 
+import math
 from dataclasses import replace
 
 import pytest
@@ -352,3 +353,42 @@ def test_without_a_size_distribution_the_finding_stays_quiet_about_volume():
     )
 
     assert not any("a reescrever" in item for item in achado.evidence)
+
+
+def test_the_projection_only_repacks_the_files_that_need_repacking():
+    """Arquivo já no tamanho alvo não é reescrito, e não conta como bloco novo.
+
+    A conta anterior repartia `total_bytes` inteiro: 110 GB em blocos de 128 MB
+    davam ~880 objetos, quando na prática os vinte arquivos de 5 GB ficam onde
+    estão e só os 10 GB de cauda viram ~80 — cerca de 100 no total.
+    """
+    from julius.knowledge.rules.s3.request_cost import _objetos_apos_compactacao
+
+    prefixo = _prefixo(
+        object_count=10_020,
+        total_bytes=110 * _GB,
+        object_count_by_size={"1-64mb": 10_000, "128mb+": 20},
+        bytes_by_size={"1-64mb": 10 * _GB, "128mb+": 100 * _GB},
+    )
+
+    alvo = _objetos_apos_compactacao(prefixo, DEFAULT_CONFIG)
+
+    # 20 grandes intocados + ceil(10 GB / 128 MiB) = 20 + 80 = 100.
+    assert alvo == 100
+    assert alvo < math.ceil(110 * _GB / DEFAULT_CONFIG.thresholds.s3_compaction_target_bytes)
+
+
+def test_without_a_distribution_the_old_arithmetic_is_what_is_left():
+    """Sem distribuição não há como separar grande de pequeno — e inventar seria pior."""
+    from julius.knowledge.rules.s3.request_cost import _objetos_apos_compactacao
+
+    prefixo = _prefixo(
+        object_count=10_020,
+        total_bytes=110 * _GB,
+        object_count_by_size={},
+        bytes_by_size={},
+    )
+
+    assert _objetos_apos_compactacao(prefixo, DEFAULT_CONFIG) == math.ceil(
+        110 * _GB / DEFAULT_CONFIG.thresholds.s3_compaction_target_bytes
+    )

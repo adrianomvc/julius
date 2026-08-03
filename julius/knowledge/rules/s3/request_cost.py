@@ -6,6 +6,7 @@ import math
 from collections.abc import Iterable
 
 from julius.collection.models import Account, S3Prefix
+from julius.collection.models.s3 import small_size_buckets
 from julius.config import Config
 from julius.findings.opportunity import Estimation
 from julius.knowledge.s3_cost import S3_REQUEST_BUCKETS
@@ -37,6 +38,30 @@ def request_summary(account: Account) -> dict[str, float | None]:
         "total_cost": coverage.cost_for(S3_REQUEST_BUCKETS),
         "total_quantity": coverage.quantity_for(S3_REQUEST_BUCKETS),
     }
+
+
+def _objetos_apos_compactacao(prefix: S3Prefix, config: Config) -> int:
+    """Quantos objetos sobram depois de compactar — só os pequenos são tocados.
+
+    A conta anterior repartia `total_bytes` inteiro em blocos-alvo, como se a
+    compactação reescrevesse o prefixo todo. Num prefixo bimodal isso infla o
+    resultado: 110 GB divididos em blocos de 128 MB dão ~880 objetos, quando na
+    prática os 20 arquivos de 5 GB ficam onde estão e só os 10 GB de cauda
+    viram ~80 — cerca de 100 no total, não 880.
+
+    O erro era conservador (subestimava a redução de request, logo a economia),
+    mas conservador por acidente aritmético não é o mesmo que conservador por
+    decisão. Sem a distribuição de tamanho, a conta antiga é o que sobra.
+    """
+    alvo = config.thresholds.s3_compaction_target_bytes
+    distribuicao = prefix.bytes_by_size or {}
+    contagem = prefix.object_count_by_size or {}
+    if not distribuicao or not contagem:
+        return max(1, math.ceil((prefix.total_bytes or 0) / alvo))
+    faixas = small_size_buckets(config.thresholds.s3_small_file_max_bytes)
+    bytes_pequenos = sum(v for faixa, v in distribuicao.items() if faixa in faixas)
+    grandes = sum(v for faixa, v in contagem.items() if faixa not in faixas)
+    return max(1, grandes + math.ceil(bytes_pequenos / alvo))
 
 
 def request_estimation(
@@ -110,13 +135,7 @@ def request_estimation(
     target_objects_total = 0
     for prefix in measured:
         objects = prefix.object_count or 0
-        target_objects = max(
-            1,
-            math.ceil(
-                (prefix.total_bytes or 0)
-                / config.thresholds.s3_compaction_target_bytes
-            ),
-        )
+        target_objects = _objetos_apos_compactacao(prefix, config)
         requests = prefix.get_requests_window or 0
         current_requests += requests
         target_objects_total += target_objects

@@ -27,7 +27,7 @@ ação; não anuncia dinheiro no bolso.
 from __future__ import annotations
 
 from julius.collection.models import Account, S3Prefix
-from julius.collection.models.s3 import SIZE_BUCKETS
+from julius.collection.models.s3 import small_size_buckets
 from julius.config import Config
 from julius.findings.build import RuleContext, build
 from julius.findings.evidence import Evidence
@@ -101,20 +101,6 @@ def signals(account: Account, config: Config) -> list[Signal]:
     ]
 
 
-def _faixas_pequenas(limite_bytes: int) -> tuple[str, ...]:
-    """Os rótulos de `SIZE_BUCKETS` inteiramente abaixo do limiar.
-
-    Derivado do limiar em vez de escrito à mão: reconfigurar
-    `s3_small_file_max_bytes` sem mexer aqui deixaria a contagem medindo outra
-    coisa que o resto da regra, e nada avisaria.
-    """
-    return tuple(
-        rotulo
-        for _, fim, rotulo in SIZE_BUCKETS
-        if fim is not None and fim <= limite_bytes
-    ) + ("zero",)
-
-
 def objetos_pequenos(prefixo: S3Prefix, config: Config) -> int | None:
     """Quantos objetos estão de fato abaixo do limiar, ou `None` sem listagem.
 
@@ -126,7 +112,7 @@ def objetos_pequenos(prefixo: S3Prefix, config: Config) -> int | None:
     contagem = prefixo.object_count_by_size or {}
     if not contagem:
         return None
-    faixas = _faixas_pequenas(config.thresholds.s3_small_file_max_bytes)
+    faixas = small_size_buckets(config.thresholds.s3_small_file_max_bytes)
     return sum(quantidade for faixa, quantidade in contagem.items() if faixa in faixas)
 
 
@@ -168,7 +154,7 @@ def _volume_a_reescrever(prefixo: S3Prefix, config: Config) -> list[str]:
     distribuicao = prefixo.bytes_by_size or {}
     if not distribuicao:
         return []
-    faixas = _faixas_pequenas(config.thresholds.s3_small_file_max_bytes)
+    faixas = small_size_buckets(config.thresholds.s3_small_file_max_bytes)
     pequenos = sum(
         valor for faixa, valor in distribuicao.items() if faixa in faixas
     )
