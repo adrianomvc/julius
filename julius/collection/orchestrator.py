@@ -152,9 +152,17 @@ def collect_account(
             ),
         )
     except RequiredCollectionError:
+        if checkpoint_writer is not None:
+            checkpoint_writer.wait(raise_errors=False)
         if run_store is not None and run_store.run_status(ident, scan_id) == "collecting":
             run_store.transition(ident, scan_id, "collection_partial")
         raise
+    except BaseException:
+        if checkpoint_writer is not None:
+            checkpoint_writer.wait(raise_errors=False)
+        raise
+    if checkpoint_writer is not None:
+        checkpoint_writer.wait()
 
     # Derivação pura, depois de tudo coletado: a última leitura de uma tabela
     # sai do histórico de queries do Athena, e é o que liga um prefixo S3 a uma

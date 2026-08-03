@@ -8,12 +8,13 @@ from __future__ import annotations
 
 import hashlib
 import json
+from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import asdict
 from pathlib import Path
 from typing import Protocol
 
 from julius.collection.models import Account, CollectionHealth
-from julius.collection.normalizers.dump import account_to_dataset
+from julius.collection.normalizers.dump import account_fields_to_dataset
 from julius.collection.sources import Source
 
 CHECKPOINT_SCHEMA_VERSION = "1.0"
@@ -172,6 +173,13 @@ class DomainCheckpointWriter:
         self._statuses: dict[str, str] = {}
         self._health: dict[str, list[CollectionHealth]] = {}
         self._closed: set[str] = set()
+        # Escrita/hash/ledger local não disputa o pool boto3. Um único escritor
+        # mantém ordem determinística e evita concorrência desnecessária no DB.
+        self._executor = ThreadPoolExecutor(
+            max_workers=1, thread_name_prefix="julius-artifacts"
+        )
+        self._futures: list[Future[None]] = []
+        self._finished = False
 
     def source_completed(
         self, source: Source, entries: list[CollectionHealth]
@@ -188,7 +196,9 @@ class DomainCheckpointWriter:
     def _close(self, domain: str, expected: frozenset[str]) -> None:
         sources = {name: self._statuses[name] for name in sorted(expected)}
         status = _checkpoint_status(sources.values())
-        dataset = account_to_dataset(self.account)
+        # Congela antes de devolver o controle ao scheduler: fontes posteriores
+        # podem enriquecer a Account, mas o pacote representa este fechamento.
+        payload = account_fields_to_dataset(self.account, DOMAIN_FIELDS[domain])
         health = [
             asdict(entry)
             for source in sorted(expected)
@@ -210,10 +220,22 @@ class DomainCheckpointWriter:
             },
             "sources": sources,
             "collection_health": health,
-            "payload": {
-                field: dataset.get(field) for field in DOMAIN_FIELDS[domain]
-            },
+            "payload": payload,
         }
+        self._closed.add(domain)
+        self._futures.append(
+            self._executor.submit(
+                self._persist, domain, status, sources, checkpoint
+            )
+        )
+
+    def _persist(
+        self,
+        domain: str,
+        status: str,
+        sources: dict[str, str],
+        checkpoint: dict,
+    ) -> None:
         encoded = json.dumps(
             checkpoint,
             ensure_ascii=False,
@@ -246,7 +268,21 @@ class DomainCheckpointWriter:
                 context_hash=digest,
                 payload_path=str(path),
             )
-        self._closed.add(domain)
+
+    def wait(self, *, raise_errors: bool = True) -> None:
+        """Drena artefatos locais; nunca espera provider de IA."""
+        if self._finished:
+            return
+        first_error: BaseException | None = None
+        for future in self._futures:
+            try:
+                future.result()
+            except BaseException as exc:  # pragma: no branch - preserva a primeira
+                first_error = first_error or exc
+        self._executor.shutdown(wait=True)
+        self._finished = True
+        if first_error is not None and raise_errors:
+            raise first_error
 
 
 def _checkpoint_status(statuses) -> str:

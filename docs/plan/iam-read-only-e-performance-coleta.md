@@ -472,7 +472,7 @@ homologação na mesma conta, janela e cobertura.
 
 ## 14. Próxima execução de implementação
 
-1. antecipar artefatos por domínio enquanto fontes lentas continuam coletando;
-2. separar worker/merge da IA do pool boto3;
-3. expandir snapshots e retomada incremental por domínio;
+1. separar worker/merge da IA do pool boto3;
+2. expandir snapshots e retomada incremental por domínio;
+3. adicionar caminho crítico, backpressure e limites de memória;
 4. homologar Inventory e a policy read-only na conta somente com aprovação humana.

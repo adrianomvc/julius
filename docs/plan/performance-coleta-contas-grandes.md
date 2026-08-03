@@ -640,10 +640,12 @@ cliente AWS. Jobs `running` podem voltar a `pending` após queda do worker.
 - resultado enriquecido não altera campo determinístico.
 
 **Implementado parcialmente em 2026-08-03:** pacotes por domínio são canônicos,
-imutáveis, isolados por conta/scan e deduplicados pelo hash. Estados `ready`,
-`partial` e `unavailable` carregam a saúde das fontes. Ainda falta o executor que
-chama automaticamente o provider e o merge dos resultados contextuais por domínio;
-o protocolo de fila/claim já está disponível para esse worker.
+imutáveis, isolados por conta/scan e deduplicados pelo hash. O fechamento congela
+somente os campos do domínio; JSON, hash, escrita e ledger rodam em executor local
+separado e se sobrepõem às fontes AWS restantes. Estados `ready`, `partial` e
+`unavailable` carregam a saúde das fontes. Ainda falta o executor que chama
+automaticamente o provider e o merge dos resultados contextuais por domínio; o
+protocolo de fila/claim já está disponível para esse worker.
 
 ### Onda 10 — homologação read-only
 

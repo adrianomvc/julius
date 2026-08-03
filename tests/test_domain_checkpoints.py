@@ -4,11 +4,21 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from threading import Event
 
 import pytest
 
-from julius.collection.checkpoints import DOMAIN_SOURCES, DomainCheckpointWriter
-from julius.collection.models import Account, CollectionHealth
+from julius.collection import checkpoints as checkpoint_module
+from julius.collection.checkpoints import (
+    DOMAIN_FIELDS,
+    DOMAIN_SOURCES,
+    DomainCheckpointWriter,
+)
+from julius.collection.models import Account, AthenaQuery, CollectionHealth
+from julius.collection.normalizers.dump import (
+    account_fields_to_dataset,
+    account_to_dataset,
+)
 from julius.collection.sources import Source
 from julius.state import RunStore
 
@@ -51,6 +61,7 @@ def test_domain_closes_once_with_immutable_hash_and_ai_job(tmp_path: Path) -> No
         writer = DomainCheckpointWriter(store, tmp_path / "payloads", account, SCAN)
 
         _close_domain(writer, "athena")
+        writer.wait()
 
         checkpoints = store.checkpoints(ACCOUNT, SCAN)
         assert len(checkpoints) == 1
@@ -81,12 +92,48 @@ def test_partial_source_is_explicit_and_corruption_is_rejected(tmp_path: Path) -
         partial = sorted(DOMAIN_SOURCES["redshift"])[0]
 
         _close_domain(writer, "redshift", partial_source=partial)
+        writer.wait()
 
         checkpoint = store.verified_checkpoint(ACCOUNT, SCAN, "redshift")
         assert checkpoint.status == "partial"
         Path(checkpoint.payload_path).write_text("corrompido", encoding="utf-8")
         with pytest.raises(ValueError, match="corrompido"):
             store.verified_checkpoint(ACCOUNT, SCAN, "redshift")
+
+
+def test_artifact_persistence_overlaps_collection_and_uses_frozen_payload(
+    tmp_path: Path, monkeypatch
+) -> None:
+    account = Account(account_id=ACCOUNT, scan_id=SCAN)
+    account.athena_queries = [AthenaQuery(query_id="before")]
+    started = Event()
+    release = Event()
+    original = checkpoint_module._write_immutable
+
+    def delayed_write(path: Path, payload: bytes) -> None:
+        started.set()
+        assert release.wait(timeout=2)
+        original(path, payload)
+
+    monkeypatch.setattr(checkpoint_module, "_write_immutable", delayed_write)
+    with RunStore(tmp_path / "runs.duckdb") as store:
+        store.create_run(ACCOUNT, SCAN, status="collecting")
+        writer = DomainCheckpointWriter(store, tmp_path / "payloads", account, SCAN)
+
+        _close_domain(writer, "athena")
+
+        assert started.wait(timeout=2)
+        # O writer local está parado, mas o coordenador já pode aplicar outra
+        # fonte. A mutação posterior não contamina o checkpoint fechado.
+        account.athena_queries.append(AthenaQuery(query_id="after"))
+        assert store.checkpoints(ACCOUNT, SCAN) == []
+        release.set()
+        writer.wait()
+        checkpoint = store.verified_checkpoint(ACCOUNT, SCAN, "athena")
+        payload = json.loads(Path(checkpoint.payload_path).read_text(encoding="utf-8"))
+        assert [item["query_id"] for item in payload["payload"]["athena_queries"]] == [
+            "before"
+        ]
 
 
 def test_domain_ai_never_blocks_deterministic_publication(tmp_path: Path) -> None:
@@ -119,3 +166,14 @@ def test_domain_ai_never_blocks_deterministic_publication(tmp_path: Path) -> Non
         store.transition_task(cross_task, "running")
         store.complete_ai(cross_task)
         assert store.run_status(ACCOUNT, SCAN) == "enriched"
+
+
+def test_domain_serializer_matches_public_dataset_schema() -> None:
+    account = Account(account_id=ACCOUNT, scan_id=SCAN)
+    account.athena_queries = [AthenaQuery(query_id="query")]
+    full = account_to_dataset(account)
+
+    for fields in DOMAIN_FIELDS.values():
+        assert account_fields_to_dataset(account, fields) == {
+            field: full[field] for field in fields
+        }
