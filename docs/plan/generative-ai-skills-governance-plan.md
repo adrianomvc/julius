@@ -3,8 +3,8 @@
 > **Escopo desta versão:** análise e proposta. Nenhum schema, regra financeira ou item do
 > portfólio é alterado por este documento.
 >
-> **Estado de execução:** as **Ondas 1 a 10 foram implementadas em 2026-08-03** — ver §34.
-> Resta a Onda 11, que depende de decisão humana. Os trechos que descrevem P4 e D1 ficaram como
+> **Estado de execução:** as **Ondas 1 a 11 foram implementadas em 2026-08-03** — ver §34.
+> O plano está executado. Os trechos que descrevem P4 e D1 ficaram como
 > registro histórico, marcados **[Resolvido]**.
 >
 > **Base analisada:** Julius na branch `agent/pending-followups` (contém `origin/main`,
@@ -1715,22 +1715,36 @@ de host; `PROVIDERS` tem 3 entradas e todas honram o contrato de `base.py`.
 **Critério de conclusão:** trocar de host é trocar de provider, sem editar conteúdo.
 **Rollback:** remover o alvo e o provider.
 
-### Onda 11 — Dívida: `evidence_only` inalcançável
+### Onda 11 — Dívida: `evidence_only` inalcançável ✅ **CONCLUÍDA em 2026-08-03**
 
 **Objetivo:** resolver P10.
 **Arquivos afetados:** `julius/collection/policy.py` **ou** os cinco pontos que testam
 `evidence_only`.
 **Mudança estrutural:** pequena.
-**Mudança de comportamento:** depende da decisão.
-**Impacto financeiro:** **depende da decisão — é por isso que é decisão humana.** Criar um
-perfil que produza `evidence_only` remove `S3-STORAGE-CLASS-TRANSITION`,
-`S3-COLD-DATA-REWRITE` e `S3-NONCURRENT-VERSIONS` de quem o adotar.
-**Compatibilidade:** a decidir.
-**Testes:** a decidir.
-**Riscos:** remover código morto que era intenção não implementada.
-**Critério de conclusão:** ou existe perfil que produz `evidence_only`, ou o código que o
-trata é removido. O estado atual — implementado e inalcançável — não é aceitável.
-**Rollback:** trivial nos dois caminhos.
+**Decisão do dono do produto (2026-08-03): criar o perfil.**
+**Arquivos afetados:** `julius/collection/policy.py` (`CONSUMER_EVIDENCE_ONLY`),
+`docs/ai/regras-globais.md`, `tests/test_evidence_only_profile.py` (12 testes).
+**Mudança de comportamento:** nenhuma para os perfis existentes; um perfil novo, opcional.
+**Impacto financeiro:** só para quem adotar o perfil — ele remove
+`S3-STORAGE-CLASS-TRANSITION` e as demais recomendações de S3 do portfólio daquela conta.
+Nenhuma conta existente muda: `consumer_datamesh` e `full_analysis` seguem idênticos.
+**Compatibilidade:** total. Dataset antigo continua resolvendo para o perfil que declara.
+**Testes:** 12, medindo a **diferença entre os dois perfis Consumer sobre a mesma conta** —
+testar cada um isolado diria que ambos funcionam sem dizer que diferem, e é a diferença que
+justifica o perfil existir. Mais `test_every_s3_mode_the_rules_handle_has_a_profile`, que
+varre por AST o que as regras comparam contra `s3_mode` e exige perfil para cada modo: é a
+trava que impede a dívida de voltar.
+Suíte: 1023 passed (era 1011).
+**Riscos:** baixo. O tratamento já existia e estava testado por dataset editado à mão.
+**Critério de conclusão:** ✅ existe perfil que produz `evidence_only`, e um teste impede que
+outro modo nasça sem perfil.
+**Rollback:** remover a entrada do dicionário `_POLICIES`.
+
+**Por que o perfil e não a remoção.** A leitura do modo mostrou que ele não era resto de
+ideia abandonada: `small_files.py` trata o caso com cuidado real — arquivo pequeno com
+processo produtor identificado **continua** virando recomendação, porque a ação é sobre o
+código que escreve e não sobre o bucket. Isso é a fronteira infraestrutura × objeto levada um
+nível adiante, não código esquecido.
 
 ---
 
@@ -1878,7 +1892,7 @@ O plano está cumprido quando:
 | ~~**P3**~~ ✅ | ~~Estimativa contextual generativa~~ **feito em 2026-08-03** | 7 | P7 | Zero no portfólio |
 | ~~**P4**~~ ✅ | ~~Evals versionados~~ **feito em 2026-08-03** | 9 | §29, §30 | Nenhum |
 | ~~**P4**~~ ✅ | ~~Adapter de host adicional~~ **feito em 2026-08-03** | 10 | P2, P11 | Nenhum |
-| **P5** | Dívida `evidence_only` | 11 | P10 | A decidir |
+| ~~**P5**~~ ✅ | ~~Dívida `evidence_only`~~ **feito em 2026-08-03** | 11 | P10 | Só para quem adotar o perfil |
 
 **Justificativa da ordem.** P0 é o que já está pago e não está sendo usado (Onda 5) e o que
 protege a fronteira que dá licença ao produto (Onda 2). As ondas de conteúdo vêm antes das

@@ -50,6 +50,19 @@ todas `Put*` na configuração. A classe de armazenamento **do objeto** pode ser
 recomendada, e é executada pelo time dono via `CopyObject`. A diferença é a
 fronteira, não uma formalidade.
 
+Existe conta em que nem a classe do objeto cabe — dado sob retenção contratual,
+bucket compartilhado com outro time, política interna que trate qualquer reescrita
+como mudança. Para essas há o perfil `consumer_evidence_only`, em que todo achado
+de S3 vira pergunta em vez de recomendação. A única exceção é arquivo pequeno com
+processo produtor identificado: ali a ação é sobre o **código que escreve**, não
+sobre o bucket, e por isso continua sendo recomendação.
+
+| Perfil | `s3_mode` | S3 |
+|---|---|---|
+| `consumer_datamesh` | `storage_class_only` | classe do objeto sim; infraestrutura nunca |
+| `consumer_evidence_only` | `evidence_only` | só evidência; exceto código do produtor |
+| `full_analysis` | `proposal` | análise completa |
+
 ## Como uma regra entra aqui
 
 Com quem a cobre. Se não existe teste, validador ou allowlist que a verifique, ela
