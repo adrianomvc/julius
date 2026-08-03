@@ -3,8 +3,8 @@
 > **Escopo desta versão:** análise e proposta. Nenhum schema, regra financeira ou item do
 > portfólio é alterado por este documento.
 >
-> **Estado de execução:** as **Ondas 1, 2, 3, 4, 5 e 6 foram implementadas em 2026-08-03**
-> — ver §34. As Ondas 7, 8, 9, 10 e 11 continuam propostas. Os trechos que descrevem P4 e D1 ficaram como
+> **Estado de execução:** as **Ondas 1, 2, 3, 4, 5, 6 e 8 foram implementadas em 2026-08-03**
+> — ver §34. As Ondas 7, 9, 10 e 11 continuam propostas. Os trechos que descrevem P4 e D1 ficaram como
 > registro histórico, marcados **[Resolvido]**.
 >
 > **Base analisada:** Julius na branch `agent/pending-followups` (contém `origin/main`,
@@ -1058,16 +1058,33 @@ campo do inventário vale X". `StateMachine.idempotent` é o caso: a regra
 `SFN-STANDARD-TO-EXPRESS` exigia `idempotent is True` e ninguém preenchia o campo, então a
 maior economia unitária do Step Functions nunca disparava em conta real.
 
-**Fatos iniciais úteis** (candidatos, cada um destrava uma regra existente):
+**[Corrigido na execução da Onda 8]** A lista de seis candidatos abaixo estava errada, e o
+erro é instrutivo. Varrer o modelo atrás de campos declarados como não-coletáveis encontra
+**exatamente um**: `StateMachine.idempotent`. O catálogo nasce com uma entrada, e isso é
+resultado, não rascunho.
 
-| `fact_type` | Escreve em | Destrava |
+`checkpoint_recoverable` não só era especulativo como estava **ativamente errado**:
+`SageMakerJob.checkpoint_configured` **é coletável** — vem de `CheckpointConfig` em
+`describe_training_job` (`collection/collectors/sagemaker_extended.py:403`). Deixar um
+veredito escrevê-lo trocaria fato medido por opinião, que é o que a regra dos campos
+determinísticos imutáveis proíbe. `test_no_fact_overwrites_something_the_api_already_answers`
+varre os coletores por AST e recusa qualquer fato cujo alvo algum deles preencha — a lição
+virou guarda permanente em vez de nota de rodapé.
+
+Os outros quatro exigiriam campos novos que nenhuma regra lê, e `tests/test_no_dead_fields.py`
+os recusaria com razão. Um fato semântico nasce de campo que existe, que alguma regra usa como
+porta, e que nenhuma API responde — as três condições ao mesmo tempo.
+
+Lista original, mantida como registro do que foi proposto e por que não entrou:
+
+| `fact_type` | Escreve em | Situação |
 |---|---|---|
-| `at_least_once_safe` | `StateMachine.idempotent` | `SFN-STANDARD-TO-EXPRESS` (já existe) |
-| `checkpoint_recoverable` | `SageMakerJob.checkpoint_configured` | `sagemaker_managed_spot_training_v1` |
-| `accelerator_unused` | campo novo em `SageMakerJob` | `sagemaker_gpu_to_cpu_instance_v1` |
-| `shuffle_is_avoidable` | campo novo em `GlueJob` | `glue_shuffle_reduction_v1` |
-| `full_scan_is_intentional` | `AthenaQuery` | inverte `ATHENA-NO-PARTITION-FILTER` |
-| `output_has_no_consumer` | `Table` | `DATA-UNUSED-OUTPUT` |
+| `at_least_once_safe` | `StateMachine.idempotent` | **Único válido.** Implementado |
+| `checkpoint_recoverable` | `SageMakerJob.checkpoint_configured` | **Recusado** — campo coletável |
+| `accelerator_unused` | campo novo em `SageMakerJob` | Recusado — campo que ninguém lê |
+| `shuffle_is_avoidable` | campo novo em `GlueJob` | Recusado — campo que ninguém lê |
+| `full_scan_is_intentional` | `AthenaQuery` | Recusado — campo inexistente |
+| `output_has_no_consumer` | `Table` | Recusado — campo inexistente |
 
 **Fatos perigosos, a recusar:** qualquer um que escreva número
 (`estimated_saving`, `baseline_cost`, `avg_state_transitions`, contagem de bytes) —
@@ -1600,7 +1617,7 @@ entra em total oficial; um humano consegue reproduzir a conta lendo a estimativa
 **Rollback:** esvaziar a allowlist de `rule_id` elegíveis. Um `frozenset()` vazio desliga a
 funcionalidade sem tocar em código.
 
-### Onda 8 — Catálogo tipado de fatos semânticos
+### Onda 8 — Catálogo tipado de fatos semânticos ✅ **CONCLUÍDA em 2026-08-03**
 
 **Objetivo:** eliminar P8. `verdict_facts.py` vira catálogo com tipo e expiração.
 **Arquivos afetados:** `julius/knowledge/semantic_facts.py` (novo),
@@ -1613,9 +1630,19 @@ por campo vazio — exatamente como `SFN-STANDARD-TO-EXPRESS` foi destravada.
 **Impacto financeiro:** **sim, positivo e indireto.** Uma regra que passa a disparar produz
 oportunidade com economia. Por isso esta onda vem depois da 6, com o contrato já validando.
 **Compatibilidade:** o fato existente (`at_least_once_safe`) mantém semântica idêntica.
-**Testes:** direção do veredito (o teste que impediria a inversão descrita no docstring de
-`verdict_facts.py`); só `confirmed` escreve; nenhum fato escreve número; nenhum escreve
-`owner`; expiração por hash e por métrica.
+**Testes (implementados):** 20 em `tests/test_semantic_facts.py` — direção do veredito;
+`rejected` e `needs_evidence` não escrevem; nenhum fato escreve número; nenhum escreve
+ownership; todo fato declara por que a API não responde aquilo; alvo existe no modelo;
+e a guarda de coletor descrita acima, com contraprova de que `checkpoint_configured`
+continua sendo detectado.
+Suíte: 907 passed (era 892).
+
+**Sobre expiração.** Ela já existe e está no lugar certo: `SignalLedger.suppress()` reabre a
+pergunta quando `evidence_signature()` muda. Duplicá-la aqui seria uma segunda fonte de
+verdade sobre quando um julgamento deixa de valer. O que a Onda 8 acrescentou é a porta que
+torna a expiração possível: um veredito sem `evidence_hash` não escreve fato nenhum, porque
+um fato que não pode ser invalidado é pior que um fato ausente — ele continua valendo sobre
+um artefato que já mudou.
 **Riscos:** inverter a direção de um fato novo, recomendando o oposto do certo. Mitigação:
 todo fato novo exige teste de direção **antes** de entrar no catálogo.
 **Critério de conclusão:** cada fato novo tem destino, expiração, teste de direção e a regra
@@ -1812,7 +1839,7 @@ O plano está cumprido quando:
 | ~~**P1**~~ ✅ | ~~Regras globais e fronteira S3 escrita~~ **feito em 2026-08-03** | 1 | P11, D7 | Nenhum |
 | ~~**P2**~~ ✅ | ~~Playbooks + JIT~~ **feito em 2026-08-03** | 4 | P3 | Indireto |
 | ~~**P2**~~ ✅ | ~~Contrato de estimativa + 22 proibições~~ **feito em 2026-08-03** | 6 | P6, P9 | Nenhum |
-| **P3** | Fatos semânticos tipados | 8 | P8 | Positivo indireto |
+| ~~**P3**~~ ✅ | ~~Fatos semânticos tipados~~ **feito em 2026-08-03** | 8 | P8 | Nenhum — ver correção |
 | **P3** | Estimativa contextual generativa | 7 | P7 | Zero no portfólio |
 | **P4** | Evals versionados | 9 | §29, §30 | Nenhum |
 | **P4** | Adapter de host adicional | 10 | P2, P11 | Nenhum |
