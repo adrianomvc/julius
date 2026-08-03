@@ -1,0 +1,296 @@
+"""Monta os artefatos de Skill a partir da fonte canônica e do motor.
+
+A direção importava e estava invertida. `.agents/skills/julius-aws-analysis/SKILL.md`
+era a fonte: um arquivo em inglês, com o procedimento de sessão do Devin no meio,
+que o instalador copiava para o diretório de skills do Devin. Trocar de host
+significava copiar aquele arquivo — com o procedimento do outro host dentro dele.
+E as mesmas regras existiam de novo, com outro texto, em `guardrails.py`, sem
+nenhum teste comparando os dois.
+
+Aqui a fonte é `docs/ai/`, em português e sem host, e `.agents/skills/` passa a
+ser artefato. A montagem tem três partes:
+
+1. **prosa canônica** — vem do markdown e não é gerada; ninguém quer editar
+   parágrafo dentro de um `.py` (é o que o gerador do Alfred faz, e é o que este
+   evita de propósito);
+2. **campos derivados do motor** — `rule_id`, métodos de estimativa, campos
+   determinísticos, versão do prompt. Escritos à mão eles divergem: foi assim que
+   dois métodos de estimativa ficaram fora do briefing por meses;
+3. **bloco do host** — o único pedaço específico de Devin, Claude ou do que vier.
+
+O que amarra tudo é `check()`: se o artefato no disco não for exatamente o que
+esta função produz, o teste falha. Editar o artefato à mão deixa de ser possível
+sem que apareça.
+"""
+
+from __future__ import annotations
+
+import re
+from dataclasses import dataclass
+from pathlib import Path
+
+RAIZ = Path(__file__).resolve().parents[2]
+CANONICO = RAIZ / "docs" / "ai"
+
+#: Host → onde o artefato daquele host é instalado no repositório.
+HOSTS = {
+    "devin": RAIZ / ".agents" / "skills",
+}
+
+_AVISO = (
+    "<!-- GERADO por scripts/generate_skill_registry.py a partir de docs/ai/. "
+    "Não edite este arquivo: edite a fonte canônica e regenere. -->"
+)
+
+
+class SkillSourceError(ValueError):
+    """A fonte canônica não respeita o contrato de Skill."""
+
+
+@dataclass(frozen=True)
+class SkillSource:
+    """Uma Skill canônica: frontmatter escrito à mão e corpo em markdown."""
+
+    name: str
+    path: Path
+    frontmatter: dict[str, object]
+    body: str
+
+
+#: Chaves que a fonte canônica precisa declarar, e que ninguém gera por ela.
+FRONTMATTER_OBRIGATORIO = ("name", "description", "trigger", "sections_to_load")
+
+#: Seções que todo corpo de Skill precisa ter. O resto é opcional e específico.
+SECOES_OBRIGATORIAS = (
+    "purpose",
+    "inputs",
+    "expected output",
+    "does",
+    "does not",
+    "rules",
+    "output contract",
+)
+
+
+def _parse_frontmatter(texto: str, origem: Path) -> tuple[dict[str, object], str]:
+    """Frontmatter YAML mínimo: escalares e listas de um nível.
+
+    Deliberadamente sem PyYAML. O contrato é pequeno e conhecido, e uma
+    dependência nova para ler quatro chaves seria custo sem contrapartida.
+    """
+    linhas = texto.splitlines()
+    if not linhas or linhas[0].strip() != "---":
+        raise SkillSourceError(f"Skill sem frontmatter: {origem}")
+    fim = next(
+        (i for i, linha in enumerate(linhas[1:], start=1) if linha.strip() == "---"),
+        None,
+    )
+    if fim is None:
+        raise SkillSourceError(f"frontmatter não fechado: {origem}")
+
+    dados: dict[str, object] = {}
+    chave_atual: str | None = None
+    for bruta in linhas[1:fim]:
+        if not bruta.strip():
+            continue
+        if bruta.startswith("  - "):
+            if chave_atual is None:
+                raise SkillSourceError(f"item de lista sem chave em {origem}")
+            acumulado = dados.get(chave_atual)
+            if not isinstance(acumulado, list):
+                acumulado = []
+                dados[chave_atual] = acumulado
+            acumulado.append(bruta[4:].strip())
+            continue
+        casa = re.match(r"^([A-Za-z0-9_-]+):\s*(.*)$", bruta)
+        if not casa:
+            raise SkillSourceError(f"linha de frontmatter não suportada em {origem}: {bruta!r}")
+        chave_atual = casa.group(1)
+        valor = casa.group(2).strip()
+        dados[chave_atual] = valor if valor else []
+    return dados, "\n".join(linhas[fim + 1 :]).lstrip("\n")
+
+
+def load_skill(path: Path) -> SkillSource:
+    """Lê e valida uma Skill canônica."""
+    frontmatter, corpo = _parse_frontmatter(path.read_text(encoding="utf-8"), path)
+    faltando = [k for k in FRONTMATTER_OBRIGATORIO if k not in frontmatter]
+    if faltando:
+        raise SkillSourceError(f"{path}: frontmatter sem {', '.join(faltando)}")
+    if not isinstance(frontmatter.get("sections_to_load"), list) or not frontmatter["sections_to_load"]:
+        raise SkillSourceError(f"{path}: sections_to_load precisa ser lista não vazia")
+    for secao in SECOES_OBRIGATORIAS:
+        if not re.search(rf"(?im)^##\s+{re.escape(secao)}\s*$", corpo):
+            raise SkillSourceError(f"{path}: falta a seção obrigatória '{secao}'")
+    return SkillSource(
+        name=str(frontmatter["name"]),
+        path=path,
+        frontmatter=frontmatter,
+        body=corpo,
+    )
+
+
+def load_skills() -> list[SkillSource]:
+    return [load_skill(p) for p in sorted((CANONICO / "skills").glob("*/SKILL.md"))]
+
+
+def engine_fields() -> dict[str, object]:
+    """O que o motor sabe e a Skill não pode contradizer.
+
+    Cada chave aqui tem dono no código. Nenhuma é opinião do autor da Skill, e é
+    por isso que são geradas em vez de escritas.
+    """
+    from julius.analysis.context_builder import DETERMINISTIC_FIELDS
+    from julius.analysis.guardrails import PROMPT_VERSION
+    from julius.knowledge.contextual_estimation import allowed_methods
+
+    metodos = allowed_methods()
+    return {
+        "prompt_version": PROMPT_VERSION,
+        "allowed_estimation_methods": sorted(set(metodos.values())),
+        "estimation_methods_by_rule": dict(sorted(metodos.items())),
+        "deterministic_fields_are_immutable": list(DETERMINISTIC_FIELDS),
+        "verdicts": ["confirmed", "rejected", "needs_evidence"],
+        "documentation_domain": "docs.aws.amazon.com",
+    }
+
+
+def _render_yaml(dados: dict[str, object], indent: str = "") -> list[str]:
+    linhas = []
+    for chave, valor in dados.items():
+        if isinstance(valor, list):
+            linhas.append(f"{indent}{chave}:")
+            linhas.extend(f"{indent}  - {item}" for item in valor)
+        elif isinstance(valor, dict):
+            linhas.append(f"{indent}{chave}:")
+            linhas.extend(_render_yaml(valor, indent + "  "))
+        else:
+            linhas.append(f"{indent}{chave}: {valor}")
+    return linhas
+
+
+def render_host_artifact(skill: SkillSource, host: str) -> str:
+    """Frontmatter escrito + campos do motor + corpo canônico + bloco do host."""
+    bloco = CANONICO / "hosts" / f"{host}.md"
+    if not bloco.is_file():
+        raise SkillSourceError(f"bloco de host ausente: {bloco}")
+
+    # `name` e `description` são as duas chaves que todo host entende. O resto —
+    # a convenção de contrato que o Julius adota, mais o que vem do motor — vai
+    # sob `metadata`, que é onde um host guarda o que não é do schema dele.
+    #
+    # Não é detalhe cosmético: `trigger` e `sections_to_load` soltos no topo são
+    # atributo desconhecido para o schema de skills do VS Code, e um artefato que
+    # nasce inválido no host errado é precisamente o que ter um gerador evita. A
+    # fonte canônica segue plana e legível; quem se adapta é a saída.
+    metadados: dict[str, object] = {
+        chave: valor
+        for chave, valor in skill.frontmatter.items()
+        if chave not in ("name", "description")
+    }
+    metadados.update(engine_fields())
+
+    partes = ["---"]
+    partes += _render_yaml(
+        {chave: skill.frontmatter[chave] for chave in ("name", "description")}
+    )
+    partes.append("metadata:")
+    partes.append("  # Gerado a partir de docs/ai/ e do motor — não edite.")
+    partes += _render_yaml(metadados, indent="  ")
+    partes.append("---")
+    partes.append("")
+    partes.append(_AVISO)
+    partes.append("")
+    partes.append(skill.body.rstrip())
+    partes.append("")
+    partes.append("---")
+    partes.append("")
+    # O procedimento do host entra rebaixado um nível: dentro do artefato ele é
+    # uma seção da Skill, não um documento paralelo.
+    corpo_host = bloco.read_text(encoding="utf-8").rstrip()
+    partes.append(re.sub(r"(?m)^(#+) ", r"\1# ", corpo_host))
+    return "\n".join(partes) + "\n"
+
+
+def render_registry() -> str:
+    """A tabela do registry. Só tabela — a prosa mora no markdown canônico."""
+    from julius.analysis.context_builder import DETERMINISTIC_FIELDS
+    from julius.analysis.guardrails import PROMPT_VERSION
+    from julius.knowledge.contextual_estimation import allowed_methods
+
+    metodos = sorted(set(allowed_methods().values()))
+    linhas = [
+        "# Registry de Skills do Julius",
+        "",
+        "> Gerado por `scripts/generate_skill_registry.py` a partir de `docs/ai/`.",
+        "> Não edite a tabela à mão: `--check` falha quando ela diverge.",
+        "",
+        "## Skills",
+        "",
+        "| Skill | Fonte | Trigger | Seções a carregar |",
+        "|---|---|---|---|",
+    ]
+    for skill in load_skills():
+        origem = skill.path.relative_to(RAIZ).as_posix()
+        secoes = ", ".join(skill.frontmatter.get("sections_to_load", []))  # type: ignore[arg-type]
+        linhas.append(
+            f"| `{skill.name}` | [{origem}]({origem}) | {skill.frontmatter['trigger']} | {secoes} |"
+        )
+    linhas += [
+        "",
+        "## Campos derivados do motor",
+        "",
+        "Estes valores não são escritos à mão em lugar nenhum: vêm do código que os",
+        "aplica, e são injetados no frontmatter de cada artefato.",
+        "",
+        "| Campo | Origem | Valor |",
+        "|---|---|---|",
+        f"| `prompt_version` | `analysis.guardrails.PROMPT_VERSION` | `{PROMPT_VERSION}` |",
+        "| `allowed_estimation_methods` | `knowledge.contextual_estimation.allowed_methods()` | "
+        + ", ".join(f"`{item}`" for item in metodos)
+        + " |",
+        "| `deterministic_fields_are_immutable` | `analysis.context_builder.DETERMINISTIC_FIELDS` | "
+        + ", ".join(f"`{item}`" for item in DETERMINISTIC_FIELDS)
+        + " |",
+        "",
+        "## Artefatos gerados por host",
+        "",
+        "| Host | Artefato |",
+        "|---|---|",
+    ]
+    for host, destino in sorted(HOSTS.items()):
+        for skill in load_skills():
+            alvo = (destino / skill.name / "SKILL.md").relative_to(RAIZ).as_posix()
+            linhas.append(f"| `{host}` | [{alvo}]({alvo}) |")
+    return "\n".join(linhas) + "\n"
+
+
+def expected_files() -> dict[Path, str]:
+    """Todo arquivo gerado e o conteúdo exato que ele deveria ter."""
+    saida: dict[Path, str] = {CANONICO / "registry.md": render_registry()}
+    for host, destino in HOSTS.items():
+        for skill in load_skills():
+            saida[destino / skill.name / "SKILL.md"] = render_host_artifact(skill, host)
+    return saida
+
+
+def write_all() -> list[Path]:
+    escritos = []
+    for caminho, conteudo in expected_files().items():
+        caminho.parent.mkdir(parents=True, exist_ok=True)
+        caminho.write_text(conteudo, encoding="utf-8", newline="\n")
+        escritos.append(caminho)
+    return sorted(escritos)
+
+
+def check() -> list[str]:
+    """O que está fora do lugar. Lista vazia significa sem drift."""
+    problemas = []
+    for caminho, esperado in expected_files().items():
+        relativo = caminho.relative_to(RAIZ).as_posix()
+        if not caminho.is_file():
+            problemas.append(f"artefato ausente: {relativo}")
+            continue
+        if caminho.read_text(encoding="utf-8") != esperado:
+            problemas.append(f"artefato desatualizado: {relativo}")
+    return problemas

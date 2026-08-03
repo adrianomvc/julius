@@ -18,3 +18,9 @@ STS before collection and keep outputs isolated per account.
 Use `.agents/skills/julius-aws-analysis/SKILL.md` for account analysis. Return
 structured, evidence-linked recommendations and use only official AWS
 documentation links under `https://docs.aws.amazon.com/`.
+
+That file is a **generated artifact**. The canonical source is `docs/ai/` —
+host-agnostic and written in Portuguese — and `docs/ai/regras-globais.md` carries
+the rules every provider obeys. To change what the skill says, edit `docs/ai/`
+and run `python scripts/generate_skill_registry.py`; editing the artifact by hand
+fails `tests/test_skill_registry_drift.py`.

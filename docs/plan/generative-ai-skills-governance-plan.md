@@ -3,8 +3,8 @@
 > **Escopo desta versão:** análise e proposta. Nenhum schema, regra financeira ou item do
 > portfólio é alterado por este documento.
 >
-> **Estado de execução:** a **Onda 5 (P0) foi implementada em 2026-08-03** — ver §34.
-> As demais ondas continuam propostas. Os trechos que descrevem P4 e D1 ficaram como
+> **Estado de execução:** as **Ondas 1, 2, 3 e 5 foram implementadas em 2026-08-03** —
+> ver §34. As Ondas 4, 6, 7, 8, 9, 10 e 11 continuam propostas. Os trechos que descrevem P4 e D1 ficaram como
 > registro histórico, marcados **[Resolvido]**.
 >
 > **Base analisada:** Julius na branch `agent/pending-followups` (contém `origin/main`,
@@ -1353,7 +1353,7 @@ procedimento do Devin continua no arquivo gerado. Nenhuma sessão Devin em andam
 
 Formato conforme §37 do pedido.
 
-### Onda 1 — Regras globais e fronteira escrita
+### Onda 1 — Regras globais e fronteira escrita ✅ **CONCLUÍDA em 2026-08-03**
 
 **Objetivo:** uma fonte canônica de regras da camada de IA, em português, e a fronteira de
 S3 escrita explicitamente como infraestrutura × objeto.
@@ -1409,24 +1409,48 @@ termo de infraestrutura. A varredura cobre `recommended_action` e `how_to_apply`
 `risks`: os riscos citam versionamento e Lifecycle de propósito, para explicar por que a
 conta é a que é.
 
-### Onda 3 — Fonte canônica e registry gerado
+### Onda 3 — Fonte canônica e registry gerado ✅ **CONCLUÍDA em 2026-08-03**
 
 **Objetivo:** eliminar P1, P2 e P5. `docs/ai/` vira canônico; `.agents/skills/` vira gerado.
-**Arquivos afetados:** `docs/ai/skills/julius-aws-analysis/SKILL.md` (novo, migrado da §33),
-`docs/ai/registry.md` (gerado), `julius/analysis/skill_registry.py` (novo),
-`scripts/generate_skill_registry.py` (novo), `tests/test_skill_registry_drift.py` (novo),
-`tests/test_skill_contract.py` (estendido), `install/install.sh` (chama o gerador),
-`.agents/skills/julius-aws-analysis/SKILL.md` (passa a ser gerado).
+**Arquivos afetados (o que foi feito):** `docs/ai/README.md`, `docs/ai/regras-globais.md`,
+`docs/ai/precedencia.md`, `docs/ai/skills/julius-aws-analysis/SKILL.md` (122 linhas, pt-BR),
+`docs/ai/hosts/devin.md` (150 linhas, o único conteúdo específico de host),
+`docs/ai/registry.md` (gerado), `julius/analysis/skill_registry.py`,
+`scripts/generate_skill_registry.py`, `tests/test_skill_registry_drift.py` (9 testes),
+`julius/analysis/context_builder.py` (`DETERMINISTIC_FIELDS` extraída),
+`AGENTS.md` e `install/install.sh` (comentário corrigido),
+`.agents/skills/julius-aws-analysis/SKILL.md` (agora gerado e commitado).
+
+**Desvio deliberado do plano: o instalador não chama o gerador.** O artefato é gerado e
+**commitado**; `install/install.sh` continua só copiando. Gerar durante a instalação exigiria
+Python antes do virtualenv existir, e um instalador que depende do que ele ainda vai instalar
+quebra na primeira máquina limpa. Quem garante que o artefato está em dia é
+`--check`, rodado nos testes — que é onde a garantia serve para alguma coisa.
+
+**Descoberta durante a execução: o artefato precisa se adaptar ao host, e isso justificou o
+gerador melhor que o plano.** `trigger` e `sections_to_load` no topo do frontmatter são
+atributo desconhecido para o schema de skills do VS Code. A fonte canônica segue plana e
+legível na convenção do Alfred; o gerador aninha tudo sob `metadata:`, que todo host aceita,
+deixando só `name` e `description` no topo. Um artefato que nasce inválido no host errado é
+exatamente o que ter um gerador evita — e com a fonte única isso custou seis linhas.
 **Mudança estrutural:** grande. Inverte a direção fonte → artefato.
 **Mudança de comportamento:** nenhuma no conteúdo do prompt — o texto gerado é equivalente
 ao atual, traduzido.
 **Impacto financeiro:** nenhum.
 **Compatibilidade:** `.agents/skills/` mantém caminho, nome e o bloco de procedimento
 Devin; `test_skill_contract.py` continua verde.
-**Testes:** `--check` de drift; extensão do contrato para cobrir `rule_id` e métodos.
-**Riscos:** o gerador virar depósito de prosa, como no Alfred. Mitigação: teste que
-verifica que o `.py` do gerador não contém parágrafo — só tabela e frontmatter.
-**Critério de conclusão:** editar `.agents/skills/…` à mão falha nos testes; acrescentar
+**Testes (implementados):** 9 em `tests/test_skill_registry_drift.py` — `--check` verde;
+**contraprova** de que editar o artefato à mão é detectado; o comando falha alto fora do
+pytest; a Skill canônica não cita host nenhum; os campos do motor chegam ao artefato;
+o gerador não guarda prosa; Skill sem seção obrigatória é recusada na carga; todo host
+recebe o mesmo corpo canônico; o artefato se declara gerado.
+`tests/test_skill_contract.py` continua verde **sem alteração** — 12 testes sobre o artefato
+gerado, o que prova que a migração preservou o contrato operacional do CLI.
+Suíte: 846 passed (era 837).
+**Riscos:** o gerador virar depósito de prosa, como no Alfred. Mitigação implementada:
+`test_the_generator_holds_no_prose_of_its_own` recusa qualquer frase do corpo canônico
+dentro do `.py` que o monta.
+**Critério de conclusão:** ✅ editar `.agents/skills/…` à mão falha nos testes; acrescentar
 método a `_ALLOWED` sem regenerar falha nos testes.
 **Rollback:** reverter `install.sh` e commitar o `.agents/skills/` gerado como manual.
 
@@ -1751,8 +1775,8 @@ O plano está cumprido quando:
 |---|---|---|---|---|
 | ~~**P0**~~ ✅ | ~~Anunciar à IA os 5 métodos de `_ALLOWED`~~ **feito em 2026-08-03** | 5 | P4, D1 | Positivo — destravou 2 cálculos prontos |
 | ~~**P0**~~ ✅ | ~~Testes de não-mutação acima da allowlist~~ **feito em 2026-08-03** | 2 | §32 | Nenhum |
-| **P1** | Fonte canônica + registry com drift | 3 | P1, P2, P5 | Nenhum |
-| **P1** | Regras globais e fronteira S3 escrita | 1 | P11, D7 | Nenhum |
+| ~~**P1**~~ ✅ | ~~Fonte canônica + registry com drift~~ **feito em 2026-08-03** | 3 | P1, P2, P5 | Nenhum |
+| ~~**P1**~~ ✅ | ~~Regras globais e fronteira S3 escrita~~ **feito em 2026-08-03** | 1 | P11, D7 | Nenhum |
 | **P2** | Playbooks + JIT | 4 | P3 | Indireto |
 | **P2** | Contrato de estimativa + 22 proibições | 6 | P6, P9 | Nenhum |
 | **P3** | Fatos semânticos tipados | 8 | P8 | Positivo indireto |

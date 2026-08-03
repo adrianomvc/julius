@@ -8,6 +8,21 @@ from julius.collection.redaction import redact_secrets
 from julius.knowledge.rules import families_without_evidence, missing_evidence
 from julius.pipeline import Analysis
 
+#: Os campos que a análise contextual recebe resolvidos e não pode recalcular.
+#:
+#: Estava embutido no dicionário de `constraints`, e a Skill repetia a mesma
+#: lista em prosa. Duas cópias da mesma regra divergem em silêncio: o contexto
+#: dizia cinco campos e o texto dizia "nunca sobrescreva um campo
+#: determinístico", sem enumerar qual. Aqui é uma constante, o contexto a
+#: publica e o artefato da Skill a recebe gerada.
+DETERMINISTIC_FIELDS = (
+    "estimated_gain",
+    "difficulty_score",
+    "confidence",
+    "execution_priority",
+    "strategic_priority",
+)
+
 
 @dataclass(frozen=True)
 class AgentContext:
@@ -99,13 +114,7 @@ def build_agent_context(
                 for family in families_without_evidence(analysis.account)
             ],
             "official_documentation_domain": "docs.aws.amazon.com",
-            "deterministic_fields_are_immutable": [
-                "estimated_gain",
-                "difficulty_score",
-                "confidence",
-                "execution_priority",
-                "strategic_priority",
-            ],
+            "deterministic_fields_are_immutable": list(DETERMINISTIC_FIELDS),
         },
         portfolio={
             "total_opportunities": len(analysis.opportunities),
