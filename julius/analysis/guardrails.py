@@ -3,20 +3,24 @@
 Duas coisas moram aqui, e são diferentes. `RULES` são guardrails — acesso
 read-only, não recalcular número que o Julius já decidiu, não inventar
 documentação, não vazar segredo — e cada uma tem contrapartida no validador de
-resposta. `SCOPE` é o oposto: não restringe, orienta. Diz o que o Julius já
-resolveu sozinho, para o provedor não repetir, e o que ele precisa procurar em
-cada tipo de ativo, para não devolver texto genérico sobre um achado que já
-vinha explicado.
+resposta. `DETERMINISTIC` é o oposto: não restringe, orienta. Diz o que o Julius
+já resolveu sozinho, para o provedor não repetir.
 
 A separação importa porque um provedor que só recebe proibição produz resposta
 defensiva e vazia. Ele passa na validação e não acrescenta nada.
+
+O que procurar em cada tipo de ativo era uma terceira tupla aqui, `SCOPE`, e ia
+inteira em todo pacote. Agora está em `playbook.py`, carregada só para os ativos
+que o pacote contém.
 """
 
 from __future__ import annotations
 
 from julius.analysis.context_builder import AgentContext
+from julius.analysis.playbook import asset_types_in_context
+from julius.analysis.playbook import render as render_playbooks
 
-PROMPT_VERSION = "1.9.0"
+PROMPT_VERSION = "1.10.0"
 
 #: As regras em si, separadas do texto que as apresenta — o validador de
 #: resposta verifica o resultado das mesmas restrições.
@@ -68,108 +72,6 @@ DETERMINISTIC = (
     "nenhum desses números — quando um deles falta, o pacote diz que falta.",
 )
 
-#: O que o provedor precisa procurar. Perguntas, não instruções de formato: o
-#: formato o schema já cobra.
-SCOPE = (
-    (
-        "glue_job",
-        (
-            "O script justifica a capacidade configurada — worker type, número "
-            "de workers, autoscaling?",
-            "O schedule é compatível com a natureza da fonte, ou há execução "
-            "que não encontra dado novo?",
-            "O modo de escrita casa com o filtro de quem lê a tabela a jusante?",
-            "Há reprocessamento evitável — bookmark, overwrite total, retry "
-            "silencioso?",
-            "O SLA tolera início adiado e capacidade não garantida, ou alguém "
-            "a jusante trava esperando este job terminar na hora?",
-        ),
-    ),
-    (
-        "athena_query",
-        (
-            "O consumo que esta query serve ainda existe?",
-            "O filtro de partição ausente é esquecimento ou requisito do caso "
-            "de uso?",
-            "A projeção de colunas reflete o que o consumidor usa de fato?",
-        ),
-    ),
-    (
-        "table",
-        (
-            "O particionamento e o layout servem ao padrão de leitura observado?",
-            "Quem consome ainda depende deste formato?",
-        ),
-    ),
-    (
-        "state_machine",
-        (
-            "A ASL tolera semântica at-least-once, ou há Task com efeito "
-            "colateral não idempotente — escrita sem chave de deduplicação, "
-            "notificação, cobrança — que a reexecução do Express duplicaria?",
-            "O loop de espera existe por limitação real da integração, ou por "
-            "hábito onde .sync ou callback serviria?",
-            "Retry e Catch cobrem falha transitória, ou escondem erro recorrente "
-            "que repaga trabalho já cobrado a cada tentativa?",
-        ),
-    ),
-    (
-        "sagemaker_app",
-        (
-            "O trabalho executado justifica esse tipo de instância, ou é GPU "
-            "parada?",
-            "Isso exige Studio ativo, ou cabe num training/processing job sob "
-            "demanda?",
-        ),
-    ),
-    (
-        "sagemaker_training_job",
-        (
-            "O script usa o acelerador que a instância cobra, ou só a biblioteca "
-            "que o importa? Confirme contra o arquivo inteiro, não pelo import.",
-            "O treino tolera interrupção com retomada por checkpoint? É essa "
-            "resposta que libera ou barra o managed spot.",
-            "As instâncias extras recebem trabalho, ou o script roda em uma só?",
-            "O tempo entre o início cobrado e a primeira época é download de "
-            "dado que FastFile ou Pipe evitariam?",
-        ),
-    ),
-    (
-        "redshift_cluster",
-        (
-            "O cluster sem conexão existe para carga sazonal, para recuperação "
-            "de desastre, ou deixou de ser usado? Quem depende dele hoje?",
-            "CPU baixa até no pico esconde gargalo de I/O, de memória por query "
-            "ou de fila, ou é capacidade sobrando mesmo?",
-        ),
-    ),
-    (
-        "sagemaker_endpoint",
-        (
-            "O consumo justifica inferência em tempo real, ou Serverless/Async "
-            "atende?",
-            "Quem chama este endpoint hoje, e esse consumidor ainda existe?",
-        ),
-    ),
-    (
-        "s3_bucket",
-        (
-            "As versões não-correntes existem por exigência de retenção ou "
-            "por inércia? Há prazo regulatório que impeça apagá-las?",
-            "O padrão de acesso justifica reescrever este dado em classe "
-            "fria, contando o custo da reescrita e o mínimo de retenção da "
-            "classe alvo? Lifecycle não é opção neste ambiente.",
-        ),
-    ),
-    (
-        "cross_service",
-        (
-            "Quando produzir custa caro e ler desperdiça o esforço: ajustar a "
-            "escrita ou a leitura? Quem quebra com a escolha?",
-        ),
-    ),
-)
-
 
 def _numbered_rules() -> str:
     return "\n".join(f"{index}. {rule}" for index, rule in enumerate(RULES, start=1))
@@ -204,13 +106,14 @@ def _estimation_methods() -> str:
     return "\n".join(linhas)
 
 
-def _division_of_labour() -> str:
-    """O texto que separa o que já está resolvido do que falta responder."""
+def _division_of_labour(asset_types: set[str] | None = None) -> str:
+    """O texto que separa o que já está resolvido do que falta responder.
+
+    `asset_types` é o recorte: só entram as perguntas dos ativos que o pacote
+    contém. `None` carrega todas, para quem monta briefing sem pacote na mão.
+    """
     already = "\n".join(f"- {item}" for item in DETERMINISTIC)
-    questions = "\n".join(
-        f"\n{asset}:\n" + "\n".join(f"- {question}" for question in items)
-        for asset, items in SCOPE
-    )
+    questions = render_playbooks(asset_types)
     return f"""A divisão é por grau de certeza, não por serviço.
 
 O Julius fica com o que consegue provar: gatilho que é fato — propriedade
@@ -252,12 +155,13 @@ def build_devin_prompt(
     schema_file: str = "output-schema.json",
     result_file: str = "result.json",
 ) -> str:
+    ativos = asset_types_in_context(context.opportunities, context.signals)
     return f"""Você está executando a Skill Julius AWS Analysis, prompt v{PROMPT_VERSION}.
 
 Objetivo: enriquecer contextualmente as oportunidades determinísticas do Julius
 e julgar os sinais que ele não consegue fechar sozinho.
 
-{_division_of_labour()}
+{_division_of_labour(ativos)}
 
 Regras obrigatórias:
 {_numbered_rules()}
@@ -286,6 +190,7 @@ def build_manual_instructions(
     result_file: str = "result.json",
 ) -> str:
     """Mesmo escopo e mesmas regras, sem a mecânica de sessão de um agente."""
+    ativos = asset_types_in_context(context.opportunities, context.signals)
     return f"""Análise contextual do Julius — preenchimento manual.
 
 Conta: {context.account["id"]}
@@ -294,7 +199,7 @@ Oportunidades no pacote: {len(context.opportunities)} de \
 {context.portfolio.get("total_opportunities", len(context.opportunities))} no portfólio
 Sinais a julgar: {len(context.signals)}
 
-{_division_of_labour()}
+{_division_of_labour(ativos)}
 
 Escreva `{result_file}` seguindo `{schema_file}`. As mesmas regras valem:
 

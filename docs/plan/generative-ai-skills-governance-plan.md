@@ -3,8 +3,8 @@
 > **Escopo desta versão:** análise e proposta. Nenhum schema, regra financeira ou item do
 > portfólio é alterado por este documento.
 >
-> **Estado de execução:** as **Ondas 1, 2, 3 e 5 foram implementadas em 2026-08-03** —
-> ver §34. As Ondas 4, 6, 7, 8, 9, 10 e 11 continuam propostas. Os trechos que descrevem P4 e D1 ficaram como
+> **Estado de execução:** as **Ondas 1, 2, 3, 4 e 5 foram implementadas em 2026-08-03** —
+> ver §34. As Ondas 6, 7, 8, 9, 10 e 11 continuam propostas. Os trechos que descrevem P4 e D1 ficaram como
 > registro histórico, marcados **[Resolvido]**.
 >
 > **Base analisada:** Julius na branch `agent/pending-followups` (contém `origin/main`,
@@ -1454,7 +1454,7 @@ dentro do `.py` que o monta.
 método a `_ALLOWED` sem regenerar falha nos testes.
 **Rollback:** reverter `install.sh` e commitar o `.agents/skills/` gerado como manual.
 
-### Onda 4 — Playbooks e carregamento JIT
+### Onda 4 — Playbooks e carregamento JIT ✅ **CONCLUÍDA em 2026-08-03**
 
 **Objetivo:** eliminar P3. `SCOPE` deixa de ir inteiro em todo pacote.
 **Arquivos afetados:** `docs/ai/skills/julius-aws-analysis/playbooks/*.md` (5 novos),
@@ -1469,8 +1469,26 @@ serviço ausente — a mudança esperada é para melhor, e precisa ser observada
 `verdict_facts` e, por consequência, disparar ou não `SFN-STANDARD-TO-EXPRESS`.
 **Compatibilidade:** `prompt_version` sobe; `agent validate` recusa pacote de versão
 anterior, que é o comportamento correto e já documentado no `README.md`.
-**Testes:** contexto mínimo por `rule_id` conforme a tabela da §24; nenhum playbook
-carregado sem sinal correspondente; todo sinal do pacote tem playbook que o cobre.
+**Testes (implementados):** 18 em `tests/test_playbook_jit.py`, incluindo a **contraprova de
+tamanho** — sem ela, "carrega só o necessário" passaria com um `render` que ignora o
+argumento. Mais o recorte independente por seção dentro do mesmo arquivo, cross-service
+entrando por `rule_id` e não por ativo, e a declaração em `package-data`.
+`tests/test_analysis_providers.py::test_instructions_tell_the_provider_what_is_decided_and_what_to_look_for`
+**foi reescrito**: a afirmação antiga era que todo bloco de `SCOPE` aparecia — ela passava
+com o pacote levando perguntas de Redshift a uma conta sem Redshift. A nova é mais estreita
+e mais forte: o que o pacote contém aparece, e o que ele não contém **não** aparece.
+Suíte: 864 passed (era 846).
+
+**Redução medida na conta de exemplo:** 9 blocos conhecidos, 6 carregados; `athena_query`,
+`cross_service` e `sagemaker_training_job` ficaram de fora. Texto de perguntas: 2383 → 1605
+caracteres, 33% menos. Num pacote só de Glue a redução passa de 75%.
+
+**Desvio do plano: os playbooks moram em `julius/analysis/playbooks/`, não em `docs/ai/`.**
+`docs/` não entra no wheel — `packages.find` inclui só `julius*`. Como as perguntas são
+injetadas no prompt em tempo de execução, mantê-las em `docs/ai/` produziria um Julius
+instalado que monta pacote sem nenhuma delas, falhando só em produção. É a mesma classe de
+erro que `tests/test_package_data.py` existe para pegar. A regra que separa os dois casos
+passou a ser: **o que o host lê fica em `docs/ai/`; o que o motor injeta fica em `julius/`**.
 **Riscos:** perder cobertura de um sinal cujo playbook não foi mapeado. Mitigação: o teste
 "todo sinal tem playbook" falha antes de chegar em produção.
 **Critério de conclusão:** conta só com sinais Glue carrega 1 playbook; o pacote declara
@@ -1777,7 +1795,7 @@ O plano está cumprido quando:
 | ~~**P0**~~ ✅ | ~~Testes de não-mutação acima da allowlist~~ **feito em 2026-08-03** | 2 | §32 | Nenhum |
 | ~~**P1**~~ ✅ | ~~Fonte canônica + registry com drift~~ **feito em 2026-08-03** | 3 | P1, P2, P5 | Nenhum |
 | ~~**P1**~~ ✅ | ~~Regras globais e fronteira S3 escrita~~ **feito em 2026-08-03** | 1 | P11, D7 | Nenhum |
-| **P2** | Playbooks + JIT | 4 | P3 | Indireto |
+| ~~**P2**~~ ✅ | ~~Playbooks + JIT~~ **feito em 2026-08-03** | 4 | P3 | Indireto |
 | **P2** | Contrato de estimativa + 22 proibições | 6 | P6, P9 | Nenhum |
 | **P3** | Fatos semânticos tipados | 8 | P8 | Positivo indireto |
 | **P3** | Estimativa contextual generativa | 7 | P7 | Zero no portfólio |

@@ -10,7 +10,7 @@ metadata:
     - rules
     - evidence requirements
     - output contract
-  prompt_version: 1.9.0
+  prompt_version: 1.10.0
   allowed_estimation_methods:
     - glue_interactive_capacity_reduction_v1
     - glue_shuffle_reduction_v1

@@ -181,19 +181,47 @@ def test_instructions_tell_the_provider_what_is_decided_and_what_to_look_for(
     refazer conta — e o que procurar em cada ativo, para a resposta não virar
     texto genérico sobre um achado que já vinha explicado.
     """
-    from julius.analysis.guardrails import DETERMINISTIC, SCOPE
+    import json
+
+    from julius.analysis.guardrails import DETERMINISTIC
+    from julius.analysis.playbook import (
+        asset_types_in_context,
+        known_asset_types,
+        select,
+    )
 
     for name in sorted(PROVIDERS):
         workspace = Workspace.at(tmp_path / name)
         PROVIDERS[name]().prepare(analysis, workspace)
         instructions = workspace.instructions.read_text(encoding="utf-8")
+        context = json.loads(workspace.context.read_text(encoding="utf-8"))
 
         assert "já está decidido" in instructions.lower()
-        for asset, questions in SCOPE:
-            assert asset in instructions
-            for question in questions:
-                assert question in instructions
         for item in DETERMINISTIC:
             assert item in instructions
         # E o recorte do portfólio continua visível.
         assert "no portfólio" in instructions
+
+        # A afirmação antiga era que **todo** bloco de `SCOPE` aparecia. Ela
+        # passava com o pacote carregando as perguntas de Redshift numa conta sem
+        # Redshift. A de agora é mais estreita e mais forte: o que o pacote
+        # contém aparece, e o que ele não contém não aparece.
+        presentes = asset_types_in_context(
+            context["opportunities"], context["signals"]
+        )
+        assert presentes, "a fixture precisa ter ativos, ou o teste não afirma nada"
+
+        for asset, questions in select(presentes):
+            assert f"\n{asset}:\n" in instructions, f"{asset} deveria ter carregado"
+            for question in questions:
+                assert question in instructions
+
+        ausentes = known_asset_types() - presentes
+        assert ausentes, (
+            "a fixture precisa ter ao menos um ativo ausente, senão o recorte "
+            "não é exercitado e o teste voltaria a ser o antigo"
+        )
+        for asset in sorted(ausentes):
+            assert f"\n{asset}:\n" not in instructions, (
+                f"{asset} não está no pacote e mesmo assim veio no briefing"
+            )

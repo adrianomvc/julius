@@ -14,6 +14,18 @@ diretório; editá-lo à mão falha nos testes.
 | [`hosts/`](hosts/) | Procedimento operacional por host — o único conteúdo específico |
 | [`registry.md`](registry.md) | Gerado: quais Skills existem, seus gatilhos e o que vem do motor |
 
+### A exceção: os playbooks moram em `julius/analysis/playbooks/`
+
+As perguntas por tipo de ativo não estão aqui, e a razão é de empacotamento, não
+de gosto. Elas são injetadas no prompt **em tempo de execução**, e `docs/` não
+entra no wheel — `packages.find` inclui só `julius*`. Se morassem aqui, o Julius
+instalado montaria pacote de análise sem nenhuma pergunta, e falharia só em
+produção. Elas viajam com o motor, declaradas em `package-data` e cobertas por
+`tests/test_playbook_jit.py`.
+
+A regra que separa os dois casos: o que o **host** lê fica em `docs/ai/`; o que o
+**motor** injeta fica em `julius/`.
+
 ## Como mudar alguma coisa
 
 ```bash
