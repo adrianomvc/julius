@@ -21,12 +21,25 @@ from julius.knowledge.verdict_facts import apply_verdicts
 
 
 class _Decisao:
-    """O mínimo do `SignalDecision` que `apply_verdicts` lê."""
+    """O mínimo do `SignalDecision` que `apply_verdicts` lê.
 
-    def __init__(self, rule_id: str, asset_name: str, verdict: str) -> None:
+    `evidence_hash` entra aqui porque o `SignalDecision` real sempre o tem —
+    `SignalLedger.record_verdicts` grava `signal.evidence_signature()` em toda
+    linha. Sem ele o fato seria escrito sem nada que permita invalidá-lo quando o
+    artefato mudar, e é isso que `apply_confirmed` passou a recusar.
+    """
+
+    def __init__(
+        self,
+        rule_id: str,
+        asset_name: str,
+        verdict: str,
+        evidence_hash: str = "a1b2c3d4",
+    ) -> None:
         self.rule_id = rule_id
         self.asset_name = asset_name
         self.verdict = verdict
+        self.evidence_hash = evidence_hash
 
 
 def _maquina(**overrides) -> StateMachine:
