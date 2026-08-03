@@ -39,6 +39,11 @@ include = ["julius*"]
     "assets/fonts/*.woff2",
 ]
 "julius.knowledge.pricing" = ["tables/*.toml", "mapping.toml"]
+# As perguntas por tipo de ativo entram no prompt em tempo de execução. Sem esta
+# linha o Julius instalado monta pacote de análise sem nenhuma delas — e o
+# provedor recebe só proibição, que é a resposta defensiva e vazia que a
+# separação entre regra e escopo existe para evitar.
+"julius.analysis" = ["playbooks/*.md"]
 
 # A reestruturação move ~14 mil linhas entre pacotes. A suíte pega o que executa;
 # lint e tipos pegam o que existe — import morto, assinatura trocada e atributo
