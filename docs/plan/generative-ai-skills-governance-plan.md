@@ -1369,19 +1369,45 @@ são um único item de backlog.
 **Critério de conclusão:** as 12 regras da §23 escritas, cada uma com o teste que a cobre.
 **Rollback:** apagar o diretório.
 
-### Onda 2 — Testes de allowlist e não-mutação
+### Onda 2 — Testes de allowlist e não-mutação ✅ **CONCLUÍDA em 2026-08-03**
 
 **Objetivo:** cobrir as camadas acima da allowlist (IA, Skill, provider, relatório).
-**Arquivos afetados:** `tests/test_ai_cannot_mutate_aws.py` (novo).
+**Arquivos afetados:** `tests/test_ai_cannot_mutate_aws.py` (novo, 8 testes).
 **Mudança estrutural:** nenhuma.
 **Mudança de comportamento:** nenhuma — testes sobre o código atual.
 **Impacto financeiro:** nenhum.
 **Compatibilidade:** total.
-**Testes:** os 7 novos da §32.
+**Testes:** os 7 novos da §32, mais um oitavo que a execução exigiu (ver abaixo).
+Suíte: 837 passed (era 829).
 **Riscos:** um teste falhar revela problema real; é o objetivo.
-**Critério de conclusão:** os 12 testes da §34 existem, verdes, com o mapeamento da §32
+**Critério de conclusão:** ✅ os 12 testes da §34 existem, verdes, com o mapeamento da §32
 documentado.
 **Rollback:** remover o arquivo.
+
+**Duas descobertas durante a execução:**
+
+1. **Precisão do que conta como "alcançar a AWS".** A primeira versão barrava `urllib` por
+   nome de topo e acusava `response_validator.py`, que importa `urllib.parse` para exigir
+   documentação em `docs.aws.amazon.com` — parsing de string, sem rede. Medir o nome do
+   pacote não é medir a capacidade: o teste passou a comparar o caminho completo e a
+   distinguir `urllib.parse` de `urllib.request`. Daí o oitavo teste
+   (`test_the_modules_that_read_ai_output_cannot_reach_aws`), separado do teste de provider.
+
+2. **A prosa que protege não pode ser confundida com a que ameaça.** A Skill diz
+   *"Never run create, update, put, delete"*. Uma varredura por palavra solta acusaria
+   justamente a frase que estabelece a fronteira. Por isso
+   `test_skill_content_cannot_execute_changes` só inspeciona **blocos de código cercados** —
+   o que alguém copia e roda. Verificado contra seis casos: pega
+   `aws s3api put-bucket-lifecycle-configuration`, `DROP TABLE`, `terraform apply` e
+   `client.put_bucket_versioning(...)`; deixa passar `aws s3 ls` e a frase protetora.
+
+**Fronteira exercitada.** `test_s3_consumer_mode_never_recommends_infrastructure` roda as
+famílias S3 com `s3_mode="storage_class_only"` e hoje exercita um achado:
+`S3-STORAGE-CLASS-TRANSITION`, com ação *"Mover os objetos deste prefixo para Glacier
+Flexible Retrieval"* — exatamente a recomendação de objeto que é permitida, e sem nenhum
+termo de infraestrutura. A varredura cobre `recommended_action` e `how_to_apply`, não
+`risks`: os riscos citam versionamento e Lifecycle de propósito, para explicar por que a
+conta é a que é.
 
 ### Onda 3 — Fonte canônica e registry gerado
 
@@ -1662,6 +1688,14 @@ do relatório mantendo-os no `result.json` para auditoria.
    acompanhar dá correções. A proposta é congelar e revisar por decisão explícita.
 8. **`suspected_injections` (§27).** Campo novo no schema de saída, ou registro só em log?
    Campo no schema custa uma versão de contrato.
+9. **Habilitar fonte de acesso é infraestrutura?** *(surgiu na Onda 2)* O sinal
+   `S3-STORAGE-CLASS-TRANSITION` lista em `missing_evidence` o que ligar para obter
+   evidência de leitura — *"server access logging, Storage Lens advanced, Storage Class
+   Analysis"*. Habilitar qualquer uma delas é `Put*` na configuração do bucket. Mas é
+   coleta de evidência, não otimização de custo, e o sinal é pergunta ao humano, não
+   recomendação. O teste da Onda 2 varre **oportunidades**, não sinais, e isso está
+   documentado no docstring. Se a fronteira dever alcançar sinais também, o texto muda de
+   "ligue X" para "sem X esta pergunta não se responde".
 
 ---
 
@@ -1716,7 +1750,7 @@ O plano está cumprido quando:
 | Prioridade | Item | Onda | Resolve | Impacto financeiro |
 |---|---|---|---|---|
 | ~~**P0**~~ ✅ | ~~Anunciar à IA os 5 métodos de `_ALLOWED`~~ **feito em 2026-08-03** | 5 | P4, D1 | Positivo — destravou 2 cálculos prontos |
-| **P0** | Testes de não-mutação acima da allowlist | 2 | §32 | Nenhum |
+| ~~**P0**~~ ✅ | ~~Testes de não-mutação acima da allowlist~~ **feito em 2026-08-03** | 2 | §32 | Nenhum |
 | **P1** | Fonte canônica + registry com drift | 3 | P1, P2, P5 | Nenhum |
 | **P1** | Regras globais e fronteira S3 escrita | 1 | P11, D7 | Nenhum |
 | **P2** | Playbooks + JIT | 4 | P3 | Indireto |
