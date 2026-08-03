@@ -21,6 +21,40 @@ class AIEstimationProposal:
 
 
 @dataclass(frozen=True)
+class AIContextualEstimate:
+    """A faixa que a análise propõe quando nenhuma fórmula do motor fecha.
+
+    É o único lugar do produto em que a IA devolve número, e por isso é o mais
+    cercado. O que ela devolve aqui **não** é economia: é uma ordem de grandeza
+    com raciocínio explícito, que o motor confere contra o baseline que ele mesmo
+    resolve e que nunca entra no total oficial.
+
+    A diferença para `AIEstimationProposal` é a razão de as duas existirem. Lá há
+    fórmula executável e a IA escolhe só o cenário; aqui não há fórmula, e o que
+    a IA precisa entregar é o raciocínio inteiro — mecanismo de cobrança,
+    expressão, entradas nomeadas e como validar — para que a faixa seja
+    reproduzível por outra pessoa em vez de acreditada.
+    """
+
+    #: Chave em `knowledge/billing_mechanisms`. Não é descrição livre: é o que
+    #: liga a faixa à unidade que a AWS cobra de fato.
+    billing_mechanism: str
+    #: O raciocínio em uma linha, legível por quem for conferir.
+    reasoning: str
+    #: As entradas usadas, nomeadas. Cada chave é verificada contra o pacote.
+    inputs: dict[str, float | int | str | bool] = field(default_factory=dict)
+    low: float = 0.0
+    expected: float = 0.0
+    high: float = 0.0
+    assumptions: list[str] = field(default_factory=list)
+    #: Como sair da estimativa para a medição. Vazio significa que ninguém sabe
+    #: confirmar isto — e aí não é estimativa, é palpite.
+    validation_plan: list[str] = field(default_factory=list)
+    documentation: list[str] = field(default_factory=list)
+    missing_evidence: list[str] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
 class ContextualEstimate:
     """A conta que o motor fez a partir do cenário que a análise escolheu.
 

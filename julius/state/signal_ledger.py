@@ -28,7 +28,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Protocol
 
-from julius.findings.investigation import AIEstimationProposal, AIRecommendation
+from julius.findings.investigation import (
+    AIContextualEstimate,
+    AIEstimationProposal,
+    AIRecommendation,
+)
 from julius.findings.signal import Signal
 
 
@@ -46,6 +50,7 @@ class Verdict(Protocol):
     rationale: str
     recommendation: AIRecommendation | None
     estimation_proposal: AIEstimationProposal | None
+    contextual_estimate: AIContextualEstimate | None
 
 #: `needs_evidence` mantém o sinal no pacote porque a pergunta segue de pé.
 #: `confirmed` também, mas só até a promoção acontecer: a partir daí quem
@@ -73,6 +78,7 @@ class SignalDecision:
     status: str = "open"
     recommendation: AIRecommendation | None = None
     estimation_proposal: AIEstimationProposal | None = None
+    contextual_estimate: AIContextualEstimate | None = None
 
 
 @dataclass
@@ -130,6 +136,7 @@ class SignalLedger:
             previous = store.get(fingerprint) or {}
             recommendation = getattr(verdict, "recommendation", None)
             proposal = getattr(verdict, "estimation_proposal", None)
+            faixa = getattr(verdict, "contextual_estimate", None)
             store[fingerprint] = {
                 "account": account,
                 "rule_id": signal.rule_id,
@@ -158,6 +165,7 @@ class SignalLedger:
                 "estimation_proposal": (
                     asdict(proposal) if proposal is not None else None
                 ),
+                "contextual_estimate": (asdict(faixa) if faixa is not None else None),
             }
             recorded += 1
         self._save(store)
@@ -234,6 +242,11 @@ def _decision(fingerprint: str, entry: dict) -> SignalDecision:
         estimation_proposal=(
             AIEstimationProposal(**entry["estimation_proposal"])
             if isinstance(entry.get("estimation_proposal"), dict)
+            else None
+        ),
+        contextual_estimate=(
+            AIContextualEstimate(**entry["contextual_estimate"])
+            if isinstance(entry.get("contextual_estimate"), dict)
             else None
         ),
     )

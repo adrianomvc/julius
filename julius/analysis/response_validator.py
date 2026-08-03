@@ -5,7 +5,12 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from urllib.parse import urlparse
 
-from julius.findings.investigation import AIEstimationProposal, AIRecommendation
+from julius.findings.investigation import (
+    AIContextualEstimate,
+    AIEstimationProposal,
+    AIRecommendation,
+)
+from julius.knowledge.generative_estimation import eligible, eligible_rule_ids
 
 #: Toda conclusão sobre um artefato precisa dizer qual artefato e onde. Sem
 #: isso não há como distinguir leitura do script de suposição sobre ele.
@@ -88,6 +93,49 @@ DEVIN_OUTPUT_SCHEMA: dict = {
                             "evidence_refs": {
                                 "type": "array",
                                 "items": _EVIDENCE_REF_SCHEMA,
+                            },
+                        },
+                    },
+                    # O único ponto do contrato em que a análise devolve número.
+                    # Só para sinal confirmado, só para `rule_id` elegível, e o
+                    # motor confere a faixa contra o baseline que ele resolve.
+                    "contextual_estimate": {
+                        "type": ["object", "null"],
+                        "additionalProperties": False,
+                        "required": [
+                            "billing_mechanism",
+                            "reasoning",
+                            "inputs",
+                            "low",
+                            "expected",
+                            "high",
+                            "assumptions",
+                            "validation_plan",
+                            "documentation",
+                            "missing_evidence",
+                        ],
+                        "properties": {
+                            "billing_mechanism": {"type": "string"},
+                            "reasoning": {"type": "string"},
+                            "inputs": {"type": "object"},
+                            "low": {"type": "number"},
+                            "expected": {"type": "number"},
+                            "high": {"type": "number"},
+                            "assumptions": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                            },
+                            "validation_plan": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                            },
+                            "documentation": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                            },
+                            "missing_evidence": {
+                                "type": "array",
+                                "items": {"type": "string"},
                             },
                         },
                     },
@@ -247,6 +295,7 @@ class SignalVerdict:
     evidence_ref: EvidenceRef
     recommendation: AIRecommendation | None = None
     estimation_proposal: AIEstimationProposal | None = None
+    contextual_estimate: AIContextualEstimate | None = None
 
 
 @dataclass(frozen=True)
@@ -464,10 +513,12 @@ def _parse_signal_verdicts(
     seen: set[tuple[str, str]] = set()
     legacy_keys = {"rule_id", "asset_name", "verdict", "rationale", "evidence_ref"}
     extended_keys = legacy_keys | {"recommendation", "estimation_proposal"}
+    generative_keys = extended_keys | {"contextual_estimate"}
     for raw in raw_verdicts:
         if not isinstance(raw, dict) or frozenset(raw) not in {
             frozenset(legacy_keys),
             frozenset(extended_keys),
+            frozenset(generative_keys),
         }:
             raise AgentOutputError("campos do veredito ausentes ou não permitidos")
         rule_id = raw.get("rule_id")
@@ -495,6 +546,19 @@ def _parse_signal_verdicts(
             raise AgentOutputError(
                 f"estimativa contextual exige veredito confirmed: {rule_id}"
             )
+        contextual = _parse_contextual_estimate(raw.get("contextual_estimate"))
+        if verdict != "confirmed" and contextual is not None:
+            raise AgentOutputError(
+                f"faixa contextual exige veredito confirmed: {rule_id}"
+            )
+        if contextual is not None and eligible(rule_id) is None:
+            # A elegibilidade é por `rule_id`, e recusá-la aqui é o que impede a
+            # faixa de virar categoria: um sinal fora da lista não recebe número
+            # nenhum, por mais bem preenchida que a proposta esteja.
+            raise AgentOutputError(
+                f"{rule_id} não aceita faixa contextual; elegíveis: "
+                f"{', '.join(eligible_rule_ids()) or 'nenhum'}"
+            )
         seen.add(key)
         parsed.append(
             SignalVerdict(
@@ -510,6 +574,7 @@ def _parse_signal_verdicts(
                 ),
                 recommendation=recommendation,
                 estimation_proposal=proposal,
+                contextual_estimate=contextual,
             )
         )
     if seen != set(expected_signals):
@@ -573,6 +638,71 @@ def _parse_estimation_proposal(
         )
         parsed_refs.append({"sha256": parsed.sha256, "lines": parsed.lines})
     return AIEstimationProposal(method, dict(target), parsed_refs)
+
+
+def _parse_contextual_estimate(raw: object) -> AIContextualEstimate | None:
+    """A faixa como estrutura. O conteúdo dela é conferido pelo motor.
+
+    Aqui só se cobra forma: campo obrigatório presente, tipo certo, faixa
+    ordenada e não negativa. Baseline, mecanismo, documentação oficial e plano de
+    validação são verificados em `generative_estimation`, contra o inventário —
+    fazê-lo aqui exigiria dar ao validador acesso à conta, e ele existe
+    justamente para não precisar dela.
+    """
+    if raw is None:
+        return None
+    chaves = {
+        "billing_mechanism",
+        "reasoning",
+        "inputs",
+        "low",
+        "expected",
+        "high",
+        "assumptions",
+        "validation_plan",
+        "documentation",
+        "missing_evidence",
+    }
+    if not isinstance(raw, dict) or set(raw) != chaves:
+        raise AgentOutputError("faixa contextual com campos ausentes ou não permitidos")
+    mecanismo, expressao = raw.get("billing_mechanism"), raw.get("reasoning")
+    if not isinstance(mecanismo, str) or not mecanismo.strip():
+        raise AgentOutputError("faixa contextual sem mecanismo de cobrança")
+    if not isinstance(expressao, str) or not expressao.strip():
+        raise AgentOutputError("faixa contextual sem raciocínio declarado")
+    entradas = raw.get("inputs")
+    if not isinstance(entradas, dict) or not all(
+        isinstance(chave, str) and isinstance(valor, (str, int, float, bool))
+        for chave, valor in entradas.items()
+    ):
+        raise AgentOutputError("entradas da faixa contextual inválidas")
+    numeros = {}
+    for campo in ("low", "expected", "high"):
+        valor = raw.get(campo)
+        if not isinstance(valor, (int, float)) or isinstance(valor, bool):
+            raise AgentOutputError(f"faixa contextual com {campo} não numérico")
+        if valor < 0:
+            raise AgentOutputError(f"faixa contextual com {campo} negativo")
+        numeros[campo] = float(valor)
+    if not numeros["low"] <= numeros["expected"] <= numeros["high"]:
+        raise AgentOutputError("faixa contextual fora de ordem")
+    listas = {}
+    for campo in ("assumptions", "validation_plan", "documentation", "missing_evidence"):
+        valor = raw.get(campo)
+        if not isinstance(valor, list) or not all(
+            isinstance(item, str) for item in valor
+        ):
+            raise AgentOutputError(f"{campo} da faixa contextual inválido")
+        listas[campo] = list(valor)
+    return AIContextualEstimate(
+        billing_mechanism=mecanismo,
+        reasoning=expressao,
+        inputs=dict(entradas),
+        low=numeros["low"],
+        expected=numeros["expected"],
+        high=numeros["high"],
+        **listas,
+    )
 
 
 def _parse_uncovered_findings(

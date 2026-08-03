@@ -27,6 +27,7 @@ from julius.findings.signal import Signal
 from julius.governance import compute_candidates
 from julius.graph import ProcessGraph, build_process_graph, enrich_opportunities
 from julius.knowledge.contextual_estimation import evaluate_proposal
+from julius.knowledge.generative_estimation import evaluate_contextual
 from julius.knowledge.managed_processes import is_managed, managed_asset_names
 from julius.knowledge.recurrence import (
     consumption_dpu_hours,
@@ -594,7 +595,25 @@ def _build_investigations(
             continue
         estimate = None
         status = decision.status
-        if decision.estimation_proposal is not None:
+        if decision.contextual_estimate is not None:
+            # Sem fórmula que feche, a faixa vem da análise e o motor confere.
+            # Nada deste caminho entra no portfólio: `evaluate_contextual` fixa
+            # `include_in_portfolio=False` e a maturidade em `contextual_estimate`.
+            try:
+                estimate = evaluate_contextual(
+                    account, signal, decision.contextual_estimate, config
+                )
+                status = (
+                    "candidate" if estimate.status == "estimated" else "needs_evidence"
+                )
+            except ValueError as exc:
+                estimate = ContextualEstimate(
+                    method="generative_contextual",
+                    status="rejected",
+                    missing_evidence=[str(exc)],
+                )
+                status = "rejected"
+        elif decision.estimation_proposal is not None:
             try:
                 estimate = evaluate_proposal(
                     account, signal, decision.estimation_proposal, config
