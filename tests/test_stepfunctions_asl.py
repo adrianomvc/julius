@@ -316,3 +316,72 @@ def test_a_machine_without_the_metric_is_not_blocked_by_missing_data():
     _apply_measured_express_blocker([sem_metrica])
 
     assert sem_metrica.express_blockers == []
+
+
+def test_a_wait_loop_inside_a_map_is_finally_detected():
+    """O caso mais caro do padrão era o único que a varredura não via.
+
+    Um `Map` que processa mil itens e espera dentro do `ItemProcessor` cobra o
+    ciclo mil vezes. `_polling_loop_states` só olhava o nível de topo, então
+    essa máquina saía com `has_polling_loop=False` e a regra que cobra por
+    transição de espera não disparava.
+    """
+    from julius.collection.collectors.stepfunctions import _polling_loop_states
+
+    aninhado = {
+        "States": {
+            "ProcessaTudo": {
+                "Type": "Map",
+                "ItemProcessor": {
+                    "States": {
+                        "Dispara": {"Type": "Task", "Next": "Espera"},
+                        "Espera": {"Type": "Wait", "Seconds": 30, "Next": "Confere"},
+                        "Confere": {"Type": "Task", "Next": "Espera"},
+                    }
+                },
+            }
+        }
+    }
+
+    assert _polling_loop_states(aninhado) == {"Espera", "Confere"}
+
+
+def test_next_is_never_followed_across_scopes():
+    """`Next` endereça só o próprio mapa: achatar criaria um ciclo inexistente.
+
+    Os dois ramos têm um `Confere` cada. Se os escopos fossem unidos, o `Next`
+    de um ramo alcançaria o estado homônimo do outro e fecharia um ciclo que a
+    máquina não tem.
+    """
+    from julius.collection.collectors.stepfunctions import _polling_loop_states
+
+    dois_ramos = {
+        "States": {
+            "EmParalelo": {
+                "Type": "Parallel",
+                "Branches": [
+                    {"States": {"Espera": {"Type": "Wait", "Next": "Confere"},
+                                "Confere": {"Type": "Task"}}},
+                    {"States": {"Confere": {"Type": "Task", "Next": "Espera"},
+                                "Espera": {"Type": "Wait"}}},
+                ],
+            }
+        }
+    }
+
+    # Nenhum dos dois ramos fecha o ciclo sozinho, e cruzá-los seria invenção.
+    assert _polling_loop_states(dois_ramos) == set()
+
+
+def test_the_top_level_loop_keeps_working():
+    """A correção amplia a cobertura; não pode trocar o caso que já funcionava."""
+    from julius.collection.collectors.stepfunctions import _polling_loop_states
+
+    topo = {
+        "States": {
+            "Espera": {"Type": "Wait", "Seconds": 10, "Next": "Confere"},
+            "Confere": {"Type": "Task", "Next": "Espera"},
+        }
+    }
+
+    assert _polling_loop_states(topo) == {"Espera", "Confere"}

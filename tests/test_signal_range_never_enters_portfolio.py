@@ -177,3 +177,75 @@ def test_a_step_functions_signal_ranks_by_measured_transitions():
     assert sinal.potential_range is not None
     assert "transições" in sinal.potential_range.basis
     assert "não medida" in sinal.potential_range.caveat
+
+
+def test_a_signal_gets_a_range_when_the_engine_already_knows_the_arithmetic():
+    """Nem todo sinal é incógnita financeira; alguns são incógnita de persistência.
+
+    `SM-APP-IDLE-CANDIDATE` existe porque `_financial_ready` recusa cobertura
+    curta — não porque o dinheiro seja desconhecido. `idle_hours_per_day` é
+    medido e o custo do app é rateado, então `idle_app_saving` fecha a conta. A
+    faixa usa esse cálculo como teto e abre para baixo a chance de o padrão não
+    se repetir.
+    """
+    from julius.collection.models import SageMakerApp
+    from julius.knowledge.rules.sagemaker import rules as sm_rules
+
+    app = SageMakerApp(
+        name="notebook-ocioso",
+        instance_type="ml.m5.xlarge",
+        status="InService",
+        idle_hours_per_day=18.0,
+        idle_shutdown_min=0,
+        activity_metrics_available=True,
+        coverage_days=7,
+        consistent_scans=1,
+        allocated_cost=90.0,
+        cost_coverage_days=7,
+    )
+    conta = Account(account_id="123456789012", sagemaker_apps=[app])
+
+    sinal = next(
+        s
+        for s in sm_rules.signals(conta, DEFAULT_CONFIG)
+        if s.rule_id == "SM-APP-IDLE-CANDIDATE"
+    )
+
+    assert sinal.potential_range is not None
+    assert sinal.potential_range.quality == "potential"
+    assert "persistência" in sinal.potential_range.caveat
+    assert sinal.potential_range.low < sinal.potential_range.high
+
+
+def test_a_signal_without_an_estimator_gets_no_invented_range():
+    """Onde não há cálculo do motor, arbitrar uma fração seria inventar."""
+    from julius.collection.models import SageMakerApp
+    from julius.knowledge.rules.sagemaker import rules as sm_rules
+
+    app = SageMakerApp(
+        name="gpu-legada",
+        instance_type="ml.g3.4xlarge",
+        status="InService",
+        coverage_days=30,
+    )
+    conta = Account(account_id="123456789012", sagemaker_apps=[app])
+
+    legado = next(
+        s for s in sm_rules.signals(conta, DEFAULT_CONFIG) if "LEGACY" in s.rule_id
+    )
+
+    assert legado.potential_range is None
+
+
+def test_an_unavailable_estimate_produces_no_range():
+    """Custo não rateado é "não sei quanto vale", não "não vale nada"."""
+    from julius.knowledge.signal_potential import potential_from_estimate
+    from julius.knowledge.rules.sagemaker.estimation import unavailable
+
+    assert (
+        potential_from_estimate(
+            unavailable("m", "custo não rateado"), basis="x", caveat="y"
+        )
+        is None
+    )
+    assert potential_from_estimate(None, basis="x", caveat="y") is None

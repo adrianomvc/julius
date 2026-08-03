@@ -48,6 +48,11 @@ class GlueJob:
     #: inferida do total: permanece `None` até existir evidência de entrada nova
     #: versus já processada.
     redundant_read_bytes_window: float | None = None
+    #: Bytes escritos na janela. Nenhuma regra o lê direto, e isso é correto: o
+    #: Glue cobra DPU-hora, não bytes escritos, então não há afirmação
+    #: financeira a fazer com ele sozinho. Quem o consome é
+    #: `average_output_file_bytes`, logo abaixo, que decide se o job produz
+    #: arquivo pequeno — e essa, sim, é cobrança de request a jusante.
     bytes_written_window: float | None = None
     files_written_window: float | None = None
     streaming_records_window: float | None = None
