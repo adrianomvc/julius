@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from julius.analysis.context_builder import AgentContext
 
-PROMPT_VERSION = "1.8.0"
+PROMPT_VERSION = "1.9.0"
 
 #: As regras em si, separadas do texto que as apresenta — o validador de
 #: resposta verifica o resultado das mesmas restrições.
@@ -175,6 +175,35 @@ def _numbered_rules() -> str:
     return "\n".join(f"{index}. {rule}" for index, rule in enumerate(RULES, start=1))
 
 
+def _estimation_methods() -> str:
+    """Os métodos que o motor aceita, lidos do motor.
+
+    Esta lista já foi escrita à mão aqui, e o resultado foi o previsível: o mapa
+    de `contextual_estimation` cresceu para cinco métodos, o texto continuou com
+    três, e `GLUE-CODE-SHUFFLE` e `SM-CODE-CPU-ONLY-ON-GPU` ficaram impossíveis
+    de estimar — a IA não tinha como saber o nome do método, e `evaluate_proposal`
+    recusa qualquer outro. Cálculo implementado e testado, desligado por uma
+    frase desatualizada.
+
+    Anunciar o par `rule_id` → método, e não só a lista de nomes, importa pela
+    mesma razão: o motor recusa método que não responda àquele sinal, então uma
+    lista solta obrigaria a IA a adivinhar o pareamento.
+    """
+    from julius.knowledge.contextual_estimation import (
+        allowed_methods,
+        target_parameter,
+    )
+
+    linhas = []
+    for rule_id, method in sorted(allowed_methods().items()):
+        alvo = target_parameter(method)
+        exigencia = (
+            f"`target.{alvo[0]}` — {alvo[1]}" if alvo else "`target` vazio"
+        )
+        linhas.append(f"   - `{rule_id}` → `{method}`, com {exigencia}")
+    return "\n".join(linhas)
+
+
 def _division_of_labour() -> str:
     """O texto que separa o que já está resolvido do que falta responder."""
     already = "\n".join(f"- {item}" for item in DETERMINISTIC)
@@ -200,9 +229,11 @@ Suas quatro tarefas, nesta ordem:
 1. Julgar cada item de `signals` contra o artefato completo — `confirmed`,
    `rejected` ou `needs_evidence`, com justificativa. Todos precisam de veredito.
    Para `confirmed`, preencha opcionalmente `recommendation` e
-   `estimation_proposal`; para os demais use `null`. Os métodos piloto são
-   `glue_interactive_capacity_reduction_v1`,
-   `sagemaker_managed_spot_training_v1` e `sfn_standard_to_express_v1`.
+   `estimation_proposal`; para os demais use `null`. Cada `rule_id` abaixo aceita
+   um método e só ele — propor outro é recusado pelo motor, e a proposta é o
+   cenário, nunca o número:
+
+{_estimation_methods()}
 2. Enriquecer as oportunidades determinísticas: causa provável a partir da
    evidência citada, passos, dependências, conflitos e ordem de implementação.
 3. Escolher o lado quando a recomendação admite dois caminhos, dizendo quem

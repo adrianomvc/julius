@@ -34,6 +34,39 @@ _ALLOWED = {
     "GLUE-CODE-SHUFFLE": "glue_shuffle_reduction_v1",
 }
 
+#: O parâmetro que cada método espera em `AIEstimationProposal.target`, e o
+#: limite que a validação abaixo cobra. Só dois métodos pedem alvo; para os
+#: outros o cenário está inteiro no inventário e `target` vai vazio.
+#:
+#: Mora aqui, colado na validação que o aplica, porque quem gera o briefing da
+#: análise contextual precisa anunciá-lo sem reescrever a regra à mão. Foi
+#: exatamente a cópia à mão que deixou dois métodos deste mapa fora do briefing
+#: — implementados, testados e impossíveis de propor.
+_TARGET = {
+    "glue_shuffle_reduction_v1": (
+        "expected_reduction",
+        "fração da duração a reduzir, maior que 0 e no máximo 0.5",
+    ),
+    "glue_interactive_capacity_reduction_v1": (
+        "target_dpu",
+        "capacidade a testar, positiva e menor que a atual",
+    ),
+}
+
+
+def allowed_methods() -> dict[str, str]:
+    """Qual método cada `rule_id` aceita — a fonte do que o briefing anuncia.
+
+    Devolve cópia: o mapa é o que impede a proposta de virar carta branca, e
+    quem lê para montar texto não pode alterá-lo.
+    """
+    return dict(_ALLOWED)
+
+
+def target_parameter(method: str) -> tuple[str, str] | None:
+    """A chave obrigatória em `target`, e o limite dela. `None` quando não há."""
+    return _TARGET.get(method)
+
 
 def evaluate_proposal(
     account: Account,

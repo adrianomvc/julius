@@ -224,3 +224,102 @@ def test_a_method_cannot_be_proposed_for_a_signal_it_does_not_answer():
             ),
             DEFAULT_CONFIG,
         )
+
+
+def test_every_method_the_engine_accepts_is_announced_to_the_ai():
+    """Método que o motor aceita e o briefing não cita é cálculo desligado.
+
+    Foi o que aconteceu: `_ALLOWED` cresceu para cinco métodos, o texto do
+    briefing continuou com os três originais escritos à mão, e
+    `glue_shuffle_reduction_v1` e `sagemaker_gpu_to_cpu_instance_v1` ficaram
+    impossíveis de propor — a IA não tinha o nome, e `evaluate_proposal` recusa
+    qualquer outro. Implementados, testados e inalcançáveis.
+    """
+    from julius.analysis.guardrails import _division_of_labour
+    from julius.knowledge.contextual_estimation import allowed_methods
+
+    briefing = _division_of_labour()
+    ausentes = sorted(
+        {method for method in allowed_methods().values() if method not in briefing}
+    )
+
+    assert not ausentes, (
+        f"método aceito pelo motor e ausente do briefing: {ausentes}. "
+        "A lista é gerada de `contextual_estimation.allowed_methods()`; "
+        "se ela deixou de aparecer, alguém voltou a escrevê-la à mão."
+    )
+
+
+def test_the_briefing_pairs_each_rule_id_with_the_method_that_answers_it():
+    """O motor recusa método que não responde àquele sinal.
+
+    Anunciar só a lista de nomes obrigaria a IA a adivinhar o pareamento, e o
+    erro sairia como veredito rejeitado em vez de estimativa.
+    """
+    from julius.analysis.guardrails import _division_of_labour
+    from julius.knowledge.contextual_estimation import allowed_methods
+
+    briefing = _division_of_labour()
+
+    for rule_id, method in allowed_methods().items():
+        assert f"`{rule_id}` → `{method}`" in briefing, (
+            f"o briefing não diz que {rule_id} é respondido por {method}"
+        )
+
+
+def test_a_method_that_reads_a_target_declares_which_key_it_needs():
+    """Alvo exigido pela validação e não anunciado faz a proposta nascer morta.
+
+    A varredura é sobre o próprio módulo de estimativa: toda chave lida de
+    `proposal.target` precisa estar declarada em `_TARGET`, senão o briefing
+    anuncia o método sem dizer o que ele exige e `evaluate_proposal` levanta
+    `ValueError` na primeira tentativa.
+    """
+    import ast
+    from pathlib import Path
+
+    from julius.knowledge import contextual_estimation
+
+    fonte = Path(contextual_estimation.__file__).read_text(encoding="utf-8")
+    lidas = set()
+    for no in ast.walk(ast.parse(fonte)):
+        # `proposal.target.get("expected_reduction")`
+        if not (isinstance(no, ast.Call) and isinstance(no.func, ast.Attribute)):
+            continue
+        if no.func.attr != "get" or not isinstance(no.func.value, ast.Attribute):
+            continue
+        if no.func.value.attr != "target":
+            continue
+        if no.args and isinstance(no.args[0], ast.Constant):
+            lidas.add(no.args[0].value)
+
+    declaradas = {chave for chave, _ in contextual_estimation._TARGET.values()}
+
+    assert lidas, "a varredura não encontrou leitura de target — o teste cegou"
+    assert lidas <= declaradas, (
+        f"chave lida de target e não declarada em `_TARGET`: {sorted(lidas - declaradas)}"
+    )
+
+
+def test_the_target_a_method_declares_is_the_one_the_engine_enforces():
+    """Declarar o alvo errado é pior que não declarar: manda a IA errar."""
+    from julius.knowledge.contextual_estimation import (
+        allowed_methods,
+        target_parameter,
+    )
+
+    assert target_parameter("glue_shuffle_reduction_v1")[0] == "expected_reduction"
+    assert (
+        target_parameter("glue_interactive_capacity_reduction_v1")[0] == "target_dpu"
+    )
+    # Os demais resolvem o cenário pelo inventário e recebem `target` vazio.
+    sem_alvo = {
+        method
+        for method in allowed_methods().values()
+        if target_parameter(method) is None
+    }
+    assert sem_alvo == {
+        "sagemaker_managed_spot_training_v1",
+        "sagemaker_gpu_to_cpu_instance_v1",
+        "sfn_standard_to_express_v1",
+    }
