@@ -16,6 +16,7 @@ transições é uma afirmação, e uma afirmação falsa.
 from __future__ import annotations
 
 from collections import Counter
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 
 from julius.collection.asl import (
@@ -34,6 +35,7 @@ from julius.collection.collectors.metrics import MetricQuery
 from julius.collection.collectors.paginate import safe_call, safe_pages
 from julius.collection.health.recorder import error_category
 from julius.collection.models import StateMachine
+from julius.collection.session import STEP_FUNCTIONS_WORKERS
 from julius.collection.window import AnalysisWindow
 
 #: Execuções lidas por state machine. Suficiente para uma média estável de
@@ -48,6 +50,7 @@ def collect_state_machines(
     account_metrics: dict[str, int] | None = None,
     window: AnalysisWindow,
     gaps: list[str] | None = None,
+    workers: int = STEP_FUNCTIONS_WORKERS,
 ) -> list[StateMachine]:
     """Máquinas de estado, isoladas uma a uma.
 
@@ -59,79 +62,104 @@ def collect_state_machines(
     """
     cutoff = window.start
     months = max(1.0, window.days / 30.0)
-    machines: list[StateMachine] = []
-
     listagem = safe_pages(client, "list_state_machines", "stateMachines")
     if gaps is not None and not listagem.complete:
         gaps.append(f"list_state_machines: {listagem.error_category or 'incompleto'}")
+    summaries = listagem.items
+    collect_one = lambda summary: _collect_state_machine(  # noqa: E731
+        client, summary, cutoff=cutoff, months=months, window=window
+    )
+    if workers <= 1 or len(summaries) <= 1:
+        resolved = [collect_one(summary) for summary in summaries]
+    else:
+        with ThreadPoolExecutor(max_workers=min(workers, len(summaries))) as pool:
+            # `map` preserva a ordem do ListStateMachines. O dataset continua
+            # determinístico mesmo quando uma máquina responde antes da outra.
+            resolved = list(pool.map(collect_one, summaries))
 
-    for summary in listagem.items:
-        arn = summary["stateMachineArn"]
-        detail, falha_detalhe = safe_call(
-            client, "describe_state_machine", stateMachineArn=arn
-        )
-        if falha_detalhe and gaps is not None:
-            gaps.append(f"describe_state_machine: {falha_detalhe}")
-        definition = parse_definition(detail.get("definition"))
-        executions, falha_execucoes = _executions(client, arn, cutoff)
-        if falha_execucoes and gaps is not None:
-            gaps.append(f"list_executions: {falha_execucoes}")
-        durations = [
-            (item["stopDate"] - item["startDate"]).total_seconds()
-            for item in executions
-            if item.get("stopDate") and item.get("startDate")
-        ]
-        loop_states = _polling_loop_states(definition)
-        transitions, extra, retry_extra, failed_transitions = _sample_transitions(
-            client, executions, loop_states
-        )
-        machines.append(
-            StateMachine(
-                name=summary["name"],
-                arn=arn,
-                type=detail.get("type", "STANDARD"),
-                executions_per_month=round(len(executions) / months),
-                avg_duration_sec=round(sum(durations) / len(durations), 1)
-                if durations
-                else 0.0,
-                avg_state_transitions=transitions,
-                poll_extra_transitions=extra,
-                max_retry_attempts=_max_retry_attempts(definition),
-                observed_runs=len(executions),
-                coverage_days=window.days,
-                sampled_executions=min(len(executions), _MAX_SAMPLED_EXECUTIONS),
-                glue_jobs=sorted(_glue_jobs(definition)),
-                asl_patterns=scan_patterns(definition),
-                express_blockers=express_blockers(definition),
-                has_polling_loop=bool(loop_states),
-                definition_available=not falha_detalhe,
-                execution_history_available=not falha_execucoes,
-                # O coletor é read-only e não executa benchmark. Estes campos
-                # só podem ser enriquecidos depois por evidência externa.
-                express_benchmark_duration_ms=None,
-                express_benchmark_memory_mb=None,
-                failed_executions=sum(
-                    item.get("status") == "FAILED" for item in executions
-                ),
-                timed_out_executions=sum(
-                    item.get("status") == "TIMED_OUT" for item in executions
-                ),
-                aborted_executions=sum(
-                    item.get("status") == "ABORTED" for item in executions
-                ),
-                avg_failed_state_transitions=failed_transitions,
-                avg_retry_transitions=retry_extra,
-                open_executions_max=sum(
-                    item.get("status") == "RUNNING" for item in executions
-                ),
-            )
-        )
+    machines = [machine for machine, _local_gaps in resolved]
+    if gaps is not None:
+        for _machine, local_gaps in resolved:
+            gaps.extend(local_gaps)
     if cloudwatch_client is not None and machines:
         _enrich_cloudwatch(cloudwatch_client, machines, window, gaps)
         _apply_measured_express_blocker(machines)
         if account_metrics is not None:
             _account_cloudwatch(cloudwatch_client, account_metrics, window, gaps)
     return machines
+
+
+def _collect_state_machine(
+    client,
+    summary: dict,
+    *,
+    cutoff: datetime,
+    months: float,
+    window: AnalysisWindow,
+) -> tuple[StateMachine, list[str]]:
+    """Coleta uma máquina isoladamente para execução segura em thread."""
+    local_gaps: list[str] = []
+    arn = summary["stateMachineArn"]
+    detail, falha_detalhe = safe_call(
+        client, "describe_state_machine", stateMachineArn=arn
+    )
+    if falha_detalhe:
+        local_gaps.append(f"describe_state_machine: {falha_detalhe}")
+    definition = parse_definition(detail.get("definition"))
+    executions, falha_execucoes = _executions(client, arn, cutoff)
+    if falha_execucoes:
+        local_gaps.append(f"list_executions: {falha_execucoes}")
+    durations = [
+        (item["stopDate"] - item["startDate"]).total_seconds()
+        for item in executions
+        if item.get("stopDate") and item.get("startDate")
+    ]
+    loop_states = _polling_loop_states(definition)
+    transitions, extra, retry_extra, failed_transitions = _sample_transitions(
+        client, executions, loop_states
+    )
+    return (
+        StateMachine(
+            name=summary["name"],
+            arn=arn,
+            type=detail.get("type", "STANDARD"),
+            executions_per_month=round(len(executions) / months),
+            avg_duration_sec=(
+                round(sum(durations) / len(durations), 1) if durations else 0.0
+            ),
+            avg_state_transitions=transitions,
+            poll_extra_transitions=extra,
+            max_retry_attempts=_max_retry_attempts(definition),
+            observed_runs=len(executions),
+            coverage_days=window.days,
+            sampled_executions=min(len(executions), _MAX_SAMPLED_EXECUTIONS),
+            glue_jobs=sorted(_glue_jobs(definition)),
+            asl_patterns=scan_patterns(definition),
+            express_blockers=express_blockers(definition),
+            has_polling_loop=bool(loop_states),
+            definition_available=not falha_detalhe,
+            execution_history_available=not falha_execucoes,
+            # O coletor é read-only e não executa benchmark. Estes campos só
+            # podem ser enriquecidos depois por evidência externa.
+            express_benchmark_duration_ms=None,
+            express_benchmark_memory_mb=None,
+            failed_executions=sum(
+                item.get("status") == "FAILED" for item in executions
+            ),
+            timed_out_executions=sum(
+                item.get("status") == "TIMED_OUT" for item in executions
+            ),
+            aborted_executions=sum(
+                item.get("status") == "ABORTED" for item in executions
+            ),
+            avg_failed_state_transitions=failed_transitions,
+            avg_retry_transitions=retry_extra,
+            open_executions_max=sum(
+                item.get("status") == "RUNNING" for item in executions
+            ),
+        ),
+        local_gaps,
+    )
 
 
 def _apply_measured_express_blocker(machines: list[StateMachine]) -> None:
@@ -362,15 +390,29 @@ def _aggregate_dimensioned_metric(client, metric_name, window, gaps) -> int:
 
 
 def _execution_events(client, execution_arn: str) -> list[dict] | None:
+    events: list[dict] = []
+    token = None
     try:
-        response = client.get_execution_history(
-            executionArn=execution_arn,
-            includeExecutionData=False,
-        )
+        while True:
+            kwargs = {
+                "executionArn": execution_arn,
+                "includeExecutionData": False,
+                # O máximo oficial reduz viagens sem aumentar o número de
+                # execuções amostradas. NextToken garante que uma execução com
+                # mais de mil eventos não seja silenciosamente subcontada.
+                "maxResults": 1000,
+            }
+            if token:
+                kwargs["nextToken"] = token
+            response = client.get_execution_history(**kwargs)
+            page = response.get("events")
+            if isinstance(page, list):
+                events.extend(page)
+            token = response.get("nextToken")
+            if not token:
+                return events
     except Exception:
         return None
-    events = response.get("events")
-    return events if isinstance(events, list) else None
 
 
 def _max_retry_attempts(definition: dict) -> int:

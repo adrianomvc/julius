@@ -12,10 +12,20 @@ import json
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict
 from datetime import datetime, timedelta, timezone
-from threading import Barrier
+from threading import Barrier, Lock
 from time import sleep
 
+from julius.collection.collectors.athena import executions as athena_executions
 from julius.collection.collectors.glue import jobs as glue_jobs
+from julius.collection.collectors.sagemaker_extended import (
+    _apply_job_owners,
+    _apply_jobs_metrics,
+)
+from julius.collection.collectors.sagemaker_extended import (
+    collect_jobs as collect_sagemaker_jobs,
+)
+from julius.collection.collectors.stepfunctions import collect_state_machines
+from julius.collection.models import SageMakerJob
 from julius.collection.telemetry import InstrumentedClient, RunTelemetry
 from julius.collection.window import AnalysisWindow
 
@@ -208,3 +218,235 @@ def test_the_instrumented_client_counts_every_threaded_call():
             pool.submit(chamar)
 
     assert telemetry.api_calls["s3:list_objects_v2"].calls == threads * por_thread
+
+
+class _AthenaTelemetry:
+    def __init__(self) -> None:
+        self.problems: list[str] = []
+
+    def unavailable(self, _source, **kwargs) -> None:
+        self.problems.append(str(kwargs))
+
+    def failed(self, _source, exc, **_kwargs) -> None:
+        self.problems.append(type(exc).__name__)
+
+
+class _ParallelAthena:
+    def __init__(self) -> None:
+        self._lock = Lock()
+        self.active = 0
+        self.peak = 0
+
+    def batch_get_query_execution(self, *, QueryExecutionIds):
+        with self._lock:
+            self.active += 1
+            self.peak = max(self.peak, self.active)
+        sleep(0.01)
+        with self._lock:
+            self.active -= 1
+        # Inverte a resposta para provar que o coletor restaura a ordem pedida.
+        return {
+            "QueryExecutions": [
+                {"QueryExecutionId": query_id}
+                for query_id in reversed(QueryExecutionIds)
+            ]
+        }
+
+
+def test_athena_batches_overlap_and_keep_the_query_order():
+    client = _ParallelAthena()
+    ids = [f"q-{index:03d}" for index in range(200)]
+
+    rows = list(
+        athena_executions.query_executions(
+            client, ids, _AthenaTelemetry(), workers=4
+        )
+    )
+
+    assert client.peak > 1
+    assert [row["QueryExecutionId"] for row in rows] == ids
+
+
+class _MetricBatch:
+    def __init__(self) -> None:
+        self.calls = 0
+        self.query_counts: list[int] = []
+
+    def get_metric_data(self, **kwargs):
+        self.calls += 1
+        queries = kwargs["MetricDataQueries"]
+        self.query_counts.append(len(queries))
+        return {
+            "MetricDataResults": [
+                {"Id": query["Id"], "Values": [25.0]}
+                for query in queries
+            ]
+        }
+
+
+def test_sagemaker_metrics_for_one_hundred_jobs_fit_in_one_initial_call():
+    jobs = [
+        SageMakerJob(name=f"job-{index:03d}", kind="training")
+        for index in range(100)
+    ]
+    client = _MetricBatch()
+
+    _apply_jobs_metrics(client, jobs, AnalysisWindow.trailing())
+
+    assert client.calls == 1
+    assert client.query_counts == [400]
+    assert all(job.detailed_metrics and job.cpu_p95 == 25.0 for job in jobs)
+
+
+class _ParallelSageMaker:
+    def __init__(self, count: int, now: datetime) -> None:
+        self.count = count
+        self.now = now
+        self._lock = Lock()
+        self.active = 0
+        self.peak = 0
+
+    def get_paginator(self, operation: str):
+        if operation == "list_training_jobs":
+            return _Pages([
+                {
+                    "TrainingJobSummaries": [
+                        {
+                            "TrainingJobName": f"job-{index:03d}",
+                            "TrainingJobArn": f"arn:job:{index:03d}",
+                            "TrainingJobStatus": "Completed",
+                            "CreationTime": self.now - timedelta(days=1),
+                        }
+                        for index in range(self.count)
+                    ]
+                }
+            ])
+        if operation == "list_processing_jobs":
+            return _Pages([{"ProcessingJobSummaries": []}])
+        if operation == "list_transform_jobs":
+            return _Pages([{"TransformJobSummaries": []}])
+        raise AssertionError(operation)
+
+    def describe_training_job(self, *, TrainingJobName: str):
+        with self._lock:
+            self.active += 1
+            self.peak = max(self.peak, self.active)
+        sleep(0.01)
+        with self._lock:
+            self.active -= 1
+        return {
+            "TrainingJobName": TrainingJobName,
+            "TrainingJobStatus": "Completed",
+            "CreationTime": self.now - timedelta(days=1),
+            "TrainingStartTime": self.now - timedelta(hours=2),
+            "TrainingEndTime": self.now - timedelta(hours=1),
+            "ResourceConfig": {
+                "InstanceType": "ml.m5.large",
+                "InstanceCount": 1,
+            },
+        }
+
+
+def test_sagemaker_describes_overlap_and_keep_the_listing_order():
+    now = datetime.now(timezone.utc)
+    client = _ParallelSageMaker(12, now)
+
+    jobs = collect_sagemaker_jobs(
+        client,
+        window=AnalysisWindow.trailing(now=now),
+        detailed_limit=0,
+        workers=4,
+    )
+
+    assert client.peak > 1
+    assert [job.name for job in jobs] == [f"job-{index:03d}" for index in range(12)]
+
+
+class _ParallelTags:
+    def __init__(self) -> None:
+        self._lock = Lock()
+        self.active = 0
+        self.peak = 0
+
+    def list_tags(self, *, ResourceArn: str):
+        with self._lock:
+            self.active += 1
+            self.peak = max(self.peak, self.active)
+        sleep(0.01)
+        with self._lock:
+            self.active -= 1
+        return {"Tags": [{"Key": "Owner", "Value": ResourceArn.rsplit(":", 1)[-1]}]}
+
+
+def test_sagemaker_owner_tags_overlap_and_stay_on_the_right_job():
+    jobs = [
+        SageMakerJob(
+            name=f"job-{index:03d}",
+            kind="training",
+            arn=f"arn:job:owner-{index:03d}",
+        )
+        for index in range(12)
+    ]
+    client = _ParallelTags()
+
+    _apply_job_owners(client, jobs, workers=4)
+
+    assert client.peak > 1
+    assert [job.owner_tag for job in jobs] == [
+        f"owner-{index:03d}" for index in range(12)
+    ]
+
+
+class _Pages:
+    def __init__(self, pages) -> None:
+        self.pages = pages
+
+    def paginate(self, **_kwargs):
+        return iter(self.pages)
+
+
+class _ParallelStepFunctions:
+    def __init__(self, count: int) -> None:
+        self.count = count
+        self._lock = Lock()
+        self.active = 0
+        self.peak = 0
+
+    def get_paginator(self, operation: str):
+        if operation == "list_state_machines":
+            return _Pages([
+                {
+                    "stateMachines": [
+                        {
+                            "name": f"machine-{index:03d}",
+                            "stateMachineArn": f"arn:machine:{index:03d}",
+                        }
+                        for index in range(self.count)
+                    ]
+                }
+            ])
+        if operation == "list_executions":
+            return _Pages([{"executions": []}])
+        raise AssertionError(operation)
+
+    def describe_state_machine(self, **_kwargs):
+        with self._lock:
+            self.active += 1
+            self.peak = max(self.peak, self.active)
+        sleep(0.01)
+        with self._lock:
+            self.active -= 1
+        return {"type": "STANDARD", "definition": "{}"}
+
+
+def test_stepfunctions_machines_overlap_and_keep_the_listing_order():
+    client = _ParallelStepFunctions(12)
+
+    machines = collect_state_machines(
+        client, window=AnalysisWindow.trailing(), workers=4
+    )
+
+    assert client.peak > 1
+    assert [machine.name for machine in machines] == [
+        f"machine-{index:03d}" for index in range(12)
+    ]

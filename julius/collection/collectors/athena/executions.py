@@ -6,6 +6,7 @@ sobre a evidência que sai daqui."""
 from __future__ import annotations
 
 import re
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from typing import Any
 
@@ -16,6 +17,7 @@ from julius.collection.collectors.athena.evidence import (
 )
 from julius.collection.collectors.s3_evidence import list_objects, parse_location
 from julius.collection.models import AthenaCoverage
+from julius.collection.session import ATHENA_QUERY_BATCH_WORKERS
 
 try:
     import sqlglot
@@ -157,21 +159,78 @@ def execution_ids_from_results(
     return list(vistos), not completa
 
 
-def query_executions(client, ids: list[str], telemetry):
-    for index in range(0, len(ids), 50):
-        chunk = ids[index : index + 50]
+def query_executions(
+    client,
+    ids: list[str],
+    telemetry,
+    *,
+    workers: int = ATHENA_QUERY_BATCH_WORKERS,
+):
+    """Resolve lotes de 50 em paralelo, preservando a ordem dos IDs.
+
+    `BatchGetQueryExecution` limita cada chamada a 50 IDs. Em contas com muito
+    uso, pagar a latência desses lotes em série domina a fonte inteira. Os
+    lotes são independentes e `pool.map` mantém a ordem de entrada; portanto o
+    paralelismo não muda o dataset produzido.
+
+    IDs que o batch devolve como não processados recebem uma tentativa isolada
+    com `GetQueryExecution`. Isso recupera falhas transitórias sem refazer as 50
+    execuções que já vieram corretamente.
+    """
+    chunks = [ids[index : index + 50] for index in range(0, len(ids), 50)]
+    if not chunks:
+        return
+    if workers <= 1 or len(chunks) == 1:
+        resolved = [_query_chunk(client, chunk) for chunk in chunks]
+    else:
+        with ThreadPoolExecutor(max_workers=min(workers, len(chunks))) as pool:
+            resolved = list(pool.map(lambda chunk: _query_chunk(client, chunk), chunks))
+
+    for rows, unresolved, failures in resolved:
+        yield from rows
+        if unresolved:
+            telemetry.unavailable(
+                "Athena API",
+                category="partial_data",
+                detail=f"{unresolved} execuções não processadas",
+            )
+        for exc in failures:
+            telemetry.failed("Athena API", exc, detail="get_query_execution")
+
+
+def _query_chunk(client, ids: list[str]) -> tuple[list[dict], int, list[Exception]]:
+    """Um lote, sem escrever telemetria compartilhada dentro da thread."""
+    rows: list[dict] = []
+    pending = list(ids)
+    failures: list[Exception] = []
+    try:
+        response = client.batch_get_query_execution(QueryExecutionIds=ids)
+        rows.extend(response.get("QueryExecutions", []))
+        unprocessed = response.get("UnprocessedQueryExecutionIds", []) or []
+        pending = [
+            str(item.get("QueryExecutionId") or "")
+            for item in unprocessed
+            if isinstance(item, dict) and item.get("QueryExecutionId")
+        ]
+    except Exception:
+        # Alguns ambientes autorizam Get mas não BatchGet.
+        pass
+
+    for query_id in pending:
         try:
-            response = client.batch_get_query_execution(QueryExecutionIds=chunk)
-            yield from response.get("QueryExecutions", [])
-            if response.get("UnprocessedQueryExecutionIds"):
-                telemetry.unavailable("Athena API", category="partial_data", detail=f"{len(response['UnprocessedQueryExecutionIds'])} execuções não processadas")
-        except Exception:
-            # Alguns ambientes autorizam Get mas não BatchGet.
-            for query_id in chunk:
-                try:
-                    yield client.get_query_execution(QueryExecutionId=query_id)["QueryExecution"]
-                except Exception as exc:
-                    telemetry.failed("Athena API", exc, detail="get_query_execution")
+            rows.append(
+                client.get_query_execution(QueryExecutionId=query_id)["QueryExecution"]
+            )
+        except Exception as exc:  # noqa: BLE001 - devolvida ao agregador
+            failures.append(exc)
+
+    by_id = {
+        str(row.get("QueryExecutionId") or ""): row
+        for row in rows
+        if row.get("QueryExecutionId")
+    }
+    ordered = [by_id[query_id] for query_id in ids if query_id in by_id]
+    return ordered, len(ids) - len(ordered), failures
 
 
 def execution(qe: dict, workgroup: dict) -> AthenaExecutionEvidence | None:
