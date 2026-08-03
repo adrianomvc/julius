@@ -223,8 +223,14 @@ fi
 # 5. Skill do DEVIN CLI.
 #
 # Caminho documentado: ~/.config/devin/skills no POSIX e %APPDATA%\devin\skills
-# no Windows (o Git Bash exporta APPDATA). O repositório mantém a fonte em
-# .agents/skills/ e o AGENTS.md da raiz é lido pelo Devin sem cópia nenhuma.
+# no Windows (o Git Bash exporta APPDATA). O AGENTS.md da raiz é lido pelo Devin
+# sem cópia nenhuma.
+#
+# `.agents/skills/` é **artefato gerado** a partir de docs/ai/, e vem commitado.
+# O instalador só copia: gerar aqui exigiria Python antes do virtualenv existir,
+# e um instalador que depende do que ele ainda vai instalar quebra na primeira
+# máquina limpa. Quem garante que o artefato está em dia é
+# `scripts/generate_skill_registry.py --check`, rodado nos testes.
 # ---------------------------------------------------------------------------
 if [ "$SKIP_SKILL" != "1" ]; then
   if [ -n "${APPDATA:-}" ]; then
