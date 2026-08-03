@@ -209,6 +209,7 @@ def load_account(path: str | Path) -> Account:
         cloudwatch_coalesced_requests=int(
             telemetry.get("cloudwatch_coalesced_requests") or 0
         ),
+        iam_short_circuits=int(telemetry.get("iam_short_circuits") or 0),
     )
     if raw.get("athena_coverage"):
         account.athena_coverage = _pick(raw["athena_coverage"], AthenaCoverage)

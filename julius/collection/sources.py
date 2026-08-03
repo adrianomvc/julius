@@ -51,6 +51,7 @@ from julius.collection.collectors.glue import (
 from julius.collection.collectors.metrics import MetricBatchCoordinator
 from julius.collection.collectors.s3_evidence import MAX_LIST_PAGES
 from julius.collection.health import CollectionRecorder, RequiredCollectionError
+from julius.collection.iam import gaps_from_text
 from julius.collection.models import Account, CollectionHealth, IamGap, S3BucketConfig
 from julius.collection.policy import ScopePolicy, policy_for_profile
 from julius.collection.scope import CatalogScope
@@ -120,6 +121,9 @@ class CollectionContext:
     _response_cache_lock: Any = field(default_factory=Lock, repr=False)
     _state_lock: Any = field(default_factory=Lock, repr=False)
     snapshot_store: CollectionSnapshotStore | None = None
+    # Manifesto explícito do operador. Ausente/vazio sempre testa a AWS; nunca
+    # é preenchido automaticamente a partir do primeiro AccessDenied.
+    denied_iam_actions: frozenset[str] = frozenset()
 
     def client(self, service: str) -> Any:
         """Um cliente por serviço, criado uma vez.
@@ -139,6 +143,7 @@ class CollectionContext:
                     self.telemetry,
                     self._response_cache,
                     cache_lock=self._response_cache_lock,
+                    denied_iam_actions=self.denied_iam_actions,
                 )
                 if service == "cloudwatch":
                     client._metric_batch_coordinator = MetricBatchCoordinator(
@@ -486,9 +491,22 @@ def _record_gaps(ctx: CollectionContext, entry: CollectionHealth) -> None:
         )
     faltou = "não lido: " + "; ".join(anotados)
     entry.impact = f"{entry.impact} — {faltou}" if entry.impact else faltou
-    if ctx.iam_gaps:
+    structured = list(ctx.iam_gaps.values())
+    structured.extend(gaps_from_text(anotados, declared_actions=entry.next_action))
+    if structured:
+        merged: dict[tuple[str, str], IamGap] = {}
+        for gap in structured:
+            key = (gap.service, gap.operation)
+            current = merged.get(key)
+            if current is None:
+                merged[key] = gap
+                continue
+            current.affected_resources += gap.affected_resources
+            for example in gap.examples:
+                if example not in current.examples and len(current.examples) < 3:
+                    current.examples.append(example)
         entry.iam_gaps = sorted(
-            ctx.iam_gaps.values(), key=lambda gap: (gap.service, gap.operation)
+            merged.values(), key=lambda gap: (gap.service, gap.operation)
         )
         actions = sorted({gap.iam_action for gap in entry.iam_gaps})
         entry.next_action = "validar permissões read-only: " + ", ".join(actions)

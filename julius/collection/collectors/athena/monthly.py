@@ -149,7 +149,7 @@ def _collect_executions(
         coverage.execution_source[workgroup] = origem
         coverage.workgroups_covered += 1
         for raw in executions_step.query_executions(
-            athena_client, ids, telemetry
+            athena_client, ids, telemetry, workgroup=workgroup
         ):
             item = executions_step.execution(raw, configs.get(workgroup, {}))
             if item and window.start <= item.submitted_at < window.end:

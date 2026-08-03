@@ -127,6 +127,11 @@ class AthenaCoverage:
     workgroups_discovery_complete: bool = True
     configured_workgroups: list[str] = field(default_factory=list)
     workgroup_roles: dict[str, str] = field(default_factory=dict)
+    # Resultado sanitizado por workgroup e operação. ``ok`` significa que a
+    # chamada respondeu; demais valores são categorias estáveis de cobertura.
+    workgroup_operation_status: dict[str, dict[str, str]] = field(
+        default_factory=dict
+    )
     oldest_submission: str = ""
     truncated: bool = False
     api_scanned_bytes: int = 0

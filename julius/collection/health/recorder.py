@@ -8,6 +8,7 @@ from time import perf_counter
 from typing import TypeVar
 
 from julius.collection.currency import UnsupportedCurrencyError
+from julius.collection.iam import gap_from_exception
 from julius.collection.models import CollectionHealth
 
 T = TypeVar("T")
@@ -46,18 +47,21 @@ class CollectionRecorder:
             result = fn()
         except Exception as exc:
             category = error_category(exc)
-            self.entries.append(
-                _entry(
-                    source=source,
-                    status="error" if required else "unavailable",
-                    required=required,
-                    started=started,
-                    timer=timer,
-                    error_category=category,
-                    impact=impact,
-                    next_action=next_action,
-                )
+            entry = _entry(
+                source=source,
+                status="error" if required else "unavailable",
+                required=required,
+                started=started,
+                timer=timer,
+                error_category=category,
+                impact=impact,
+                next_action=next_action,
             )
+            iam_gap = gap_from_exception(exc) if category == "permission_denied" else None
+            if iam_gap is not None:
+                entry.iam_gaps = [iam_gap]
+                entry.next_action = f"validar permissão read-only: {iam_gap.iam_action}"
+            self.entries.append(entry)
             if required:
                 raise RequiredCollectionError(source, category) from exc
             return default

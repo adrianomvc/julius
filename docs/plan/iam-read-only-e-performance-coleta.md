@@ -216,9 +216,11 @@ Quando `ListWorkGroups` funcionar, o Julius une descoberta e configuração:
 
 ## 5. Onda IAM-1 — diagnóstico estruturado
 
-**Estado:** parcialmente implementada para `S3 Config`: ação IAM correta,
-operação, serviço, contador de recursos e até três exemplos chegam ao dataset,
-contexto da IA, relatório e Excel. A generalização para outras fontes permanece.
+**Estado:** implementada. Além do `S3 Config`, o cliente instrumentado anota
+serviço/operação em negações de qualquer fonte e os gaps internos conhecidos são
+convertidos por um registro explícito de ações IAM. A saúde agrega quantidade e
+até três exemplos sem persistir a mensagem AWS; JSON, contexto da IA, relatório
+e Excel usam o mesmo contrato.
 
 ### Entrega
 
@@ -241,11 +243,12 @@ contexto da IA, relatório e Excel. A generalização para outras fontes permane
 
 ## 6. Onda IAM-2 — evitar repetição inútil de negações
 
-**Estado:** a latência por bucket foi paralelizada com workers limitados,
-resultados locais e agregação determinística; isso reduz tempo de parede sem
-reduzir cobertura. O circuit breaker automático permanece pendente porque o
-primeiro `AccessDenied` não prova negação global quando bucket policies, SCPs e
-condições podem variar por recurso.
+**Estado:** implementado de forma explícita e conservadora. A latência por bucket
+continua paralelizada; `collect --denied-iam-actions` aceita somente ações que o
+operador comprovou como indisponíveis naquele scan e evita a chamada de rede,
+registrando quantos short-circuits ocorreram. Sem o manifesto, todo novo scan
+volta a testar. Não existe inferência automática pelo primeiro `AccessDenied`,
+pois bucket policies, SCPs e condições podem variar por recurso.
 
 Não é seguro parar após o primeiro `AccessDenied`: bucket policies podem permitir
 uma ação em um bucket e negar em outro. O controlador será conservador.
@@ -271,9 +274,11 @@ uma ação em um bucket e negar em outro. O controlador será conservador.
 
 ## 7. Onda IAM-3 — Athena completo e fallback honesto
 
-**Estado:** fallback por CLI/cadastro e união com descoberta implementados. A
-descoberta negada permanece parcial e bloqueia reconciliação. Persistir papéis
-operacionais e detalhar falha por workgroup permanecem.
+**Estado:** implementada. Fallback por CLI/cadastro, união com descoberta e papéis
+`preferred`/`legacy`/`unused_expected` são persistidos. A descoberta negada
+permanece parcial e bloqueia reconciliação. Cada workgroup registra separadamente
+`GetWorkGroup`, `ListQueryExecutions`, `BatchGetQueryExecution` e o fallback
+`GetQueryExecution`; negar um grupo não apaga os demais.
 
 ### Entrega
 

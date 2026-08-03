@@ -141,6 +141,14 @@ def collect(
         "--enqueue-domain-ai/--no-enqueue-domain-ai",
         help="Enfileira cada checkpoint fechado para processamento contextual.",
     ),
+    denied_iam_actions: str = typer.Option(
+        "",
+        "--denied-iam-actions",
+        help=(
+            "Ações read-only comprovadamente negadas, separadas por vírgula. "
+            "Evita chamadas de rede somente por declaração explícita deste scan."
+        ),
+    ),
     output: str = typer.Option("data/collected/account.json", "--output", "-o"),
     bootstrap: bool | None = typer.Option(
         None,
@@ -265,6 +273,11 @@ def collect(
             run_store=pipeline_store,
             checkpoint_dir=resolved_checkpoint_dir,
             enqueue_domain_ai=enqueue_domain_ai,
+            denied_iam_actions=frozenset(
+                action.strip()
+                for action in denied_iam_actions.split(",")
+                if action.strip()
+            ),
         )
     except RequiredCollectionError as exc:
         if pipeline_store is not None:
@@ -324,6 +337,11 @@ def collect(
             f"{account.run_telemetry.cloudwatch_metric_batches} lote(s) · "
             f"{account.run_telemetry.cloudwatch_coalesced_requests} "
             "requisição(ões) agrupada(s)"
+        )
+    if account.run_telemetry.iam_short_circuits:
+        typer.echo(
+            f"IAM: {account.run_telemetry.iam_short_circuits} chamada(s) "
+            "evitada(s) por manifesto explícito"
         )
     for line in slowest_sources(account.collection_health):
         typer.echo(line)

@@ -30,6 +30,9 @@
 > prioridade de caminho crítico e a execução automática do provider de IA. A
 > Onda 6 começou com cache opt-in de `S3 Config`: TTL curto,
 > checksum, versão e isolamento por conta/região/escopo.
+> O P0 IAM também ganhou diagnóstico genérico no cliente instrumentado, cobertura
+> Athena por operação/workgroup e short-circuit somente por manifesto explícito
+> `--denied-iam-actions`; o primeiro `AccessDenied` nunca fecha circuito sozinho.
 
 ---
 

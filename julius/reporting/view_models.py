@@ -835,6 +835,7 @@ def _athena_views(account: Account) -> tuple[dict, list[dict], list[dict], list[
         "workgroups_discovery_complete": coverage.workgroups_discovery_complete,
         "configured_workgroups": coverage.configured_workgroups,
         "workgroup_roles": coverage.workgroup_roles,
+        "workgroup_operation_status": coverage.workgroup_operation_status,
         "truncated": coverage.truncated,
         "cost_quality": coverage.cost_quality,
         "cost_fmt": fmt.money(coverage.net_cost, coverage.currency),

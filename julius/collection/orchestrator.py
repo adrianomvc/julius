@@ -56,6 +56,7 @@ def collect_account(
     run_store: CheckpointStore | None = None,
     checkpoint_dir: str | Path | None = None,
     enqueue_domain_ai: bool = True,
+    denied_iam_actions: frozenset[str] = frozenset(),
 ) -> Account:
     """Coleta uma conta. `config` chega de cima e não tem default aqui.
 
@@ -118,6 +119,7 @@ def collect_account(
         allocatable_sagemaker_buckets=config.sagemaker_cost.allocatable_buckets,
         sagemaker_cost_version=config.sagemaker_cost.version,
         snapshot_store=snapshot_store,
+        denied_iam_actions=denied_iam_actions,
     )
 
     checkpoint_writer = None
