@@ -153,6 +153,33 @@ def _e_tabela_com_arquivo_pequeno(prefixo: S3Prefix, config: Config) -> bool:
     )
 
 
+def _volume_a_reescrever(prefixo: S3Prefix, config: Config) -> list[str]:
+    """Quantos bytes a compactação precisa ler e regravar.
+
+    A recomendação pede que o time dono reescreva a tabela, e até agora não
+    dizia o tamanho do trabalho: dois GB e dois TB pedem a mesma ação e decisões
+    completamente diferentes sobre quando fazê-la.
+
+    Só os bytes nas faixas pequenas entram. Os objetos que já estão no tamanho
+    alvo não são tocados por uma compactação bem feita, e incluí-los inflaria o
+    esforço estimado — no sentido de assustar quem lê, não no de prometer
+    economia, mas errado do mesmo jeito.
+    """
+    distribuicao = prefixo.bytes_by_size or {}
+    if not distribuicao:
+        return []
+    faixas = _faixas_pequenas(config.thresholds.s3_small_file_max_bytes)
+    pequenos = sum(
+        valor for faixa, valor in distribuicao.items() if faixa in faixas
+    )
+    if pequenos <= 0:
+        return []
+    return [
+        f"{pequenos / 1024**3:.2f} GB a reescrever "
+        f"({pequenos / (prefixo.total_bytes or pequenos) * 100:.0f}% do prefixo)"
+    ]
+
+
 def _quantos_pequenos(prefixo: S3Prefix, config: Config) -> str:
     """A frase que separa "a média é baixa" de "há N arquivos pequenos".
 
@@ -246,6 +273,7 @@ def _achado(
                 f"tamanho médio {media_mb:.1f} MiB (limiar: "
                 f"{config.thresholds.s3_small_file_max_bytes / _MB:.0f} MiB)",
                 f"{(prefixo.total_bytes or 0) / 1024**3:.2f} GB no total",
+                *_volume_a_reescrever(prefixo, config),
                 (
                     "listagem completa"
                     if prefixo.listing_complete

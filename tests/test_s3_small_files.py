@@ -312,3 +312,43 @@ def test_without_a_distribution_the_average_still_decides():
 
     achados = small_files.detect(conta, DEFAULT_CONFIG, "scan-media")
     assert any(i.rule_id == "S3-SMALL-FILES" for i in achados)
+
+
+def test_the_finding_says_how_much_data_the_compaction_rewrites():
+    """Dois GB e dois TB pedem a mesma ação e decisões muito diferentes.
+
+    Só os bytes das faixas pequenas entram: objeto já no tamanho alvo não é
+    tocado por uma compactação bem feita, e somá-lo inflaria o esforço — no
+    sentido de assustar quem lê, não no de prometer economia, mas errado igual.
+    """
+    prefixo = _prefixo(
+        object_count=10_020,
+        total_bytes=110 * _GB,
+        average_object_bytes=100 * _MB,
+        object_count_by_size={"1-64mb": 10_000, "128mb+": 20},
+        bytes_by_size={"1-64mb": 10 * _GB, "128mb+": 100 * _GB},
+    )
+    conta = Account(account_id="123456789012", s3_prefixes=[prefixo])
+
+    achado = next(
+        i
+        for i in small_files.detect(conta, DEFAULT_CONFIG, "scan-reescrita")
+        if i.rule_id == "S3-SMALL-FILES"
+    )
+
+    # 10 GB nas faixas pequenas, não os 110 GB do prefixo inteiro.
+    assert any("10.00 GB a reescrever" in item for item in achado.evidence)
+    assert any("9% do prefixo" in item for item in achado.evidence)
+
+
+def test_without_a_size_distribution_the_finding_stays_quiet_about_volume():
+    prefixo = _prefixo(object_count=5_000, average_object_bytes=2 * _MB, bytes_by_size={})
+    conta = Account(account_id="123456789012", s3_prefixes=[prefixo])
+
+    achado = next(
+        i
+        for i in small_files.detect(conta, DEFAULT_CONFIG, "scan-sem-dist")
+        if i.rule_id == "S3-SMALL-FILES"
+    )
+
+    assert not any("a reescrever" in item for item in achado.evidence)
