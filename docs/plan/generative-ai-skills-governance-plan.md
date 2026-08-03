@@ -1889,6 +1889,48 @@ contrato que a limita, nunca antes.
 
 ## Revisão final (§40 do pedido)
 
+Executada **duas vezes**: uma sobre o documento, antes de qualquer código (a tabela mais
+abaixo), e uma sobre o estado implementado depois das Ondas 1 a 10 — que é a que vale, porque
+plano não roda.
+
+### Revisão sobre o código implementado — 2026-08-03
+
+| # | Verificação | Resultado |
+|---|---|---|
+| 1 | Operação AWS acrescentada à allowlist | **Nenhuma.** `git diff origin/main -- tests/test_read_only.py` vazio |
+| 2 | Fontes de verdade concorrentes | `generate_skill_registry.py --check` limpo |
+| 3 | Skill sem eval | Nenhuma; `eval_problems()` vazio e integrado ao `check()` |
+| 4 | Método no motor ausente do briefing | Nenhum, nos dois caminhos (5 métodos + 3 elegíveis) |
+| 5 | Algo ligando `include_in_portfolio=True` | Ninguém, verificado por AST |
+| 6 | S3 Consumer recomendando infraestrutura | Nenhuma recomendação; teste verde |
+| 7 | Contexto carregado sem necessidade | 6 de 9 blocos na conta de exemplo; 2383 → 1605 chars |
+| 8 | Corpo canônico divergindo entre hosts | Idêntico; 14 testes |
+| 9 | Baseline vindo da IA | Nenhum caminho lê baseline de proposta — o motor resolve |
+| 10 | Preço sem fonte | Ver achado abaixo |
+| 11 | Divergência entre prompt e schema | Campos e vereditos batem |
+| 12 | Relatório confundindo proposto com realizado | Campos disjuntos; teste verde |
+
+### Achado operacional, pré-existente e não corrigido aqui
+
+**A tabela de preço de `sa-east-1` sai do repositório não verificada.**
+`Pricing.for_region("sa-east-1")` devolve `verified=False` com `verification` vazio, e o
+gate por seção (`pricing_dependencies` × `verification`) faz o esperado: na conta de exemplo,
+**9 das 19 oportunidades saem com `saving_quality="unavailable"`** e só 7 entram no portfólio,
+totalizando US$ 1.140,70/mês.
+
+Isso é o comportamento correto — melhor um silêncio explicado que um número sem procedência —
+mas significa que uma instalação recém-feita **subestima o portfólio** até alguém rodar
+`julius pricing refresh` e conferir os valores contra fonte citável.
+
+Não corrigi porque verificar preço é ato humano: exige abrir a fonte e assinar que o número
+confere. Automatizar isso seria exatamente o "preço sem fonte" que a revisão procura.
+
+Nota menor da mesma família: `Pricing.verified`, o campo de topo, é lido só para compor um
+rótulo de confiança em `rates.py:276`. Quem barra de fato é a verificação por seção. Os dois
+não se contradizem, mas o campo de topo dá a impressão de ser o portão, e não é.
+
+### Revisão original sobre o documento
+
 Checklist executado sobre este documento antes de fechar.
 
 | Item verificado | Resultado |
