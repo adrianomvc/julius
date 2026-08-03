@@ -19,11 +19,11 @@ from julius.knowledge.rules.glue.estimation import (
     python_shell_migration_saving,
     window_baseline,
 )
-from julius.knowledge.signal_potential import potential
 from julius.knowledge.rules.s3.request_cost import (
     request_estimation,
     request_evidence,
 )
+from julius.knowledge.signal_potential import potential
 
 _DOC_TUNING = "https://docs.aws.amazon.com/glue/latest/dg/tuning-aws-glue-for-apache-spark.html"
 _DOC_PUSHDOWN = "https://docs.aws.amazon.com/glue/latest/dg/aws-glue-programming-pushdown.html"

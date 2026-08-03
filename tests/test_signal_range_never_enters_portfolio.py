@@ -20,8 +20,8 @@ from julius.config import DEFAULT_CONFIG
 from julius.findings.signal import PotentialRange, Signal
 from julius.knowledge.rules.stepfunctions import rules as sfn_rules
 from julius.knowledge.signal_potential import potential
-from julius.reporting.formatters import money
 from julius.pipeline import analyze_account
+from julius.reporting.formatters import money
 
 SCRIPT_HEURISTICO = """
 from awsglue.context import GlueContext
@@ -239,8 +239,8 @@ def test_a_signal_without_an_estimator_gets_no_invented_range():
 
 def test_an_unavailable_estimate_produces_no_range():
     """Custo não rateado é "não sei quanto vale", não "não vale nada"."""
-    from julius.knowledge.signal_potential import potential_from_estimate
     from julius.knowledge.rules.sagemaker.estimation import unavailable
+    from julius.knowledge.signal_potential import potential_from_estimate
 
     assert (
         potential_from_estimate(
