@@ -767,6 +767,30 @@ def _collection_health(account: Account) -> tuple[str, str, str, str, str, list[
                 # fontes lado a lado compara períodos diferentes.
                 "window": f"{item.window_days} dias" if item.window_days else "—",
                 "duration": f"{item.duration_ms} ms",
+                "result_origin": item.result_origin,
+                "origin_label": (
+                    f"Cache local ({item.cache_age_seconds}s)"
+                    if item.result_origin == "cached"
+                    else "AWS nesta execução"
+                ),
+                "iam_gaps": [
+                    {
+                        "service": gap.service,
+                        "operation": gap.operation,
+                        "iam_action": gap.iam_action,
+                        "category": gap.category,
+                        "affected_resources": gap.affected_resources,
+                        "examples": gap.examples,
+                    }
+                    for gap in item.iam_gaps
+                ],
+                "iam_actions": ", ".join(
+                    sorted({gap.iam_action for gap in item.iam_gaps})
+                )
+                or "—",
+                "iam_affected_resources": sum(
+                    gap.affected_resources for gap in item.iam_gaps
+                ),
                 "error_category": item.error_category or "—",
                 "impact": item.impact or "—",
                 "next_action": item.next_action or "—",
@@ -783,10 +807,14 @@ def _collection_health(account: Account) -> tuple[str, str, str, str, str, list[
             not item.affects_status and item.status != "ok"
             for item in account.collection_health
         )
+        cached = sum(
+            item.result_origin == "cached" for item in account.collection_health
+        )
         summary = (
             f"{len(rows)} fontes · {ok} OK · {partial} parciais · "
             f"{unavailable} indisponíveis/erros"
             + (f" · {informational} opcionais desabilitadas" if informational else "")
+            + (f" · {cached} via cache local" if cached else "")
         )
     else:
         summary = "Dataset sem telemetria de coleta; cobertura das fontes não informada."
@@ -799,7 +827,14 @@ def _athena_views(account: Account) -> tuple[dict, list[dict], list[dict], list[
         return {}, [], [], []
     coverage_vm = {
         "window": f"{coverage.window_start[:10]} → {coverage.window_end[:10]} UTC",
-        "workgroups": f"{coverage.workgroups_covered}/{coverage.workgroups_total}",
+        "workgroups": (
+            f"{coverage.workgroups_covered}/{coverage.workgroups_total}"
+            if coverage.workgroups_discovery_complete
+            else f"{coverage.workgroups_covered}/{coverage.workgroups_total}+ conhecidos"
+        ),
+        "workgroups_discovery_complete": coverage.workgroups_discovery_complete,
+        "configured_workgroups": coverage.configured_workgroups,
+        "workgroup_roles": coverage.workgroup_roles,
         "truncated": coverage.truncated,
         "cost_quality": coverage.cost_quality,
         "cost_fmt": fmt.money(coverage.net_cost, coverage.currency),

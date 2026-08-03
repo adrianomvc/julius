@@ -42,6 +42,10 @@ ATHENA_QUERY_BATCH_WORKERS = 4
 #: configuração de instância, Spot e checkpoint exigem um Describe por job.
 SAGEMAKER_DETAIL_WORKERS = 8
 
+#: Fontes independentes em voo no DAG. Cada fonte pode ter concorrência interna,
+#: portanto este teto é menor que a soma dos pools dos coletores.
+SOURCE_WORKERS = 4
+
 #: O maior grupo de threads que um cliente atende de uma vez. As fontes rodam em
 #: série, então nunca são os dois grupos somados.
 _MAX_CONCURRENT_WORKERS = max(

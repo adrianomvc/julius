@@ -128,7 +128,18 @@ def _opportunities_sheet(sheet: Worksheet, rows: list[OpportunityVM]) -> None:
 def _health_sheet(sheet: Worksheet, vm: ReportViewModel) -> None:
     _header(
         sheet,
-        ["Fonte", "Status", "Obrigatória", "Cobertura", "Categoria", "Impacto", "Próxima ação"],
+        [
+            "Fonte",
+            "Status",
+            "Obrigatória",
+            "Cobertura",
+            "Origem",
+            "Ações IAM ausentes",
+            "Recursos afetados",
+            "Categoria",
+            "Impacto",
+            "Próxima ação",
+        ],
     )
     for item in vm.collection_health:
         sheet.append(
@@ -137,13 +148,16 @@ def _health_sheet(sheet: Worksheet, vm: ReportViewModel) -> None:
                 item.get("status_label", item.get("status", "")),
                 "sim" if item.get("required") else "não",
                 item.get("coverage", ""),
+                item.get("origin_label", ""),
+                item.get("iam_actions", ""),
+                item.get("iam_affected_resources", 0),
                 item.get("error_category", ""),
                 item.get("impact", ""),
                 item.get("next_action", ""),
             ]
         )
     sheet.freeze_panes = "A2"
-    _autosize(sheet, [28, 16, 12, 12, 22, 52, 52])
+    _autosize(sheet, [28, 16, 12, 12, 24, 42, 18, 22, 52, 52])
 
 
 def _assumptions_sheet(sheet: Worksheet, vm: ReportViewModel) -> None:

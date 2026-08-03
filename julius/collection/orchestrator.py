@@ -8,19 +8,23 @@ identidade e percorre `SOURCES`. Fonte nova é uma linha de dado em
 from __future__ import annotations
 
 from datetime import datetime
+from pathlib import Path
 from typing import Any
 
 import boto3
 
+from julius.collection.checkpoints import CheckpointStore, DomainCheckpointWriter
 from julius.collection.collectors.last_read import apply_last_read
 from julius.collection.health import CollectionRecorder, RequiredCollectionError
 from julius.collection.models import Account
 from julius.collection.policy import ScopePolicy, policy_for_profile
 from julius.collection.redundant_reads import apply_redundant_reads
+from julius.collection.scheduler import run_sources
 from julius.collection.scope import CatalogScope
 from julius.collection.session import make_client
 from julius.collection.settings import ANALYSIS_WINDOW_DAYS
-from julius.collection.sources import SOURCES, CollectionContext, run
+from julius.collection.snapshot import CollectionSnapshotStore
+from julius.collection.sources import SOURCES, CollectionContext
 from julius.collection.window import AnalysisWindow, BillingMonth
 
 
@@ -32,6 +36,8 @@ def collect_account(
     lookback_days: int = ANALYSIS_WINDOW_DAYS,
     touches_table: str = "",
     athena_workgroup: str = "julius",
+    athena_history_workgroups: tuple[str, ...] = (),
+    athena_workgroup_roles: dict[str, str] | None = None,
     athena_output: str | None = None,
     include_cloudtrail: bool = False,
     datawarm_job: str = "",
@@ -44,6 +50,12 @@ def collect_account(
     window: AnalysisWindow | None = None,
     cadence: str = "weekly",
     bootstrap: bool = False,
+    collection_execution: str = "parallel",
+    snapshot_store: CollectionSnapshotStore | None = None,
+    scan_id: str = "",
+    run_store: CheckpointStore | None = None,
+    checkpoint_dir: str | Path | None = None,
+    enqueue_domain_ai: bool = True,
 ) -> Account:
     """Coleta uma conta. `config` chega de cima e não tem default aqui.
 
@@ -71,6 +83,7 @@ def collect_account(
         ),
         lookback_days=window.days,
         generated_at=window.end.date().isoformat(),
+        scan_id=scan_id,
         window_start=window.start_date.isoformat(),
         window_end=window.data_through.isoformat(),
         window_days=window.days,
@@ -87,6 +100,8 @@ def collect_account(
         max_scan_cost_usd=max_scan_cost_usd,
         touches_table=touches_table,
         athena_workgroup=athena_workgroup,
+        athena_history_workgroups=athena_history_workgroups,
+        athena_workgroup_roles=athena_workgroup_roles or {},
         athena_output=athena_output,
         include_cloudtrail=include_cloudtrail,
         datawarm_job=datawarm_job,
@@ -102,10 +117,40 @@ def collect_account(
         sagemaker_usage_markers=config.sagemaker_cost.usage_type_markers,
         allocatable_sagemaker_buckets=config.sagemaker_cost.allocatable_buckets,
         sagemaker_cost_version=config.sagemaker_cost.version,
+        snapshot_store=snapshot_store,
     )
 
-    for source in SOURCES:
-        run(source, context, health)
+    checkpoint_writer = None
+    if run_store is not None:
+        if not scan_id or checkpoint_dir is None:
+            raise ValueError(
+                "scan_id e checkpoint_dir são obrigatórios quando run_store é usado"
+            )
+        run_store.create_run(ident, scan_id)
+        if run_store.run_status(ident, scan_id) == "created":
+            run_store.transition(ident, scan_id, "collecting")
+        checkpoint_writer = DomainCheckpointWriter(
+            run_store,
+            checkpoint_dir,
+            account,
+            scan_id,
+            enqueue_ai=enqueue_domain_ai,
+        )
+
+    try:
+        run_sources(
+            SOURCES,
+            context,
+            health,
+            execution=collection_execution,
+            on_source_applied=(
+                checkpoint_writer.source_completed if checkpoint_writer else None
+            ),
+        )
+    except RequiredCollectionError:
+        if run_store is not None and run_store.run_status(ident, scan_id) == "collecting":
+            run_store.transition(ident, scan_id, "collection_partial")
+        raise
 
     # Derivação pura, depois de tudo coletado: a última leitura de uma tabela
     # sai do histórico de queries do Athena, e é o que liga um prefixo S3 a uma
@@ -120,6 +165,11 @@ def collect_account(
 
     account.collection_health = health.entries
     account.run_telemetry.estimate(config.pricing)
+    if run_store is not None and run_store.run_status(ident, scan_id) in {
+        "collecting",
+        "collection_partial",
+    }:
+        run_store.transition(ident, scan_id, "deterministic_ready")
     return account
 
 

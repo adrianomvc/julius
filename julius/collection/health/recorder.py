@@ -19,6 +19,7 @@ class RequiredCollectionError(RuntimeError):
     def __init__(self, source: str, category: str):
         self.source = source
         self.category = category
+        self.collection_entries: list[CollectionHealth] = []
         super().__init__(f"coleta essencial falhou: {source} ({category})")
 
 

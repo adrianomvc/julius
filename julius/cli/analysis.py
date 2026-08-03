@@ -35,7 +35,39 @@ from julius.collection.targets import (
 )
 from julius.findings.signal import Signal
 from julius.pipeline import analyze
-from julius.state import SignalLedger
+from julius.state import RunStore, SignalLedger, file_sha256
+
+
+@agent_app.command("next")
+def agent_next(
+    run_store: str = typer.Option(..., "--run-store", help="Ledger DuckDB da fila."),
+) -> None:
+    """Reserva o próximo pacote imutável para um worker contextual."""
+    with RunStore(run_store) as store:
+        task = store.claim_next()
+        if task is None:
+            typer.echo("Nenhum pacote contextual pendente.")
+            return
+        try:
+            checkpoint = store.verified_checkpoint(
+                task.account_id,
+                task.scan_id,
+                task.domain,
+            )
+        except (KeyError, ValueError) as exc:
+            store.transition_task(
+                task.task_id,
+                "failed",
+                error_category="invalid_checkpoint",
+            )
+            raise typer.BadParameter(str(exc)) from exc
+    typer.echo(
+        f"Job contextual reservado: {task.task_id} · conta {task.account_id} · "
+        f"scan {task.scan_id} · domínio {task.domain}"
+    )
+    typer.echo(f"Payload verificado: {checkpoint.payload_path}")
+    typer.echo(f"Hash: {checkpoint.payload_hash}")
+    typer.echo("Nenhum cliente boto3 foi entregue ao worker.")
 
 
 @agent_app.command("prepare")
@@ -45,6 +77,11 @@ def agent_prepare(
     top: int = typer.Option(10, "--top", min=1, max=25),
     artifacts_manifest: str = typer.Option(
         "", "--artifacts-manifest", help="Manifesto read-only de scripts, SQL e ASL."
+    ),
+    run_store: str = typer.Option(
+        "",
+        "--run-store",
+        help="Ledger DuckDB opcional para desacoplar a análise contextual.",
     ),
 ) -> None:
     """Prepara contexto, contrato e instruções que o Devin analisará localmente."""
@@ -67,6 +104,12 @@ def agent_prepare(
     )
     for path in files:
         typer.echo(f"- {path}")
+    if run_store:
+        try:
+            job_id = _register_agent_job(context, files, run_store)
+        except (KeyError, RuntimeError, ValueError) as exc:
+            raise typer.BadParameter(str(exc)) from exc
+        typer.echo(f"Análise contextual enfileirada: {job_id}")
     typer.echo("Nenhum serviço externo foi chamado.")
 
 
@@ -163,6 +206,11 @@ def agent_validate(
         "--signal-ledger",
         help="Vereditos por sinal: evita re-julgar o que já foi julgado.",
     ),
+    run_store: str = typer.Option(
+        "",
+        "--run-store",
+        help="Ledger DuckDB usado no prepare; conclui o job do mesmo contexto.",
+    ),
 ) -> None:
     """Valida a análise escrita pelo Devin contra o scan e os guardrails."""
     try:
@@ -186,6 +234,11 @@ def agent_validate(
         else Path(result).with_name("validated-result.json")
     )
     write_validated_result(analysis, output_path)
+    if run_store:
+        try:
+            _complete_agent_job(context, run_store)
+        except (KeyError, RuntimeError, ValueError) as exc:
+            raise typer.BadParameter(str(exc)) from exc
     confirmed = sum(1 for v in analysis.signal_verdicts if v.verdict == "confirmed")
     typer.echo(
         f"Análise Devin válida: conta {analysis.account} · scan {analysis.scan_id} · "
@@ -203,6 +256,69 @@ def agent_validate(
     if registered:
         typer.echo(f"Candidatos a nova regra: {rule_candidates}")
     typer.echo(f"Resultado validado: {output_path}")
+
+
+def _register_agent_job(context, files: list[Path], store_path: str) -> str:
+    context_path = next(path for path in files if path.name == "context.json")
+    context_hash = file_sha256(context_path)
+    health = context.constraints.get("collection_health", [])
+    sources = {
+        str(item.get("source", "")): str(item.get("status", "unknown"))
+        for item in health
+        if item.get("source")
+    }
+    collection_status = context.constraints.get("collection_status", "not_reported")
+    checkpoint_status = {
+        "ok": "ready",
+        "partial": "partial",
+        "failed": "unavailable",
+    }.get(collection_status, "partial")
+    with RunStore(store_path) as store:
+        store.create_run(
+            context.account["id"],
+            context.scan_id,
+            status="deterministic_published",
+            deterministic_path=str(context_path),
+        )
+        store.checkpoint(
+            context.account["id"],
+            context.scan_id,
+            "cross_service",
+            status=checkpoint_status,
+            payload_path=str(context_path),
+            payload_hash=context_hash,
+            sources=sources,
+        )
+        return store.enqueue_ai(
+            context.account["id"],
+            context.scan_id,
+            "cross_service",
+            context_hash=context_hash,
+            payload_path=str(context_path),
+        )
+
+
+def _complete_agent_job(context_path: str, store_path: str) -> None:
+    context = load_agent_context(context_path)
+    context_hash = file_sha256(context_path)
+    with RunStore(store_path) as store:
+        task = store.task_for_context(
+            context.account["id"],
+            context.scan_id,
+            "cross_service",
+            context_hash,
+        )
+        if task.status == "failed":
+            store.transition_task(task.task_id, "pending")
+            task = store.task_for_context(
+                context.account["id"],
+                context.scan_id,
+                "cross_service",
+                context_hash,
+            )
+        if task.status == "pending":
+            store.transition_task(task.task_id, "running")
+        store.complete_ai(task.task_id)
 
 
 def _record_verdicts(context_path: str, analysis, ledger_path: str) -> int:

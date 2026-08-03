@@ -13,12 +13,15 @@
   "athena": {
     "actor_usage": [],
     "coverage": {
+      "configured_workgroups": [],
       "cost_fmt": "—",
       "cost_quality": "partial",
       "ratio": "—",
       "truncated": false,
       "window": "2026-06-23 → 2026-07-22 UTC",
-      "workgroups": "2/2"
+      "workgroup_roles": {},
+      "workgroups": "2/2",
+      "workgroups_discovery_complete": true
     },
     "gaps": [],
     "query_patterns": [

@@ -48,6 +48,8 @@ def collect_analysis(
     window: AnalysisWindow | None = None,
     lookback_days: int = ANALYSIS_WINDOW_DAYS,
     max_ids_per_workgroup: int | None = None,
+    configured_workgroups: tuple[str, ...] = (),
+    configured_workgroup_roles: dict[str, str] | None = None,
     now: datetime | None = None,
 ) -> AthenaAnalysis:
     window = window or AnalysisWindow.trailing(days=lookback_days, now=now)
@@ -66,6 +68,8 @@ def collect_analysis(
         max_ids_per_workgroup,
         telemetry,
         s3_client=s3_client,
+        configured_workgroups=configured_workgroups,
+        configured_workgroup_roles=configured_workgroup_roles,
     )
     if evidence:
         coverage.oldest_submission = min(
@@ -107,10 +111,16 @@ def _collect_executions(
     max_ids_per_workgroup: int | None,
     telemetry: AthenaTelemetry,
     s3_client=None,
+    configured_workgroups: tuple[str, ...] = (),
+    configured_workgroup_roles: dict[str, str] | None = None,
 ) -> list[AthenaExecutionEvidence]:
     telemetry.used("Athena API")
     workgroups, configs = executions_step.workgroups(
-        athena_client, coverage, telemetry
+        athena_client,
+        coverage,
+        telemetry,
+        configured=configured_workgroups,
+        configured_roles=configured_workgroup_roles,
     )
     evidence: list[AthenaExecutionEvidence] = []
     for workgroup in workgroups:

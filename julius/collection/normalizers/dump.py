@@ -51,6 +51,7 @@ def account_to_dataset(account: Account) -> dict:
         "period": account.period,
         "lookback_days": account.lookback_days,
         "generated_at": account.generated_at,
+        **({"scan_id": account.scan_id} if account.scan_id else {}),
         "window": {
             "start": account.window_start,
             "end": account.window_end,

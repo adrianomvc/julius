@@ -29,6 +29,14 @@ def collect(
     ),
     touches_table: str = typer.Option("", "--touches-table", help="Tabela oficial de toques (Athena)."),
     athena_workgroup: str = typer.Option("julius", "--athena-workgroup"),
+    athena_history_workgroups: str = typer.Option(
+        "",
+        "--athena-history-workgroups",
+        help=(
+            "Fallback separado por vírgula quando athena:ListWorkGroups for negado; "
+            "a cobertura permanece parcial."
+        ),
+    ),
     athena_output: str = typer.Option("", "--athena-output", help="S3 de resultados do Athena."),
     cloudtrail: bool = typer.Option(
         False, "--cloudtrail", help="Coleta evidências de ator no Event history."
@@ -99,6 +107,40 @@ def collect(
             "por padrão detalha os 100 de maior custo potencial."
         ),
     ),
+    collection_execution: str = typer.Option(
+        "parallel",
+        "--collection-execution",
+        help=(
+            "parallel usa o DAG com limites por serviço; serial é o caminho "
+            "conservador de equivalência e rollback."
+        ),
+    ),
+    snapshot_dir: str = typer.Option(
+        "",
+        "--snapshot-dir",
+        help=(
+            "Cache local opt-in para fontes elegíveis; isolado por conta, região, "
+            "escopo, versão e TTL. Vazio sempre coleta da AWS."
+        ),
+    ),
+    run_store: str = typer.Option(
+        "",
+        "--run-store",
+        help=(
+            "Ledger DuckDB opcional; fecha checkpoints por domínio e libera "
+            "pacotes imutáveis sem esperar o restante da coleta."
+        ),
+    ),
+    checkpoint_dir: str = typer.Option(
+        "",
+        "--checkpoint-dir",
+        help="Diretório dos payloads; vazio usa um diretório ao lado do RunStore.",
+    ),
+    enqueue_domain_ai: bool = typer.Option(
+        True,
+        "--enqueue-domain-ai/--no-enqueue-domain-ai",
+        help="Enfileira cada checkpoint fechado para processamento contextual.",
+    ),
     output: str = typer.Option("data/collected/account.json", "--output", "-o"),
     bootstrap: bool | None = typer.Option(
         None,
@@ -116,11 +158,23 @@ def collect(
     from julius.collection.policy import policy_for_profile
     from julius.collection.sagemaker_history import carry_consistent_scans
     from julius.collection.scope import CatalogScope
-    from julius.collection.targets import resolve_account_name, resolve_scope_profile
+    from julius.collection.snapshot import CollectionSnapshotStore
+    from julius.collection.targets import (
+        resolve_account_name,
+        resolve_athena_workgroup_roles,
+        resolve_athena_workgroups,
+        resolve_scope_profile,
+    )
     from julius.collection.window import AnalysisWindow
+    from julius.state import RunStore
+    from julius.state.audit import new_scan_id
 
     if cadence not in {"weekly", "monthly"}:
         raise typer.BadParameter("--cadence deve ser weekly ou monthly")
+    if collection_execution not in {"parallel", "serial"}:
+        raise typer.BadParameter(
+            "--collection-execution deve ser parallel ou serial"
+        )
     if bootstrap and cadence == "monthly":
         raise typer.BadParameter(
             "--bootstrap não se aplica a --cadence monthly: o mês-calendário é "
@@ -156,6 +210,15 @@ def collect(
         ),
     )
     try:
+        resolved_athena_workgroups = resolve_athena_workgroups(
+            explicit_names=athena_history_workgroups,
+            sso_profile=sso_profile,
+            config_path=accounts_config,
+        )
+        resolved_athena_roles = resolve_athena_workgroup_roles(
+            sso_profile=sso_profile,
+            config_path=accounts_config,
+        )
         policy = policy_for_profile(
             resolve_scope_profile(
                 explicit_profile=scope_profile,
@@ -165,6 +228,15 @@ def collect(
         )
     except ValueError as exc:
         raise typer.BadParameter(str(exc)) from exc
+    pipeline_store = RunStore(run_store) if run_store else None
+    scan_id = new_scan_id() if pipeline_store is not None else ""
+    resolved_checkpoint_dir = (
+        Path(checkpoint_dir)
+        if checkpoint_dir
+        else Path(run_store).with_suffix("") / "checkpoints"
+        if run_store
+        else None
+    )
     try:
         account = collect_account(
             session,
@@ -172,6 +244,8 @@ def collect(
             lookback_days=lookback_days,
             touches_table=touches_table,
             athena_workgroup=athena_workgroup,
+            athena_history_workgroups=resolved_athena_workgroups,
+            athena_workgroup_roles=resolved_athena_roles,
             athena_output=athena_output or None,
             include_cloudtrail=cloudtrail,
             datawarm_job=datawarm_job,
@@ -183,17 +257,47 @@ def collect(
             window=analysis_window,
             cadence=cadence,
             bootstrap=usar_bootstrap,
+            collection_execution=collection_execution,
+            snapshot_store=(
+                CollectionSnapshotStore(snapshot_dir) if snapshot_dir else None
+            ),
+            scan_id=scan_id,
+            run_store=pipeline_store,
+            checkpoint_dir=resolved_checkpoint_dir,
+            enqueue_domain_ai=enqueue_domain_ai,
         )
     except RequiredCollectionError as exc:
+        if pipeline_store is not None:
+            pipeline_store.close()
         raise typer.BadParameter(str(exc)) from exc
+    except Exception:
+        if pipeline_store is not None:
+            pipeline_store.close()
+        raise
 
     out = Path(output)
-    carry_consistent_scans(account, out)
-    out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(
-        json.dumps(account_to_dataset(account), ensure_ascii=False, indent=2, default=str),
-        encoding="utf-8",
-    )
+    try:
+        carry_consistent_scans(account, out)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(
+            json.dumps(
+                account_to_dataset(account),
+                ensure_ascii=False,
+                indent=2,
+                default=str,
+            ),
+            encoding="utf-8",
+        )
+        if pipeline_store is not None:
+            pipeline_store.publish_deterministic(account.account_id, scan_id, str(out))
+            checkpoints = pipeline_store.checkpoints(account.account_id, scan_id)
+            typer.echo(
+                f"Checkpoints: scan {scan_id} · {len(checkpoints)} domínio(s) · "
+                f"ledger {run_store}"
+            )
+    finally:
+        if pipeline_store is not None:
+            pipeline_store.close()
     typer.echo(
         f"Coletado: conta {account.account_id} · {len(account.glue_jobs)} jobs · "
         f"{len(account.athena_queries)} queries · {len(account.services)} serviços -> {out}"
@@ -203,6 +307,24 @@ def collect(
         f"{len(account.collection_health)} fontes registradas · "
         f"escopo {account.scope_profile}"
     )
+    typer.echo(
+        f"Execução: {account.run_telemetry.execution_mode} · "
+        f"{account.run_telemetry.collection_wall_ms / 1000:.1f}s de parede · "
+        f"pico {account.run_telemetry.max_parallel_sources} fonte(s)"
+    )
+    if snapshot_dir:
+        typer.echo(
+            f"Snapshots: {account.run_telemetry.snapshot_hits} hit(s) · "
+            f"{account.run_telemetry.snapshot_misses} miss(es)"
+        )
+    if account.run_telemetry.cloudwatch_metric_requests:
+        typer.echo(
+            "CloudWatch: "
+            f"{account.run_telemetry.cloudwatch_metric_queries} consulta(s) · "
+            f"{account.run_telemetry.cloudwatch_metric_batches} lote(s) · "
+            f"{account.run_telemetry.cloudwatch_coalesced_requests} "
+            "requisição(ões) agrupada(s)"
+        )
     for line in slowest_sources(account.collection_health):
         typer.echo(line)
     typer.echo(f"Rode: julius report --input {out}")

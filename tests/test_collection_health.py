@@ -11,7 +11,7 @@ from julius.collection.health.recorder import (
     CollectionRecorder,
     RequiredCollectionError,
 )
-from julius.collection.models import Account, CollectionHealth, GlueJob
+from julius.collection.models import Account, CollectionHealth, GlueJob, IamGap
 from julius.collection.normalizers.dump import account_to_dataset
 from julius.collection.normalizers.loader import load_account
 from julius.collection.orchestrator import collect_account
@@ -19,6 +19,7 @@ from julius.collection.window import AnalysisWindow, BillingMonth
 from julius.config import DEFAULT_CONFIG
 from julius.pipeline import analyze
 from julius.reporting import renderer
+from julius.state import RunStore
 
 
 class AwsLikeError(Exception):
@@ -175,6 +176,97 @@ def test_collect_account_records_sources_and_optional_disabled_do_not_degrade(
     assert account.collection_status == "ok"
 
 
+def test_collect_account_closes_all_domain_checkpoints(monkeypatch, tmp_path):
+    _patch_empty_collectors(monkeypatch)
+    scan_id = "scan-20260803-120000-000001"
+    with RunStore(tmp_path / "runs.duckdb") as store:
+        account = collect_account(
+            FakeSession(),
+            config=DEFAULT_CONFIG,
+            scan_id=scan_id,
+            run_store=store,
+            checkpoint_dir=tmp_path / "checkpoints",
+        )
+
+        assert account.scan_id == scan_id
+        assert store.run_status(account.account_id, scan_id) == "deterministic_ready"
+        assert {item.domain for item in store.checkpoints(account.account_id, scan_id)} == {
+            "athena",
+            "glue",
+            "orchestration",
+            "redshift",
+            "s3",
+            "sagemaker",
+        }
+        assert len(store.tasks()) == 6
+
+
+def test_parallel_and_serial_collection_are_semantically_equivalent(monkeypatch):
+    """O DAG pode mudar o relógio, nunca inventário, cobertura ou ordem."""
+    _patch_empty_collectors(monkeypatch)
+
+    serial = collect_account(
+        FakeSession(), config=DEFAULT_CONFIG, collection_execution="serial"
+    )
+    parallel = collect_account(
+        FakeSession(), config=DEFAULT_CONFIG, collection_execution="parallel"
+    )
+
+    serial_payload = account_to_dataset(serial)
+    parallel_payload = account_to_dataset(parallel)
+    for payload in (serial_payload, parallel_payload):
+        telemetry = payload["run_telemetry"]
+        for key in (
+            "execution_mode",
+            "collection_wall_ms",
+            "source_duration_ms",
+            "max_parallel_sources",
+            "service_concurrency_limits",
+        ):
+            telemetry.pop(key, None)
+        for entry in payload["collection_health"]:
+            entry.pop("started_at", None)
+            entry.pop("completed_at", None)
+            entry.pop("duration_ms", None)
+
+    assert parallel_payload == serial_payload
+    assert parallel.run_telemetry.execution_mode == "parallel"
+
+
+def test_known_athena_workgroups_reach_the_collector(monkeypatch):
+    _patch_empty_collectors(monkeypatch)
+    observed = {}
+
+    def collect_analysis(*_args, **kwargs):
+        observed.update(kwargs)
+        return None
+
+    monkeypatch.setattr(collect_module.athena, "collect_analysis", collect_analysis)
+
+    collect_account(
+        FakeSession(),
+        config=DEFAULT_CONFIG,
+        collection_execution="serial",
+        athena_history_workgroups=(
+            "primary",
+            "analytics-workgroup",
+            "analytics-workgroup-v3",
+        ),
+        athena_workgroup_roles={
+            "primary": "unused_expected",
+            "analytics-workgroup": "legacy",
+            "analytics-workgroup-v3": "preferred",
+        },
+    )
+
+    assert observed["configured_workgroups"] == (
+        "primary",
+        "analytics-workgroup",
+        "analytics-workgroup-v3",
+    )
+    assert observed["configured_workgroup_roles"]["analytics-workgroup"] == "legacy"
+
+
 def test_missing_glue_billing_degrades_the_scan_when_there_are_jobs(monkeypatch):
     _patch_empty_collectors(monkeypatch)
     monkeypatch.setattr(
@@ -257,6 +349,17 @@ def test_health_roundtrip_and_report_json(tmp_path):
                 collected=2,
                 expected=2,
                 coverage=1.0,
+                result_origin="cached",
+                cache_age_seconds=120,
+                iam_gaps=[
+                    IamGap(
+                        service="s3",
+                        operation="get_bucket_logging",
+                        iam_action="s3:GetBucketLogging",
+                        affected_resources=2,
+                        examples=["a", "b"],
+                    )
+                ],
             ),
             CollectionHealth(
                 source="CloudWatch",
@@ -270,6 +373,8 @@ def test_health_roundtrip_and_report_json(tmp_path):
             ),
         ],
     )
+    account.run_telemetry.snapshot_hits = 1
+    account.run_telemetry.snapshot_misses = 2
     dataset = tmp_path / "health.json"
     dataset.write_text(
         json.dumps(account_to_dataset(account)),
@@ -277,6 +382,12 @@ def test_health_roundtrip_and_report_json(tmp_path):
     )
     loaded = load_account(dataset)
     assert loaded.collection_status == "partial"
+    assert loaded.collection_health[0].result_origin == "cached"
+    assert loaded.collection_health[0].cache_age_seconds == 120
+    assert loaded.collection_health[0].iam_gaps[0].iam_action == "s3:GetBucketLogging"
+    assert loaded.collection_health[0].iam_gaps[0].affected_resources == 2
+    assert loaded.run_telemetry.snapshot_hits == 1
+    assert loaded.run_telemetry.snapshot_misses == 2
     analysis = analyze(dataset)
     payload = json.loads(
         renderer.render_json(analysis.vm, analysis.opportunities)

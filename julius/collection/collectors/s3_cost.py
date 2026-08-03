@@ -20,6 +20,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Any
 
+from julius.collection.collectors.billing_matrix import BillingMatrix
 from julius.collection.currency import non_usd_gap, usd_amount
 from julius.collection.models import Account, S3CostCoverage, S3CostLine
 from julius.collection.window import AnalysisWindow
@@ -41,6 +42,7 @@ def collect_s3_costs(
     window: AnalysisWindow,
     markers: Sequence[tuple[str, str]],
     version: str = "",
+    matrix: BillingMatrix | None = None,
 ) -> S3CostCoverage:
     """Cobrança S3 da janela de análise por bucket de usage type, em USD."""
     coverage = S3CostCoverage(
@@ -50,38 +52,48 @@ def collect_s3_costs(
     )
 
     for metric in _METRICS:
-        try:
-            request: dict[str, Any] = dict(
-                TimePeriod={
-                    "Start": window.start_date.isoformat(),
-                    "End": window.end_date.isoformat(),
-                },
-                Granularity="MONTHLY",
-                Metrics=[metric, "UsageQuantity"],
-                Filter={
-                    "Dimensions": {
-                        "Key": "SERVICE",
-                        "Values": ["Amazon Simple Storage Service"],
-                    }
-                },
-                GroupBy=[{"Type": "DIMENSION", "Key": "USAGE_TYPE"}],
-            )
-            responses = []
-            while True:
-                response = ce_client.get_cost_and_usage(**request)
-                responses.append(response)
-                token = response.get("NextPageToken")
-                if not token:
-                    break
-                request["NextPageToken"] = token
-        except Exception as exc:
-            coverage.gaps.append(f"Cost Explorer {metric}: {type(exc).__name__}")
+        responses = (
+            matrix.for_service("Amazon Simple Storage Service", metric)
+            if matrix
+            else None
+        )
+        if matrix is not None and responses is None:
             continue
+        if matrix is None:
+            try:
+                request: dict[str, Any] = dict(
+                    TimePeriod={
+                        "Start": window.start_date.isoformat(),
+                        "End": window.end_date.isoformat(),
+                    },
+                    Granularity="MONTHLY",
+                    Metrics=[metric, "UsageQuantity"],
+                    Filter={
+                        "Dimensions": {
+                            "Key": "SERVICE",
+                            "Values": ["Amazon Simple Storage Service"],
+                        }
+                    },
+                    GroupBy=[{"Type": "DIMENSION", "Key": "USAGE_TYPE"}],
+                )
+                responses = []
+                while True:
+                    response = ce_client.get_cost_and_usage(**request)
+                    responses.append(response)
+                    token = response.get("NextPageToken")
+                    if not token:
+                        break
+                    request["NextPageToken"] = token
+            except Exception as exc:
+                coverage.gaps.append(
+                    f"Cost Explorer {metric}: {type(exc).__name__}"
+                )
+                continue
 
         buckets: dict[str, float] = {}
         lines_by_key: dict[tuple[str, str, str], S3CostLine] = {}
         unknown: list[str] = []
-        for response in responses:
+        for response in responses or []:
             for period in response.get("ResultsByTime", []):
                 for group in period.get("Groups", []):
                     usage_type = next(iter(group.get("Keys", [])), "")

@@ -211,6 +211,74 @@ def test_an_unlisted_prefix_aggregates_nothing():
     assert prefixo.average_object_bytes is None
 
 
+def test_full_listing_reuses_a_parent_stream_for_child_prefixes():
+    """Pai completo prova os filhos sem pagar uma segunda listagem."""
+
+    class Hierarquico(S3Falso):
+        def __init__(self, objetos):
+            super().__init__({}, por_pagina=2)
+            self.todos = objetos
+
+        def list_objects_v2(
+            self, *, Bucket, Prefix, MaxKeys, ContinuationToken=None
+        ):
+            self.objetos[Prefix] = [
+                item for item in self.todos if item["Key"].startswith(Prefix)
+            ]
+            return super().list_objects_v2(
+                Bucket=Bucket,
+                Prefix=Prefix,
+                MaxKeys=MaxKeys,
+                ContinuationToken=ContinuationToken,
+            )
+
+    client = Hierarquico(
+        [
+            {**_objeto(40, 10), "Key": "root/a/one"},
+            {**_objeto(50, 20), "Key": "root/a/two"},
+            {**_objeto(60, 30), "Key": "root/b/three"},
+        ]
+    )
+
+    prefixes = s3_collector.collect_prefixes(
+        client,
+        known=[
+            ("s3://lake/root/", "table_location", "db.root"),
+            ("s3://lake/root/a/", "table_location", "db.a"),
+            ("s3://lake/root/b/", "table_location", "db.b"),
+        ],
+        window=JANELA,
+        stale_after_days=30,
+        max_pages=None,
+    )
+
+    assert client.chamadas == 2
+    assert [item.object_count for item in prefixes] == [3, 2, 1]
+    assert [item.total_bytes for item in prefixes] == [60, 30, 30]
+    assert [item.list_requests for item in prefixes] == [2, 0, 0]
+
+
+def test_bounded_listing_does_not_reuse_a_possibly_truncated_parent():
+    objetos = {
+        "root/": [{**_objeto(40, 10), "Key": "root/a/one"}],
+        "root/a/": [{**_objeto(40, 10), "Key": "root/a/one"}],
+    }
+    client = S3Falso(objetos, por_pagina=1000)
+
+    s3_collector.collect_prefixes(
+        client,
+        known=[
+            ("s3://lake/root/", "table_location", "db.root"),
+            ("s3://lake/root/a/", "table_location", "db.a"),
+        ],
+        window=JANELA,
+        stale_after_days=30,
+        max_pages=MAX_LIST_PAGES,
+    )
+
+    assert client.chamadas == 2
+
+
 # ---------------------------------------------------------------------------
 # O paralelismo
 # ---------------------------------------------------------------------------

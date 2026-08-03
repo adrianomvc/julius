@@ -101,6 +101,7 @@ def reconciled(coverage: AthenaCoverage, telemetry) -> bool:
     """
     return (
         coverage.workgroups_total > 0
+        and coverage.workgroups_discovery_complete
         and coverage.workgroups_covered == coverage.workgroups_total
         and not coverage.truncated
         and not telemetry.blocked()

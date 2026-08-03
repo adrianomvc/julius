@@ -12,6 +12,8 @@ from julius.collection.targets import (
     AccountTargetError,
     load_account_targets,
     resolve_account_name,
+    resolve_athena_workgroup_roles,
+    resolve_athena_workgroups,
     verify_account_targets,
     write_verified_accounts,
 )
@@ -86,6 +88,45 @@ def test_explicit_account_name_wins_over_the_registry(tmp_path):
     assert resolve_account_name(
         explicit_name="informada", sso_profile="perfil", config_path=path
     ) == "informada"
+
+
+def test_athena_workgroups_are_resolved_per_account_or_cli(tmp_path):
+    path = tmp_path / "accounts.json"
+    path.write_text(
+        json.dumps(
+            {
+                "schema_version": "1.3",
+                "accounts": [
+                    {
+                        **_target("consumer", "123456789012", "perfil"),
+                        "athena_workgroups": [
+                            {"name": "primary", "role": "unused_expected"},
+                            {"name": "analytics-workgroup", "role": "legacy"},
+                            {
+                                "name": "analytics-workgroup-v3",
+                                "role": "preferred",
+                            },
+                        ],
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    assert resolve_athena_workgroups(
+        sso_profile="perfil", config_path=path
+    ) == ("primary", "analytics-workgroup", "analytics-workgroup-v3")
+    assert resolve_athena_workgroups(
+        explicit_names="one,two,one", sso_profile="perfil", config_path=path
+    ) == ("one", "two")
+    assert resolve_athena_workgroup_roles(
+        sso_profile="perfil", config_path=path
+    ) == {
+        "primary": "unused_expected",
+        "analytics-workgroup": "legacy",
+        "analytics-workgroup-v3": "preferred",
+    }
 
 
 def test_missing_registry_preserves_the_profile_fallback(tmp_path):

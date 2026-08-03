@@ -122,6 +122,11 @@ class AthenaCoverage:
     workgroups_total: int = 0
     workgroups_covered: int = 0
     workgroups: list[str] = field(default_factory=list)
+    # False quando os nomes vieram apenas da configuração/fallback. Nesse caso
+    # `workgroups_total` é a quantidade conhecida, não o total provado da conta.
+    workgroups_discovery_complete: bool = True
+    configured_workgroups: list[str] = field(default_factory=list)
+    workgroup_roles: dict[str, str] = field(default_factory=dict)
     oldest_submission: str = ""
     truncated: bool = False
     api_scanned_bytes: int = 0

@@ -41,17 +41,35 @@ _NONDETERMINISTIC_FUNCTIONS = {
 }
 
 
-def workgroups(client, coverage: AthenaCoverage, telemetry) -> tuple[list[str], dict[str, dict]]:
+def workgroups(
+    client,
+    coverage: AthenaCoverage,
+    telemetry,
+    *,
+    configured: tuple[str, ...] = (),
+    configured_roles: dict[str, str] | None = None,
+) -> tuple[list[str], dict[str, dict]]:
     names: list[str] = []
     configs: dict[str, dict] = {}
+    configured = tuple(dict.fromkeys(name for name in configured if name))
+    coverage.configured_workgroups = list(configured)
     try:
         paginator = client.get_paginator("list_work_groups")
         for page in paginator.paginate():
             names.extend(item["Name"] for item in page.get("WorkGroups", []) if item.get("Name"))
     except Exception as exc:
-        telemetry.failed("Athena API", exc, detail="list_work_groups")
-        names = ["primary"]  # compatibilidade com mocks e permissões legadas
+        telemetry.partial_failure("Athena API", exc, detail="list_work_groups")
+        coverage.workgroups_discovery_complete = False
+        names = list(configured or ("primary",))
+    else:
+        # Um nome configurado e não listado ainda precisa ser tentado: pode ser
+        # limitação de visibilidade da identidade, e silêncio não é ausência.
+        names.extend(configured)
     names = list(dict.fromkeys(names))
+    configured_roles = configured_roles or {}
+    coverage.workgroup_roles = {
+        name: configured_roles.get(name, "unclassified") for name in names
+    }
     coverage.workgroups = names
     coverage.workgroups_total = len(names)
     for name in names:
