@@ -3,8 +3,8 @@
 > **Escopo desta versão:** análise e proposta. Nenhum schema, regra financeira ou item do
 > portfólio é alterado por este documento.
 >
-> **Estado de execução:** as **Ondas 1 a 8 foram implementadas em 2026-08-03** — ver §34.
-> As Ondas 9, 10 e 11 continuam propostas. Os trechos que descrevem P4 e D1 ficaram como
+> **Estado de execução:** as **Ondas 1 a 9 foram implementadas em 2026-08-03** — ver §34.
+> As Ondas 10 e 11 continuam propostas. Os trechos que descrevem P4 e D1 ficaram como
 > registro histórico, marcados **[Resolvido]**.
 >
 > **Base analisada:** Julius na branch `agent/pending-followups` (contém `origin/main`,
@@ -1669,7 +1669,7 @@ que ele destrava.
 **Rollback:** remover a entrada do catálogo; o campo volta a `None` e a regra volta a não
 disparar.
 
-### Onda 9 — Evals
+### Onda 9 — Evals ✅ **CONCLUÍDA em 2026-08-03**
 
 **Objetivo:** os 10 itens da §29 e os 17 da §30 viram artefato versionado.
 **Arquivos afetados:** `docs/ai/evals/**`, testes que os consomem.
@@ -1677,10 +1677,26 @@ disparar.
 **Mudança de comportamento:** nenhuma.
 **Impacto financeiro:** nenhum.
 **Compatibilidade:** total.
-**Testes:** toda Skill do registry tem diretório de evals com os casos obrigatórios.
-**Riscos:** eval que vira burocracia. Mitigação: o mínimo é 3 casos (`confirmed`,
-`rejected`, `needs_evidence`); o resto entra quando houver falha real que o justifique.
-**Critério de conclusão:** Skill sem eval falha no `--check`.
+**Testes (implementados):** 58 em `tests/test_evals.py`, e `eval_problems()` entrou em
+`check()`, então Skill sem eval falha no `--check`.
+Suíte: 993 passed (era 935).
+
+**Decisão de desenho: o eval aponta quem o cobra, em vez de repetir o comportamento.**
+Adotar a regra do Alfred ao pé da letra produziria aqui um segundo lugar descrevendo o que os
+testes já verificam — e o segundo lugar é o que fica errado primeiro, porque nada falha
+quando ele diverge. Cada eval declara `enforced_by: caminho::teste`, e a ligação é cobrada:
+renomear o teste sem atualizar o eval quebra o build. **Verificado por contraprova**: com o
+`enforced_by` alterado, `test_the_test_that_enforces_the_eval_exists` falha no caso exato.
+
+O eval passa a ser a explicação de **por que** aquele caso importa — a lacuna que ele cobre —
+com o teste ao lado provando que ele vale. Os 17 casos da §31 não viraram 17 arquivos de
+prosa: dez viraram evals ligados aos testes que já os cobram, e os demais já estavam cobertos
+sem precisar de arquivo.
+
+**Riscos:** eval que vira burocracia. Mitigação implementada: o mínimo é 3 casos
+(`CASOS_OBRIGATORIOS`) e para aí de propósito — o resto entra quando houver falha real que o
+justifique, não porque a lista ficaria mais bonita completa.
+**Critério de conclusão:** ✅ Skill sem eval falha no `--check`, com contraprova.
 **Rollback:** remover a verificação do `--check`.
 
 ### Onda 10 — Adapter de host adicional
@@ -1860,7 +1876,7 @@ O plano está cumprido quando:
 | ~~**P2**~~ ✅ | ~~Contrato de estimativa + 22 proibições~~ **feito em 2026-08-03** | 6 | P6, P9 | Nenhum |
 | ~~**P3**~~ ✅ | ~~Fatos semânticos tipados~~ **feito em 2026-08-03** | 8 | P8 | Nenhum — ver correção |
 | ~~**P3**~~ ✅ | ~~Estimativa contextual generativa~~ **feito em 2026-08-03** | 7 | P7 | Zero no portfólio |
-| **P4** | Evals versionados | 9 | §29, §30 | Nenhum |
+| ~~**P4**~~ ✅ | ~~Evals versionados~~ **feito em 2026-08-03** | 9 | §29, §30 | Nenhum |
 | **P4** | Adapter de host adicional | 10 | P2, P11 | Nenhum |
 | **P5** | Dívida `evidence_only` | 11 | P10 | A decidir |
 
