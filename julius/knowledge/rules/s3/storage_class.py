@@ -739,9 +739,10 @@ def _sinal(candidato: Candidato, config: Config) -> Signal:
                 f"consultar a fonte de acesso já habilitada neste bucket "
                 f"({candidato.fonte_de_leitura})"
                 if obtenivel
-                else "nenhuma fonte de último acesso habilitada no bucket: "
-                "server access logging, Storage Lens advanced, Storage Class "
-                "Analysis ou Intelligent-Tiering"
+                else "nenhuma fonte de último acesso habilitada no bucket, e "
+                "habilitar uma está fora do alcance do perfil Consumer — toda "
+                "delas é Put* na configuração. Esta pergunta não se responde "
+                "com o que a conta expõe hoje"
             ),
             "leituras deste prefixo fora do Athena (Spark, EMR, download direto)",
         ],

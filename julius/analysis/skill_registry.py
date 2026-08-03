@@ -11,8 +11,8 @@ Aqui a fonte é `docs/ai/`, em português e sem host, e `.agents/skills/` passa 
 ser artefato. A montagem tem três partes:
 
 1. **prosa canônica** — vem do markdown e não é gerada; ninguém quer editar
-   parágrafo dentro de um `.py` (é o que o gerador do Alfred faz, e é o que este
-   evita de propósito);
+   parágrafo dentro de um `.py` — um arquivo "gerado" cujo texto mora no
+   gerador é uma segunda fonte de verdade escondida onde ninguém procura;
 2. **campos derivados do motor** — `rule_id`, métodos de estimativa, campos
    determinísticos, versão do prompt. Escritos à mão eles divergem: foi assim que
    dois métodos de estimativa ficaram fora do briefing por meses;
@@ -35,12 +35,16 @@ CANONICO = RAIZ / "docs" / "ai"
 #: Host → onde o artefato daquele host é instalado no repositório.
 #:
 #: Acrescentar um host é acrescentar uma linha aqui e um bloco em
-#: `docs/ai/hosts/`. Nada de conteúdo se duplica: o corpo canônico é o mesmo nos
-#: dois artefatos, e um teste cobra essa igualdade. Foi essa a razão de inverter
-#: a direção fonte → artefato, e é aqui que ela se paga.
+#: `docs/ai/hosts/`. Nada de conteúdo se duplica: o corpo canônico é o mesmo em
+#: todo artefato.
+#:
+#: Hoje há um host só, por decisão de produto — a análise roda no Devin. O
+#: mecanismo continua multi-host porque é ele que impede o artefato de virar
+#: fonte, e `tests/test_host_agnostic.py` o exercita com um host sintético em vez
+#: de um segundo artefato de verdade. Com um host real só, um teste que comparasse
+#: artefatos seria trivialmente verdadeiro e não provaria nada.
 HOSTS = {
     "devin": RAIZ / ".agents" / "skills",
-    "claude": RAIZ / ".claude" / "skills",
 }
 
 _AVISO = (
@@ -141,9 +145,10 @@ def load_skills() -> list[SkillSource]:
 
 
 #: Os três casos que toda Skill precisa ter antes de existir. É o mínimo do
-#: Alfred — "uma Skill nasce de uma lacuna observada, com 2-3 casos concretos" —
-#: e para aqui de propósito: o resto entra quando houver falha real que o
-#: justifique, não porque a lista ficaria mais bonita completa.
+#: Uma Skill nasce de lacuna observada, com dois ou três casos concretos que
+#: servem de critério de aceitação — e para aqui de propósito: o resto entra
+#: quando houver falha real que o justifique, não porque a lista ficaria mais
+#: bonita completa.
 CASOS_OBRIGATORIOS = ("confirmed", "rejected", "needs_evidence")
 
 
@@ -214,6 +219,43 @@ def eval_problems() -> list[str]:
                 f"{skill.name}: eval declarando outra Skill: {divergentes}"
             )
     return achados
+
+
+def contract_digest() -> str:
+    """A impressão digital do que a análise recebe e do que ela precisa devolver.
+
+    `PROMPT_VERSION` é uma versão só, e qualquer mudança a sobe — decisão do dono
+    do produto, e é a que faz o rastro funcionar. Todo veredito grava a versão do
+    briefing que o produziu (`SignalLedger.record_verdicts` → coluna
+    `prompt_version` em DuckDB); com versões separadas para Skill, playbook,
+    contrato e schema, reproduzir um julgamento exigiria quatro números.
+
+    Só que "qualquer mudança sobe a versão" é promessa que ninguém cumpre de
+    memória. Este dígito cobre a diferença: ele resume regras, corpo canônico,
+    playbooks, métodos permitidos e schema de saída, e o teste compara com o
+    valor congelado. Mudar conteúdo sem subir a versão falha, e a mensagem diz
+    o que fazer.
+    """
+    import hashlib
+    import json
+
+    from julius.analysis.guardrails import RULES
+    from julius.analysis.playbook import select
+    from julius.analysis.response_validator import ANALYSIS_OUTPUT_SCHEMA
+
+    material = {
+        "rules": list(RULES),
+        "skills": {skill.name: skill.body for skill in load_skills()},
+        "playbooks": {asset: list(perguntas) for asset, perguntas in select(None)},
+        "engine": {
+            chave: valor
+            for chave, valor in engine_fields().items()
+            if chave != "prompt_version"
+        },
+        "schema": ANALYSIS_OUTPUT_SCHEMA,
+    }
+    bruto = json.dumps(material, ensure_ascii=False, sort_keys=True, default=str)
+    return hashlib.sha256(bruto.encode("utf-8")).hexdigest()[:16]
 
 
 def engine_fields() -> dict[str, object]:

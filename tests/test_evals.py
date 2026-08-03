@@ -1,9 +1,8 @@
 """Eval que não aponta quem o cobra é prosa que envelhece sem quebrar nada.
 
-O Alfred pede que uma Skill nasça de lacuna observada, com dois ou três casos
-concretos que servem de critério de aceitação. Adotar isso literalmente
-produziria, aqui, um segundo lugar descrevendo o mesmo comportamento que os testes
-já verificam — e o segundo lugar é o que fica errado primeiro, porque nada falha
+Uma Skill nasce de lacuna observada, com dois ou três casos concretos que servem
+de critério de aceitação. Adotar isso literalmente produziria, aqui, um segundo
+lugar descrevendo o mesmo comportamento que os testes já verificam — e o segundo lugar é o que fica errado primeiro, porque nada falha
 quando ele diverge.
 
 Então cada eval declara `enforced_by`, e este arquivo cobra a ligação: o teste

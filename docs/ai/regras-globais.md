@@ -63,6 +63,33 @@ sobre o bucket, e por isso continua sendo recomendação.
 | `consumer_evidence_only` | `evidence_only` | só evidência; exceto código do produtor |
 | `full_analysis` | `proposal` | análise completa |
 
+## Moeda, região e período
+
+Conta Consumer é sempre **USD** e sempre **`sa-east-1`**. Não há outra região em
+escopo, e por isso as três guardas do contrato de estimativa — mistura de moeda,
+de região e de período — funcionam como seguro barato e não como flexibilidade:
+elas existem para o dia em que alguém somar um número que veio de outro lugar,
+não para suportar um portfólio multi-região que não existe.
+
+Fonte de preço é a tabela versionada de `sa-east-1`. Região sem tabela falha na
+carga em vez de herdar tarifa de outro lugar — herdar produziria número sem
+procedência.
+
+## Sobre habilitar fonte de evidência
+
+Nada é habilitado, nem para coleta. Server access logging, Storage Lens, Storage
+Class Analysis e Intelligent-Tiering são todos `Put*` na configuração do bucket, e
+estão fora do alcance do perfil Consumer.
+
+A consequência é honesta e precisa aparecer assim no texto: quando a fonte não
+está ligada, **a pergunta não se responde com o que a conta expõe hoje**. Ela não
+vira "ligue X" — vira evidência ausente, permanente até que alguém com outro nível
+de acesso decida ligar.
+
+O que a coleta faz é **verificar em execução o que existe**: `get_bucket_logging`,
+`list_bucket_analytics_configurations` e as demais leituras da allowlist dizem o
+que está ligado naquele bucket. O que não estiver, não é tarefa — é limite.
+
 ## Como uma regra entra aqui
 
 Com quem a cobre. Se não existe teste, validador ou allowlist que a verifique, ela

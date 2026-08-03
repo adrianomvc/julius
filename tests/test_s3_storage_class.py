@@ -133,12 +133,30 @@ def test_without_a_read_date_the_finding_is_a_question_not_a_saving():
     assert sinais[0].question and sinais[0].missing_evidence
 
 
-def test_the_signal_names_what_to_enable_when_nothing_is_enabled():
+def test_the_signal_says_the_question_cannot_be_answered_when_nothing_is_enabled():
+    """Nada é habilitado no Consumer, nem para coleta.
+
+    Este teste afirmava o contrário: que o sinal **nomeava o que ligar** — server
+    access logging, Storage Lens, Storage Class Analysis. A afirmação virou falsa
+    por decisão de produto, não por mudança de código: no perfil Consumer não há
+    acesso para habilitar nenhuma delas, e todas são `Put*` na configuração do
+    bucket.
+
+    Listar o que ligar transformava um limite em tarefa, e a tarefa nunca sairia
+    do lugar. A resposta honesta é que a pergunta não se responde com o que a
+    conta expõe hoje — evidência ausente permanente, até alguém com outro nível
+    de acesso decidir mudar isso.
+    """
     conta = _conta(configs=[S3BucketConfig(bucket="lake", access_logging_enabled=False)])
 
     sinal = storage_class.signals(conta, _config())[0]
+    texto = " ".join(sinal.missing_evidence)
 
-    assert any("server access logging" in item for item in sinal.missing_evidence)
+    assert "fora do alcance" in texto
+    assert "não se responde" in texto
+    # E não pode voltar a soar como lista de tarefas.
+    assert "Storage Lens" not in texto
+    assert "server access logging" not in texto
 
 
 def test_the_signal_says_to_consult_the_source_that_is_already_on():
