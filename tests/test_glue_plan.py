@@ -981,3 +981,35 @@ def test_spark_event_logs_do_not_claim_zero_when_log_is_too_large():
 
     assert job.shuffle_spill_bytes is None
     assert job.has_spill_evidence is False
+
+
+def test_the_suggested_timeout_clears_the_longest_run_that_actually_happened():
+    """Dobrar o p95 pode cortar um pico legítimo — que é o risco da própria regra.
+
+    `max_execution_sec` já era coletado e ninguém o lia. Sem ele, um job com p95
+    de 10 min e uma execução real de 45 min recebia a sugestão de 20 min, e
+    aplicá-la mataria uma execução que a janela registrou funcionando.
+    """
+    from julius.knowledge.rules.glue.jobs import _timeout_sugerido
+
+    job = GlueJob(
+        name="picos",
+        p95_execution_sec=600,
+        avg_execution_sec=480,
+        max_execution_sec=2700,
+    )
+    sem_pico = GlueJob(
+        name="regular",
+        p95_execution_sec=600,
+        avg_execution_sec=480,
+        max_execution_sec=660,
+    )
+
+    sugerido, max_min = _timeout_sugerido(job, job.p95_execution_sec / 60)
+    assert max_min == 45
+    # 1,25 × 45 min supera 2 × 10 min, então o piso é a execução observada.
+    assert sugerido == 56
+
+    # Sem pico relevante, o piso de 30 min que já existia continua decidindo.
+    regular, _ = _timeout_sugerido(sem_pico, sem_pico.p95_execution_sec / 60)
+    assert regular == 30

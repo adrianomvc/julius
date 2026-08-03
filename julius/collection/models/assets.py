@@ -54,6 +54,15 @@ class StateMachine:
     # Tolerar semântica at-least-once é propriedade da lógica de negócio, não da
     # config: fica `None` até a análise contextual julgar a ASL.
     idempotent: bool | None = None
+    #: Padrões de custo lidos da ASL, do identificador ao nome dos estados que
+    #: o produzem — o vocabulário está em `collection/asl.py::ASL_PATTERNS`. É
+    #: fato da definição, não julgamento: que exista um `sns:publish` a ASL
+    #: prova; se reexecutá-lo custa caro, só quem conhece o negócio responde.
+    asl_patterns: dict[str, list[str]] = field(default_factory=dict)
+    #: Por que esta máquina não roda em Express, quando não roda. Lista vazia em
+    #: máquina cuja definição não foi lida significa "não sei", não "pode migrar"
+    #: — por isso `definition_available` continua sendo consultado junto.
+    express_blockers: list[str] = field(default_factory=list)
     has_polling_loop: bool = False
     poll_extra_transitions: int | None = None  # transições extras por execução
     max_retry_attempts: int = 0
@@ -80,14 +89,14 @@ class StateMachine:
     throttled_events: int = 0
     redriven_executions: int = 0
     open_executions_max: int = 0
-    distributed_map_backlog: int = 0
-    service_integration_failures: int = 0
+    #: Duração p95 do CloudWatch. Nenhuma regra o lê direto: quem o consome é
+    #: `_apply_measured_express_blocker`, na própria coleta, que o compara ao
+    #: teto de cinco minutos do Express e escreve o motivo em `express_blockers`.
+    #: A cauda importa mais que a média aqui — o Express não degrada a execução
+    #: que passa do limite, ele a mata.
     duration_p95_ms: float | None = None
     avg_failed_state_transitions: int | None = None
     avg_retry_transitions: int | None = None
-    cw_failed_executions: int = 0
-    cw_timed_out_executions: int = 0
-    cw_aborted_executions: int = 0
 
 
 @dataclass
@@ -160,7 +169,6 @@ class SageMakerDomain:
     efs_write_io_bytes: float | None = None
     efs_client_connections: float | None = None
     coverage_days: int = 0
-    modeled_storage_cost: float | None = None
     allocated_storage_cost: float | None = None
     cost_quality: str = "unavailable"
     cost_coverage_days: int | None = None
@@ -293,7 +301,11 @@ class SageMakerJob:
     warm_pool_reused: bool = False
     failure_category: str = ""
     pipeline_name: str = ""
-    pipeline_execution_arn: str = ""
+    #: Identidade do workload, para agrupar execuções repetidas do mesmo treino.
+    #: O consumidor é interno à coleta — `_apply_workload_history` preenche
+    #: `workload_runs` e `low_utilization_runs` a partir dele, e são esses dois
+    #: que as regras leem. Dito aqui porque uma auditoria de campos sem leitor a
+    #: jusante o encontra e o classifica como morto, e ele não é.
     workload_fingerprint: str = ""
     workload_runs: int = 0
     low_utilization_runs: int = 0
@@ -316,6 +328,19 @@ class SageMakerJob:
     cost_unavailable_reason: str = ""
     cost_coverage_days: int | None = None
     consistent_scans: int = 1
+    #: Onde está o código que o job executa: `sourcedir.tar.gz` do script mode,
+    #: objeto `.py` avulso, ou vazio quando não há código do cliente.
+    code_location: str = ""
+    #: O arquivo dentro do pacote, quando o pacote é um tar.
+    code_entry_point: str = ""
+    #: `sourcedir_tar`, `s3_object`, `container_entrypoint` ou
+    #: `builtin_algorithm`. Distingue o formato do pacote, que decide como lê-lo.
+    code_kind: str = ""
+    #: Por que não há código, quando não há. Algoritmo gerenciado da AWS não é
+    #: falha — não existe script do cliente para ler. `describe` negado é falha,
+    #: e sem o motivo os dois produzem o mesmo silêncio: um job sem análise de
+    #: código que parece um job cujo código está limpo.
+    code_unavailable_reason: str = ""
 
     @property
     def instance_hours(self) -> float:

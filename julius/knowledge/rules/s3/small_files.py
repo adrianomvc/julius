@@ -27,6 +27,7 @@ ação; não anuncia dinheiro no bolso.
 from __future__ import annotations
 
 from julius.collection.models import Account, S3Prefix
+from julius.collection.models.s3 import SIZE_BUCKETS
 from julius.config import Config
 from julius.findings.build import RuleContext, build
 from julius.findings.evidence import Evidence
@@ -100,22 +101,98 @@ def signals(account: Account, config: Config) -> list[Signal]:
     ]
 
 
-def _e_tabela_com_arquivo_pequeno(prefixo: S3Prefix, config: Config) -> bool:
-    """Prefixo de tabela com muitos objetos e média abaixo do limiar.
+def _faixas_pequenas(limite_bytes: int) -> tuple[str, ...]:
+    """Os rótulos de `SIZE_BUCKETS` inteiramente abaixo do limiar.
 
-    `average_object_bytes is None` significa prefixo não listado — e aí não há o
-    que afirmar. A contagem mínima existe porque compactar dez arquivos não paga
-    o trabalho de validar os consumidores da tabela.
+    Derivado do limiar em vez de escrito à mão: reconfigurar
+    `s3_small_file_max_bytes` sem mexer aqui deixaria a contagem medindo outra
+    coisa que o resto da regra, e nada avisaria.
+    """
+    return tuple(
+        rotulo
+        for _, fim, rotulo in SIZE_BUCKETS
+        if fim is not None and fim <= limite_bytes
+    ) + ("zero",)
+
+
+def objetos_pequenos(prefixo: S3Prefix, config: Config) -> int | None:
+    """Quantos objetos estão de fato abaixo do limiar, ou `None` sem listagem.
+
+    A média esconde distribuição bimodal, que é justamente a forma mais comum
+    do problema: uma tabela com dez mil arquivos de 1 MB e vinte de 5 GB tem
+    média acima do limiar e não era avaliada, embora os dez mil arquivos sejam
+    exatamente o que faz o custo de request subir.
+    """
+    contagem = prefixo.object_count_by_size or {}
+    if not contagem:
+        return None
+    faixas = _faixas_pequenas(config.thresholds.s3_small_file_max_bytes)
+    return sum(quantidade for faixa, quantidade in contagem.items() if faixa in faixas)
+
+
+def _e_tabela_com_arquivo_pequeno(prefixo: S3Prefix, config: Config) -> bool:
+    """Prefixo de tabela com objetos pequenos em quantidade que paga o trabalho.
+
+    A contagem por faixa é a medição preferida; a média é o que sobra quando a
+    listagem não trouxe distribuição. `average_object_bytes is None` significa
+    prefixo não listado — e aí não há o que afirmar. A contagem mínima existe
+    porque compactar dez arquivos não paga o trabalho de validar os consumidores
+    da tabela.
     """
     if prefixo.kind != "table_location":
         return False
     if prefixo.average_object_bytes is None or prefixo.object_count is None:
         return False
     limiares = config.thresholds
+    pequenos = objetos_pequenos(prefixo, config)
+    if pequenos is not None:
+        return pequenos >= limiares.s3_small_files_min_count
     return (
         prefixo.object_count >= limiares.s3_small_files_min_count
         and prefixo.average_object_bytes < limiares.s3_small_file_max_bytes
     )
+
+
+def _volume_a_reescrever(prefixo: S3Prefix, config: Config) -> list[str]:
+    """Quantos bytes a compactação precisa ler e regravar.
+
+    A recomendação pede que o time dono reescreva a tabela, e até agora não
+    dizia o tamanho do trabalho: dois GB e dois TB pedem a mesma ação e decisões
+    completamente diferentes sobre quando fazê-la.
+
+    Só os bytes nas faixas pequenas entram. Os objetos que já estão no tamanho
+    alvo não são tocados por uma compactação bem feita, e incluí-los inflaria o
+    esforço estimado — no sentido de assustar quem lê, não no de prometer
+    economia, mas errado do mesmo jeito.
+    """
+    distribuicao = prefixo.bytes_by_size or {}
+    if not distribuicao:
+        return []
+    faixas = _faixas_pequenas(config.thresholds.s3_small_file_max_bytes)
+    pequenos = sum(
+        valor for faixa, valor in distribuicao.items() if faixa in faixas
+    )
+    if pequenos <= 0:
+        return []
+    return [
+        f"{pequenos / 1024**3:.2f} GB a reescrever "
+        f"({pequenos / (prefixo.total_bytes or pequenos) * 100:.0f}% do prefixo)"
+    ]
+
+
+def _quantos_pequenos(prefixo: S3Prefix, config: Config) -> str:
+    """A frase que separa "a média é baixa" de "há N arquivos pequenos".
+
+    As duas afirmações levam a decisões diferentes: compactar uma tabela cuja
+    média é baixa porque tudo é pequeno é um trabalho; compactar a cauda de
+    dez mil arquivos de uma tabela que também tem vinte de 5 GB é outro.
+    """
+    pequenos = objetos_pequenos(prefixo, config)
+    total = prefixo.object_count or 0
+    limite_mb = config.thresholds.s3_small_file_max_bytes / _MB
+    if pequenos is None:
+        return f"{total} objetos"
+    return f"{pequenos} de {total} objetos abaixo de {limite_mb:.0f} MiB"
 
 
 def _nome_da_tabela(prefixo: S3Prefix) -> str:
@@ -163,10 +240,10 @@ def _achado(
             asset_name=prefixo.location,
             title=f"Tabela '{tabela}' armazenada em arquivos pequenos",
             why=(
-                f"{prefixo.object_count} objetos com média de {media_mb:.1f} MiB "
-                f"sob '{prefixo.location}'. Cada leitura completa da tabela faz "
-                "LIST e um GET por objeto, então o custo está em requests e em "
-                "tempo de planejamento — não no volume armazenado."
+                f"{_quantos_pequenos(prefixo, config)} sob '{prefixo.location}' "
+                f"(média geral de {media_mb:.1f} MiB). Cada leitura completa da "
+                "tabela faz LIST e um GET por objeto, então o custo está em "
+                "requests e em tempo de planejamento — não no volume armazenado."
             ),
             source_process=prefixo.source_asset or None,
         ),
@@ -196,6 +273,7 @@ def _achado(
                 f"tamanho médio {media_mb:.1f} MiB (limiar: "
                 f"{config.thresholds.s3_small_file_max_bytes / _MB:.0f} MiB)",
                 f"{(prefixo.total_bytes or 0) / 1024**3:.2f} GB no total",
+                *_volume_a_reescrever(prefixo, config),
                 (
                     "listagem completa"
                     if prefixo.listing_complete

@@ -211,3 +211,39 @@ def test_a_capped_listing_marks_the_coverage_as_truncated():
 
     assert analise.coverage.truncated is True
     assert analise.coverage.execution_source == {"primary": "output_location"}
+
+
+def test_duration_is_evidence_of_impact_and_never_of_money():
+    """O Athena on-demand cobra bytes, não tempo — a latência prioriza, não paga.
+
+    Dois full scans de volume parecido pedem urgências diferentes se um responde
+    em dois segundos e o outro trava quatro minutos de pipeline. A duração diz
+    qual é qual, e não entra em nenhuma conta.
+    """
+    from julius.collection.models import Account, AthenaQuery
+    from julius.config import DEFAULT_CONFIG
+    from julius.knowledge.rules.athena import queries as athena_queries
+
+    def _achado(**overrides):
+        base = dict(
+            query_id="q-lenta",
+            statement="SELECT * FROM vendas",
+            data_scanned_bytes=200 * 1024**3,
+            observed_runs=30,
+            coverage_days=30,
+            full_scan_confirmed=True,
+            parse_succeeded=True,
+            modality="on_demand",
+        )
+        base.update(overrides)
+        conta = Account(account_id="123456789012", athena_queries=[AthenaQuery(**base)])
+        achados = athena_queries.detect(conta, DEFAULT_CONFIG, "scan")
+        return next(i for i in achados if i.rule_id == "ATHENA-FULL-TABLE-SCAN")
+
+    lenta = _achado(p50_ms=180_000, p95_ms=240_000)
+    sem_medida = _achado(p50_ms=0, p95_ms=0)
+
+    assert any("p95 240.0s" in item for item in lenta.evidence)
+    assert not any("duração observada" in item for item in sem_medida.evidence)
+    # A cifra é a mesma: o tempo não move dinheiro nenhum.
+    assert lenta.estimated_gain.monthly_expected == sem_medida.estimated_gain.monthly_expected

@@ -1368,7 +1368,7 @@
       "finding": "Timeout muito acima da duração média (+3 achados relacionados)",
       "first_seen": "",
       "gain_score": 92,
-      "how_to_apply": "Definir Timeout ~120 min (2× a duração média).",
+      "how_to_apply": "Definir Timeout ~120 min — o maior entre 2× a duração p95 e 1,25× a execução mais longa observada.",
       "how_to_validate": "Confirmar que execuções normais não são cortadas e que travadas param cedo.",
       "julius_version": "0.6.0",
       "knowledge_version": "glue-knowledge-2026-07",
@@ -2809,6 +2809,227 @@
     "window": "2026-06-23 → 2026-07-22"
   },
   "scan_id": "baseline",
+  "signals": [
+    {
+      "artifact_sha256": "",
+      "asset_name": "gera_base_legado",
+      "asset_type": "glue_job",
+      "doc_links": [
+        "https://docs.aws.amazon.com/glue/latest/dg/aws-glue-api-jobs-runs.html"
+      ],
+      "kind": "config",
+      "lines": [],
+      "missing_evidence": [
+        "prazo de entrega acordado com quem consome a saída",
+        "dependência a jusante que trava esperando este job"
+      ],
+      "observation": "'gera_base_legado' é batch Spark em STANDARD com 30 execuções/mês; FLEX custa menos por DPU-hora.",
+      "potential_range": null,
+      "question": "O SLA deste job tolera início adiado e capacidade não garantida? Quem espera a saída, e até quando?",
+      "rule_id": "GLUE-FLEX-TOLERANCE"
+    },
+    {
+      "artifact_sha256": "",
+      "asset_name": "agrega_vendas",
+      "asset_type": "glue_job",
+      "doc_links": [
+        "https://docs.aws.amazon.com/glue/latest/dg/release-notes.html"
+      ],
+      "kind": "config",
+      "lines": [],
+      "missing_evidence": [
+        "compatibilidade de bibliotecas e formatos usados pelo script",
+        "benchmark de duração e DPU-h na versão alvo"
+      ],
+      "observation": "Job em Glue 3.0, abaixo da versão preferencial 5.1.",
+      "potential_range": null,
+      "question": "O script usa bibliotecas, formatos ou APIs que impedem a migração para Glue 5.1? Se não impedem, o que a migração muda em duração e DPU-h neste job?",
+      "rule_id": "GLUE-VERSION-REVIEW"
+    },
+    {
+      "artifact_sha256": "",
+      "asset_name": "gera_base_legado",
+      "asset_type": "glue_job",
+      "doc_links": [
+        "https://docs.aws.amazon.com/glue/latest/dg/release-notes.html"
+      ],
+      "kind": "config",
+      "lines": [],
+      "missing_evidence": [
+        "compatibilidade de bibliotecas e formatos usados pelo script",
+        "benchmark de duração e DPU-h na versão alvo"
+      ],
+      "observation": "Job em Glue 3.0, abaixo da versão preferencial 5.1.",
+      "potential_range": null,
+      "question": "O script usa bibliotecas, formatos ou APIs que impedem a migração para Glue 5.1? Se não impedem, o que a migração muda em duração e DPU-h neste job?",
+      "rule_id": "GLUE-VERSION-REVIEW"
+    },
+    {
+      "artifact_sha256": "",
+      "asset_name": "sync_parceiros",
+      "asset_type": "glue_job",
+      "doc_links": [
+        "https://docs.aws.amazon.com/glue/latest/dg/release-notes.html"
+      ],
+      "kind": "config",
+      "lines": [],
+      "missing_evidence": [
+        "compatibilidade de bibliotecas e formatos usados pelo script",
+        "benchmark de duração e DPU-h na versão alvo"
+      ],
+      "observation": "Job em Glue 3.0, abaixo da versão preferencial 5.1.",
+      "potential_range": null,
+      "question": "O script usa bibliotecas, formatos ou APIs que impedem a migração para Glue 5.1? Se não impedem, o que a migração muda em duração e DPU-h neste job?",
+      "rule_id": "GLUE-VERSION-REVIEW"
+    },
+    {
+      "artifact_sha256": "",
+      "asset_name": "treina_features",
+      "asset_type": "glue_job",
+      "doc_links": [
+        "https://docs.aws.amazon.com/glue/latest/dg/release-notes.html"
+      ],
+      "kind": "config",
+      "lines": [],
+      "missing_evidence": [
+        "compatibilidade de bibliotecas e formatos usados pelo script",
+        "benchmark de duração e DPU-h na versão alvo"
+      ],
+      "observation": "Job em Glue 3.0, abaixo da versão preferencial 5.1.",
+      "potential_range": null,
+      "question": "O script usa bibliotecas, formatos ou APIs que impedem a migração para Glue 5.1? Se não impedem, o que a migração muda em duração e DPU-h neste job?",
+      "rule_id": "GLUE-VERSION-REVIEW"
+    },
+    {
+      "artifact_sha256": "",
+      "asset_name": "dw-legado",
+      "asset_type": "redshift_cluster",
+      "doc_links": [
+        "https://docs.aws.amazon.com/redshift/latest/mgmt/managing-cluster-operations.html"
+      ],
+      "kind": "config",
+      "lines": [],
+      "missing_evidence": [
+        "propósito declarado do cluster pelo dono",
+        "janela de carga esperada, se houver"
+      ],
+      "observation": "'dw-legado' passou 30 dias sem conexão observada e com CPU no chão.",
+      "potential_range": null,
+      "question": "Este cluster existe para uma carga sazonal, para recuperação de desastre, ou deixou de ser usado? Quem depende dele hoje?",
+      "rule_id": "REDSHIFT-IDLE-JUSTIFICATION"
+    },
+    {
+      "artifact_sha256": "",
+      "asset_name": "dw-legado",
+      "asset_type": "redshift_cluster",
+      "doc_links": [
+        "https://docs.aws.amazon.com/redshift/latest/mgmt/managing-cluster-operations.html#elastic-resize"
+      ],
+      "kind": "config",
+      "lines": [],
+      "missing_evidence": [
+        "memória por query e derrame para disco",
+        "profundidade de fila e tempo de espera",
+        "distribuição das tabelas mais lidas"
+      ],
+      "observation": "4 nós ra3.xlplus com CPU máxima 6% na janela.",
+      "potential_range": null,
+      "question": "Para quantos nós dá para reduzir sem estourar memória por query ou fila? CPU baixa esconde gargalo de I/O ou de concorrência neste caso?",
+      "rule_id": "REDSHIFT-RESIZE-TARGET"
+    },
+    {
+      "artifact_sha256": "",
+      "asset_name": "consumer-avi-datalake",
+      "asset_type": "s3_bucket",
+      "doc_links": [
+        "https://docs.aws.amazon.com/AmazonS3/latest/userguide/Versioning.html"
+      ],
+      "kind": "config",
+      "lines": [],
+      "missing_evidence": [
+        "política de retenção acordada para este bucket",
+        "volume ocupado por versões não-correntes"
+      ],
+      "observation": "'consumer-avi-datalake' tem versionamento ativo e 2560.0 GB armazenados.",
+      "potential_range": null,
+      "question": "As versões não-correntes existem por exigência de retenção ou por inércia? Há prazo regulatório que impeça apagá-las?",
+      "rule_id": "S3-NONCURRENT-VERSIONS"
+    },
+    {
+      "artifact_sha256": "",
+      "asset_name": "orquestra_ingestao",
+      "asset_type": "state_machine",
+      "doc_links": [
+        "https://docs.aws.amazon.com/step-functions/latest/dg/concepts-error-handling.html"
+      ],
+      "kind": "config",
+      "lines": [],
+      "missing_evidence": [
+        "taxa de falha por Task e quantas execuções chegam ao último retry"
+      ],
+      "observation": "Retry declara até 3 tentativas em 'orquestra_ingestao'.",
+      "potential_range": null,
+      "question": "O retry cobre falha transitória de verdade, ou mascara erro recorrente e repaga o trabalho já cobrado a cada tentativa?",
+      "rule_id": "SFN-RETRY-MASKING"
+    },
+    {
+      "artifact_sha256": "",
+      "asset_name": "orquestra_ingestao",
+      "asset_type": "state_machine",
+      "doc_links": [
+        "https://docs.aws.amazon.com/step-functions/latest/dg/concepts-standard-vs-express.html"
+      ],
+      "kind": "config",
+      "lines": [],
+      "missing_evidence": [
+        "benchmark externo de duração e memória do Express"
+      ],
+      "observation": "'orquestra_ingestao' é STANDARD com 45000 execuções/mês de ~90s — perfil de Express, cuja semântica é at-least-once.",
+      "potential_range": null,
+      "question": "A ASL tolera execução repetida? Há Task com efeito colateral não idempotente — escrita sem chave de deduplicação, envio de notificação, cobrança — que a reexecução do Express duplicaria?",
+      "rule_id": "SFN-STANDARD-TO-EXPRESS"
+    },
+    {
+      "artifact_sha256": "",
+      "asset_name": "jupyter-avi-ds",
+      "asset_type": "sagemaker_app",
+      "doc_links": [
+        "https://docs.aws.amazon.com/sagemaker/latest/dg/studio-updated-idle-shutdown.html"
+      ],
+      "kind": "config",
+      "lines": [],
+      "missing_evidence": [
+        "notebooks em uso",
+        "picos de memória/GPU durante atividade"
+      ],
+      "observation": "JupyterLab em ml.g4dn.xlarge com ~14.0h/dia de baixa atividade.",
+      "potential_range": null,
+      "question": "O trabalho exige essa instância e Studio ativo, ou cabe em instância menor/job sob demanda?",
+      "rule_id": "SM-APP-INSTANCE-FIT"
+    },
+    {
+      "artifact_sha256": "",
+      "asset_name": "modelo-churn-dev",
+      "asset_type": "sagemaker_endpoint",
+      "doc_links": [
+        "https://docs.aws.amazon.com/sagemaker/latest/dg/serverless-endpoints.html",
+        "https://docs.aws.amazon.com/sagemaker/latest/dg/async-inference.html",
+        "https://docs.aws.amazon.com/sagemaker/latest/dg/endpoint-auto-scaling-zero-instances.html"
+      ],
+      "kind": "config",
+      "lines": [],
+      "missing_evidence": [
+        "SLA e tolerância a cold start",
+        "tamanho do payload e duração",
+        "restrições de GPU, VPC, data capture e multi-model",
+        "consumidores atuais"
+      ],
+      "observation": "modalidade=real_time, 8 invocações/mês.",
+      "potential_range": null,
+      "question": "O SLA/payload favorece manter real-time, Serverless, Async, Batch ou scale-to-zero?",
+      "rule_id": "SM-ENDPOINT-MODE-FIT"
+    }
+  ],
   "summary": {
     "billing_cost_mtd": "US$ 5.860,46",
     "committed_monthly": "US$ 0",

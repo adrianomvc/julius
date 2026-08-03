@@ -6,6 +6,17 @@ import ast
 import re
 from dataclasses import dataclass
 
+from julius.knowledge.rules.code_ast import (
+    call_lines,
+    call_name,
+    calls_inside_loops,
+    external_io_in_row_functions,
+    matching_lines,
+    parse,
+    string_arg_call_lines,
+    swallowed_exception_lines,
+)
+
 
 @dataclass(frozen=True)
 class CodeFinding:
@@ -46,8 +57,8 @@ def scan_glue_script(source: str) -> list[CodeFinding]:
     """Retorna sinais estáticos; não interpreta ausência de sinal como segurança."""
     findings: dict[str, CodeFinding] = {}
     lines = source.splitlines()
-    tree = _parse(source)
-    spark_lines = _matching_lines(lines, "|".join(_SPARK_MARKERS))
+    tree = parse(source)
+    spark_lines = matching_lines(lines, "|".join(_SPARK_MARKERS))
     is_spark = bool(spark_lines)
 
     def add(rule_id: str, signal: str, line_numbers: list[int] | tuple[int, ...]) -> None:
@@ -65,18 +76,18 @@ def scan_glue_script(source: str) -> list[CodeFinding]:
         add(
             "GLUE-CODE-PUSHDOWN",
             "leitura do Glue Catalog sem predicate pushdown explícito",
-            _matching_lines(lines, r"\b(?:from_catalog|create_dynamic_frame)\b"),
+            matching_lines(lines, r"\b(?:from_catalog|create_dynamic_frame)\b"),
         )
 
     if (
         is_spark
         and re.search(r"\bspark\.read\.(?:parquet|orc|json|csv)\s*\(\s*[\"']s3://", source)
-        and _call_lines(tree, {"filter", "where"})
+        and call_lines(tree, {"filter", "where"})
     ):
         add(
             "GLUE-CODE-S3-FULL-SCAN",
             "leitura direta de prefixo S3 seguida de filtro no Spark",
-            _matching_lines(
+            matching_lines(
                 lines,
                 r"\bspark\.read\.(?:parquet|orc|json|csv)\s*\(",
             ),
@@ -86,10 +97,10 @@ def scan_glue_script(source: str) -> list[CodeFinding]:
         add(
             "GLUE-CODE-JDBC-SINGLE-READER",
             "leitura JDBC sem opções explícitas de paralelismo",
-            _matching_lines(lines, r"[\"']jdbc[\"']|\.jdbc\s*\("),
+            matching_lines(lines, r"[\"']jdbc[\"']|\.jdbc\s*\("),
         )
 
-    single_partition = _call_lines(tree, {"repartition", "coalesce"}, first_arg=1)
+    single_partition = call_lines(tree, {"repartition", "coalesce"}, first_arg=1)
     if is_spark and single_partition:
         add(
             "GLUE-CODE-SINGLE-PARTITION",
@@ -97,7 +108,7 @@ def scan_glue_script(source: str) -> list[CodeFinding]:
             single_partition,
         )
 
-    driver_lines = _call_lines(tree, {"collect", "toPandas", "toLocalIterator"})
+    driver_lines = call_lines(tree, {"collect", "toPandas", "toLocalIterator"})
     if is_spark and driver_lines:
         add(
             "GLUE-CODE-DRIVER-MATERIALIZATION",
@@ -113,7 +124,7 @@ def scan_glue_script(source: str) -> list[CodeFinding]:
             udf_lines,
         )
 
-    action_lines = _call_lines(tree, _ACTIONS)
+    action_lines = call_lines(tree, _ACTIONS)
     if is_spark and len(action_lines) >= 3:
         add(
             "GLUE-CODE-REPEATED-ACTIONS",
@@ -121,15 +132,15 @@ def scan_glue_script(source: str) -> list[CodeFinding]:
             action_lines,
         )
 
-    cache_lines = _call_lines(tree, {"cache", "persist"})
-    if is_spark and cache_lines and not _call_lines(tree, {"unpersist"}):
+    cache_lines = call_lines(tree, {"cache", "persist"})
+    if is_spark and cache_lines and not call_lines(tree, {"unpersist"}):
         add(
             "GLUE-CODE-CACHE-LIFECYCLE",
             "cache/persist sem unpersist observável",
             cache_lines,
         )
 
-    iterative = _calls_inside_loops(tree, {"withColumn", "union", "unionByName"})
+    iterative = calls_inside_loops(tree, {"withColumn", "union", "unionByName"})
     if is_spark and iterative:
         add(
             "GLUE-CODE-ITERATIVE-PLAN",
@@ -137,7 +148,9 @@ def scan_glue_script(source: str) -> list[CodeFinding]:
             iterative,
         )
 
-    external_io = _external_io_in_row_functions(tree)
+    external_io = external_io_in_row_functions(
+        tree, appliers={"udf", "pandas_udf", "map", "flatMap", "foreach"}
+    )
     if is_spark and external_io:
         add(
             "GLUE-CODE-ROW-EXTERNAL-IO",
@@ -145,7 +158,7 @@ def scan_glue_script(source: str) -> list[CodeFinding]:
             external_io,
         )
 
-    overwrite = _string_arg_call_lines(tree, "mode", "overwrite")
+    overwrite = string_arg_call_lines(tree, "mode", "overwrite")
     if (
         is_spark
         and overwrite
@@ -158,7 +171,7 @@ def scan_glue_script(source: str) -> list[CodeFinding]:
         )
 
     excessive = _large_repartition_lines(tree)
-    writes_in_loop = _calls_inside_loops(tree, {"save", "parquet", "json", "csv", "insertInto"})
+    writes_in_loop = calls_inside_loops(tree, {"save", "parquet", "json", "csv", "insertInto"})
     if is_spark and (excessive or writes_in_loop):
         add(
             "GLUE-CODE-SMALL-FILES",
@@ -166,7 +179,7 @@ def scan_glue_script(source: str) -> list[CodeFinding]:
             excessive + writes_in_loop,
         )
 
-    shuffle = _call_lines(tree, set(_DISTRIBUTED_TRANSFORMS))
+    shuffle = call_lines(tree, set(_DISTRIBUTED_TRANSFORMS))
     if is_spark and shuffle:
         add(
             "GLUE-CODE-SHUFFLE",
@@ -182,7 +195,7 @@ def scan_glue_script(source: str) -> list[CodeFinding]:
             shuffle_config,
         )
 
-    swallowed = _swallowed_exception_lines(tree)
+    swallowed = swallowed_exception_lines(tree)
     if swallowed:
         add(
             "GLUE-CODE-SWALLOWED-EXCEPTION",
@@ -198,7 +211,7 @@ def scan_glue_script(source: str) -> list[CodeFinding]:
         add(
             "GLUE-CODE-BOOKMARK-CONTEXT",
             "job inicializado sem transformation_ctx observável nas fontes Glue",
-            _matching_lines(lines, r"\bjob\.init\s*\("),
+            matching_lines(lines, r"\bjob\.init\s*\("),
         )
 
     if (
@@ -209,7 +222,7 @@ def scan_glue_script(source: str) -> list[CodeFinding]:
         add(
             "GLUE-CODE-BOOKMARK-COMMIT",
             "job.init sem job.commit observável",
-            _matching_lines(lines, r"\bjob\.init\s*\("),
+            matching_lines(lines, r"\bjob\.init\s*\("),
         )
 
     if (
@@ -225,64 +238,6 @@ def scan_glue_script(source: str) -> list[CodeFinding]:
         )
 
     return sorted(findings.values(), key=lambda finding: finding.rule_id)
-
-
-def _parse(source: str) -> ast.AST | None:
-    try:
-        return ast.parse(source)
-    except (SyntaxError, ValueError):
-        return None
-
-
-def _matching_lines(lines: list[str], pattern: str) -> list[int]:
-    regex = re.compile(pattern)
-    return [index for index, line in enumerate(lines, start=1) if regex.search(line)]
-
-
-def _call_name(node: ast.Call) -> str:
-    func = node.func
-    if isinstance(func, ast.Attribute):
-        return func.attr
-    if isinstance(func, ast.Name):
-        return func.id
-    return ""
-
-
-def _call_lines(
-    tree: ast.AST | None,
-    names: set[str],
-    *,
-    first_arg: int | None = None,
-) -> list[int]:
-    if tree is None:
-        return []
-    result = []
-    for node in ast.walk(tree):
-        if not isinstance(node, ast.Call) or _call_name(node) not in names:
-            continue
-        if first_arg is not None:
-            if not node.args or not isinstance(node.args[0], ast.Constant):
-                continue
-            if node.args[0].value != first_arg:
-                continue
-        result.append(node.lineno)
-    return sorted(set(result))
-
-
-def _string_arg_call_lines(tree: ast.AST | None, name: str, value: str) -> list[int]:
-    if tree is None:
-        return []
-    result = []
-    for node in ast.walk(tree):
-        if (
-            isinstance(node, ast.Call)
-            and _call_name(node) == name
-            and node.args
-            and isinstance(node.args[0], ast.Constant)
-            and str(node.args[0].value).lower() == value.lower()
-        ):
-            result.append(node.lineno)
-    return sorted(set(result))
 
 
 def _has_catalog_read(source: str) -> bool:
@@ -309,21 +264,8 @@ def _has_unpartitioned_jdbc_read(source: str) -> bool:
 
 
 def _udf_lines(tree: ast.AST | None, lines: list[str]) -> list[int]:
-    result = _call_lines(tree, {"udf", "pandas_udf"})
-    result += _matching_lines(lines, r"@\s*(?:pandas_)?udf\b")
-    return sorted(set(result))
-
-
-def _calls_inside_loops(tree: ast.AST | None, names: set[str]) -> list[int]:
-    if tree is None:
-        return []
-    result = []
-    for loop in ast.walk(tree):
-        if not isinstance(loop, (ast.For, ast.AsyncFor, ast.While)):
-            continue
-        for node in ast.walk(loop):
-            if isinstance(node, ast.Call) and _call_name(node) in names:
-                result.append(node.lineno)
+    result = call_lines(tree, {"udf", "pandas_udf"})
+    result += matching_lines(lines, r"@\s*(?:pandas_)?udf\b")
     return sorted(set(result))
 
 
@@ -334,7 +276,7 @@ def _large_repartition_lines(tree: ast.AST | None) -> list[int]:
     for node in ast.walk(tree):
         if (
             isinstance(node, ast.Call)
-            and _call_name(node) == "repartition"
+            and call_name(node) == "repartition"
             and node.args
             and isinstance(node.args[0], ast.Constant)
             and isinstance(node.args[0].value, int)
@@ -364,85 +306,3 @@ def _extreme_shuffle_partition_lines(tree: ast.AST | None) -> list[int]:
             if configured <= 1 or configured >= 1000:
                 result.append(node.lineno)
     return sorted(set(result))
-
-
-def _swallowed_exception_lines(tree: ast.AST | None) -> list[int]:
-    if tree is None:
-        return []
-    result = []
-    for node in ast.walk(tree):
-        if not isinstance(node, ast.ExceptHandler):
-            continue
-        meaningful = [
-            item
-            for item in node.body
-            if not (
-                isinstance(item, ast.Expr)
-                and isinstance(item.value, ast.Constant)
-                and isinstance(item.value.value, str)
-            )
-        ]
-        if not meaningful or all(isinstance(item, (ast.Pass, ast.Continue)) for item in meaningful):
-            result.append(node.lineno)
-    return sorted(set(result))
-
-
-def _external_io_in_row_functions(tree: ast.AST | None) -> list[int]:
-    if tree is None:
-        return []
-    functions: dict[str, tuple[ast.AST, int]] = {}
-    row_function_names: set[str] = set()
-    external_clients: set[str] = set()
-    for node in ast.walk(tree):
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-            functions[node.name] = (node, node.lineno)
-        if isinstance(node, (ast.Assign, ast.AnnAssign)):
-            value = node.value
-            if isinstance(value, ast.Call) and _dotted_name(value.func) in {
-                "boto3.client",
-                "boto3.resource",
-            }:
-                targets = node.targets if isinstance(node, ast.Assign) else [node.target]
-                external_clients.update(
-                    target.id for target in targets if isinstance(target, ast.Name)
-                )
-        if isinstance(node, ast.Call) and _call_name(node) in {
-            "udf",
-            "pandas_udf",
-            "map",
-            "flatMap",
-            "foreach",
-        }:
-            for arg in node.args:
-                if isinstance(arg, ast.Name):
-                    row_function_names.add(arg.id)
-    result = []
-    for name in row_function_names:
-        definition = functions.get(name)
-        if not definition:
-            continue
-        node, _ = definition
-        for call in ast.walk(node):
-            if not isinstance(call, ast.Call):
-                continue
-            dotted = _dotted_name(call.func)
-            root = dotted.split(".", 1)[0]
-            if (
-                dotted.startswith(("requests.", "httpx.", "urllib3."))
-                or dotted in {"boto3.client", "boto3.resource"}
-                or root in external_clients
-                or dotted.endswith((".execute", ".executemany"))
-            ):
-                result.append(call.lineno)
-    return sorted(set(result))
-
-
-def _dotted_name(node: ast.AST) -> str:
-    parts = []
-    current: ast.AST | None = node
-    while isinstance(current, ast.Attribute):
-        parts.append(current.attr)
-        current = current.value
-    if isinstance(current, ast.Name):
-        parts.append(current.id)
-    return ".".join(reversed(parts))

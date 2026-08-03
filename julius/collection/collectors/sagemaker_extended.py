@@ -287,6 +287,9 @@ def collect_jobs(
         days=max(window.days, history_days),
     )
     jobs: list[SageMakerJob] = []
+    #: Vários transform jobs costumam apontar para o mesmo `Model`; resolvê-lo
+    #: uma vez por nome evita repetir `describe_model` a cada execução listada.
+    modelos: dict[str, tuple[str, str]] = {}
     for kind, spec in _JOB_SPECS.items():
         listed = safe_pages(
             sagemaker_client,
@@ -307,12 +310,13 @@ def collect_jobs(
             )
             if error:
                 _append_gap(gaps, f"{spec['describe']}: {error}")
-            job = _normalize_job(
-                kind,
-                {**summary, **described},
-                window,
-                history_window,
-            )
+            raw = {**summary, **described}
+            job = _normalize_job(kind, raw, window, history_window)
+            _apply_code_location(job, kind, raw)
+            if kind == "transform":
+                _apply_model_code(
+                    sagemaker_client, job, str(raw.get("ModelName") or ""), modelos, gaps
+                )
             _apply_modeled_cost(job, pricing, kind)
             jobs.append(job)
 
@@ -472,6 +476,118 @@ def _metrics_low(job: SageMakerJob, threshold: float) -> bool:
         if value is not None
     ]
     return bool(values) and max(values) / 100.0 < threshold
+
+
+def _apply_code_location(job: SageMakerJob, kind: str, raw: dict) -> None:
+    """Onde está o código que o job roda — os ponteiros já vêm no `describe`.
+
+    O SDK do SageMaker empacota o script mode em hiperparâmetros: o diretório
+    vai para `sagemaker_submit_directory` e o arquivo de entrada para
+    `sagemaker_program`, ambos com aspas JSON embutidas no valor. Processing
+    usa outro caminho — o script chega como um `ProcessingInput` chamado
+    `code`. Nenhum dos dois custa chamada nova: o payload já estava em mãos e
+    era descartado.
+
+    Algoritmo gerenciado da AWS não tem script do cliente, e isso é resposta,
+    não falha. Sem registrar o motivo, um XGBoost gerenciado e um job cujo
+    `describe` foi negado ficam idênticos: dois jobs sem análise de código.
+    """
+    if kind == "training":
+        hiper = raw.get("HyperParameters") or {}
+        diretorio = _sem_aspas(hiper.get("sagemaker_submit_directory"))
+        programa = _sem_aspas(hiper.get("sagemaker_program"))
+        if diretorio and programa:
+            job.code_location = diretorio
+            job.code_entry_point = programa
+            job.code_kind = (
+                "sourcedir_tar" if diretorio.endswith(".tar.gz") else "s3_object"
+            )
+            return
+        algoritmo = (raw.get("AlgorithmSpecification") or {}).get("AlgorithmName")
+        imagem = (raw.get("AlgorithmSpecification") or {}).get("TrainingImage")
+        if algoritmo or imagem:
+            job.code_kind = "builtin_algorithm"
+            job.code_unavailable_reason = (
+                "algoritmo gerenciado ou imagem própria sem script mode: "
+                "não há código do cliente para ler"
+            )
+            return
+        job.code_unavailable_reason = "describe negado ou sem AlgorithmSpecification"
+        return
+
+    if kind == "processing":
+        for entrada in raw.get("ProcessingInputs") or ():
+            if not isinstance(entrada, dict):
+                continue
+            if str(entrada.get("InputName") or "").lower() != "code":
+                continue
+            uri = str(((entrada.get("S3Input") or {}).get("S3Uri")) or "")
+            if uri:
+                job.code_location = uri
+                job.code_kind = (
+                    "sourcedir_tar" if uri.endswith(".tar.gz") else "s3_object"
+                )
+                return
+        entrypoint = (raw.get("AppSpecification") or {}).get("ContainerEntrypoint")
+        if entrypoint:
+            job.code_kind = "container_entrypoint"
+            job.code_unavailable_reason = (
+                "script embutido na imagem do contêiner: fora do alcance de uma "
+                "coleta read-only do S3"
+            )
+            return
+        job.code_unavailable_reason = "describe negado ou sem ProcessingInputs"
+        return
+
+    # Transform não carrega código próprio: ele roda o modelo. O ponteiro está
+    # no `Model`, e resolvê-lo é uma chamada a mais — feita em `collect_jobs`,
+    # onde o cliente existe e o resultado pode ser reaproveitado entre jobs.
+    job.code_unavailable_reason = "código do transform vem do Model associado"
+
+
+def _apply_model_code(
+    sagemaker_client,
+    job: SageMakerJob,
+    model_name: str,
+    cache: dict[str, tuple[str, str]],
+    gaps: list[str] | None,
+) -> None:
+    """O código de um transform vive no `Model` que ele executa.
+
+    O SDK guarda o mesmo par diretório/programa do script mode nas variáveis de
+    ambiente do contêiner primário. Modelo sem elas roda inferência embutida na
+    imagem, e aí não há o que ler.
+    """
+    if not model_name:
+        return
+    if model_name not in cache:
+        described, error = safe_call(
+            sagemaker_client, "describe_model", ModelName=model_name
+        )
+        if error:
+            _append_gap(gaps, f"describe_model: {error}")
+            job.code_unavailable_reason = f"describe_model negado: {error}"
+            return
+        ambiente = (described.get("PrimaryContainer") or {}).get("Environment") or {}
+        cache[model_name] = (
+            _sem_aspas(ambiente.get("SAGEMAKER_SUBMIT_DIRECTORY")),
+            _sem_aspas(ambiente.get("SAGEMAKER_PROGRAM")),
+        )
+    diretorio, programa = cache[model_name]
+    if not (diretorio and programa):
+        job.code_unavailable_reason = (
+            f"modelo {model_name} não declara script mode: inferência embutida na imagem"
+        )
+        return
+    job.code_location = diretorio
+    job.code_entry_point = programa
+    job.code_kind = "sourcedir_tar" if diretorio.endswith(".tar.gz") else "s3_object"
+    job.code_unavailable_reason = ""
+
+
+def _sem_aspas(valor: Any) -> str:
+    """Hiperparâmetro do SageMaker chega como `'"train.py"'`."""
+    return str(valor or "").strip().strip('"')
 
 
 def _job_resources(kind: str, raw: dict) -> tuple[str, int]:

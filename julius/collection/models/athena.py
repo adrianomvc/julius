@@ -18,7 +18,6 @@ class AthenaQuery:
     table_is_partitioned: bool = False
     selects_star: bool = False
     result_reuse_enabled: bool = False
-    bytes_scanned_cutoff: bool = False
     observed_runs: int = 0
     coverage_days: int = 0
     owner_tag: str | None = None

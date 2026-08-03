@@ -500,6 +500,33 @@ def _estimation(
     )
 
 
+def _perfil_de_idade(prefixo) -> list[str]:
+    """Quanto do prefixo é antigo, como evidência — nunca como dimensionamento.
+
+    A tentação é usar isto para separar os bytes que compensam transitar dos que
+    expiram antes do payback. Não dá: `bytes_by_age` e `bytes_by_class` são duas
+    distribuições **marginais**, e cruzar as duas exigiria assumir que a idade se
+    distribui igual entre as classes. Nada mede isso, e o erro cairia direto na
+    cifra.
+
+    Como evidência, a mesma marginal é honesta e útil: "82% dos bytes têm mais
+    de um ano" é o tipo de coisa que decide se o time dono confia no achado, e
+    não depende de cruzamento nenhum.
+    """
+    total = sum(prefixo.bytes_by_age.values()) if prefixo.bytes_by_age else 0.0
+    if total <= 0:
+        return []
+    antigos = sum(
+        valor
+        for faixa, valor in prefixo.bytes_by_age.items()
+        if faixa in {"365+", "180-365"}
+    )
+    return [
+        f"{antigos / total * 100:.0f}% dos bytes com mais de 180 dias "
+        f"({len(prefixo.object_count_by_age)} faixas de idade observadas)"
+    ]
+
+
 def _bytes_faturaveis(
     candidato: Candidato, target_class: str, config: Config
 ) -> float:
@@ -631,6 +658,7 @@ def _oportunidade(
                 f"({candidato.fonte_de_leitura}; "
                 f"qualidade={candidato.qualidade_de_leitura})",
                 f"objeto médio: {(prefixo.average_object_bytes or 0) / 1024:.0f} KB",
+                *_perfil_de_idade(prefixo),
                 (
                     f"economia recorrente: US$ "
                     f"{est.monthly_recurring_saving or 0:.2f}/mês; "

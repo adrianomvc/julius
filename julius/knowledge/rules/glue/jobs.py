@@ -496,9 +496,22 @@ def _unattributed_cost(
     )
 
 
+def _timeout_sugerido(job: GlueJob, exec_min: float) -> tuple[int, float]:
+    """O timeout proposto tem de caber a execução mais longa que já aconteceu.
+
+    A regra media por p95, e o dobro do p95 pode ficar **abaixo** de uma
+    execução real da janela — a recomendação cortaria um pico legítimo, que é
+    exatamente o risco que ela mesma declara. `max_execution_sec` já era
+    coletado e ninguém o lia; ele é o piso que torna a sugestão segura.
+    """
+    max_min = (job.max_execution_sec or 0.0) / 60
+    return max(30, round(exec_min * 2), round(max_min * 1.25)), max_min
+
+
 def _timeout(account: Account, job: GlueJob, config: Config, scan_id: str) -> Opportunity:
     est = glue_est.timeout_guardrail_saving(job, config)
     exec_min = (job.p95_execution_sec or job.avg_execution_sec) / 60
+    sugerido, max_min = _timeout_sugerido(job, exec_min)
     return build(
         Finding(
             asset_type="glue_job",
@@ -511,7 +524,11 @@ def _timeout(account: Account, job: GlueJob, config: Config, scan_id: str) -> Op
         Recommendation(
             difficulty=1,
             action="Alinhar o timeout à duração real (com folga)",
-            how_to_apply=f"Definir Timeout ~{max(30, round(exec_min * 2))} min (2× a duração média).",
+            how_to_apply=(
+                f"Definir Timeout ~{sugerido} min — o maior entre 2× a duração "
+                f"p95 e 1,25× a execução mais longa observada"
+                + (f" ({max_min:.0f} min)." if max_min else ".")
+            ),
             how_to_validate="Confirmar que execuções normais não são cortadas e que travadas param cedo.",
             risks=["timeout curto demais pode cortar picos legítimos"],
             docs=[_DOC_MONITORING],
@@ -519,7 +536,15 @@ def _timeout(account: Account, job: GlueJob, config: Config, scan_id: str) -> Op
             blocked=est.saving_quality == "unavailable",
         ),
         Evidence(
-            items=[f"timeout={job.timeout_min} min", f"duração média {exec_min:.0f} min"],
+            items=[
+                f"timeout={job.timeout_min} min",
+                f"duração média {exec_min:.0f} min",
+                *(
+                    [f"execução mais longa observada {max_min:.0f} min"]
+                    if max_min
+                    else []
+                ),
+            ],
             sources=["Glue GetJob", "GetJobRuns"],
             observed_runs=job.observed_runs,
             coverage_days=job.coverage_days,

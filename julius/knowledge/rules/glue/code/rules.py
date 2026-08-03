@@ -17,7 +17,9 @@ from julius.knowledge.rules.glue.code.scanner import scan_glue_script
 from julius.knowledge.rules.glue.estimation import (
     code_pattern_saving,
     python_shell_migration_saving,
+    window_baseline,
 )
+from julius.knowledge.signal_potential import potential
 from julius.knowledge.rules.s3.request_cost import (
     request_estimation,
     request_evidence,
@@ -241,6 +243,25 @@ _RULES: dict[str, RuleSpec] = {
 #: leitura do contexto que torne isso correto.
 _SELF_EVIDENT = frozenset({"GLUE-CODE-BOOKMARK-COMMIT"})
 
+#: O oposto: padrões cujo gatilho é fato e cuja conclusão nenhuma métrica
+#: fecha. Eles produziam cifra multiplicando o custo do job por uma fração fixa
+#: da `RuleSpec`, e a correlação de runtime exigida não sustentava o número —
+#: sustentava só a existência do padrão. `GLUE-CODE-SHUFFLE` dispara em qualquer
+#: `join`, `groupBy`, `orderBy` ou `map`: com spill medido, o achado virava 15%
+#: de economia sobre o job, e esses 15% vinham da constante, não da medição.
+#:
+#: Nenhum deles perdeu evidência ao virar sinal — perderam um número que não
+#: era deles. O que a análise contextual pode devolver é um método de cálculo
+#: permitido, e aí quem executa a fórmula é o motor.
+_SEMPRE_SINAL = frozenset(
+    {
+        "GLUE-CODE-SHUFFLE",
+        "GLUE-CODE-PYTHON-UDF",
+        "GLUE-CODE-REPEATED-ACTIONS",
+        "GLUE-CODE-CACHE-LIFECYCLE",
+    }
+)
+
 
 def detect(
     account: Account,
@@ -277,7 +298,11 @@ def detect(
             spec = _RULES.get(rule_id)
             if spec is None:
                 continue
-            if rule_id in _SELF_EVIDENT or _has_runtime_correlation(rule_id, job, config):
+            if rule_id in _SEMPRE_SINAL:
+                signals.append(
+                    _code_signal(job, artifact, code_finding.lines, spec, rule_id, config)
+                )
+            elif rule_id in _SELF_EVIDENT or _has_runtime_correlation(rule_id, job, config):
                 found.append(
                     _code_opportunity(
                         account,
@@ -305,6 +330,7 @@ def _code_signal(
     rule_id: str,
     config: Config,
 ) -> Signal:
+    baseline, fonte, _ = window_baseline(job, config.pricing)
     return Signal(
         kind="code",
         rule_id=rule_id,
@@ -319,6 +345,15 @@ def _code_signal(
         artifact_sha256=artifact.sha256,
         lines=list(lines),
         doc_links=[spec.doc],
+        potential_range=potential(
+            baseline,
+            fraction=spec.fraction,
+            basis=f"DPU-hora da janela × {fonte}",
+            caveat=(
+                "fração típica do padrão aplicada ao custo do job; nenhuma "
+                "medição sustenta o valor até o benchmark A/B"
+            ),
+        ),
     )
 
 

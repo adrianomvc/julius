@@ -23,6 +23,32 @@ from dataclasses import asdict, dataclass, field
 
 
 @dataclass(frozen=True)
+class PotentialRange:
+    """Ordem de grandeza de um sinal, e nada além disso.
+
+    Existe para responder "vale a pena investigar?" sem responder "quanto vou
+    economizar?". A diferença não é de precisão, é de natureza: a faixa é o
+    custo do ativo multiplicado por uma fração plausível do padrão, e a fração
+    é premissa — nenhuma medição a sustenta, porque se houvesse medição o
+    achado não seria um sinal.
+
+    Por isso `quality` é sempre `potential` e nunca `measured` ou `modeled`, e
+    por isso nenhum destes valores entra em `identified_monthly`, no ranking ou
+    no backlog. `tests/test_signal_range_never_enters_portfolio.py` é o que
+    impede essa fronteira de se apagar sozinha com o tempo.
+    """
+
+    low: float
+    expected: float
+    high: float
+    #: De onde veio o custo que serviu de base, em uma frase.
+    basis: str
+    #: O que a faixa assume e ninguém verificou.
+    caveat: str
+    quality: str = "potential"
+
+
+@dataclass(frozen=True)
 class Signal:
     """Uma hipótese rastreável, com o que falta para ela virar conclusão."""
 
@@ -42,6 +68,10 @@ class Signal:
     artifact_sha256: str = ""
     lines: list[int] = field(default_factory=list)
     doc_links: list[str] = field(default_factory=list)
+    #: Ordem de grandeza, quando o ativo tem custo atribuído. `None` quando não
+    #: há base — e `None` é resposta melhor que zero, que se leria como "não há
+    #: o que ganhar aqui".
+    potential_range: PotentialRange | None = None
 
     def fingerprint(self, account: str) -> str:
         """Identidade estável entre execuções, para religar sinal e veredito.

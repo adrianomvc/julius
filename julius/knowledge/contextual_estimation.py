@@ -1,4 +1,15 @@
-"""Avalia cenários escolhidos pela IA sem confiar à IA o cálculo financeiro."""
+"""Avalia cenários escolhidos pela IA sem confiar à IA o cálculo financeiro.
+
+A divisão é a mesma em todos os métodos: a análise contextual escolhe o cenário
+— qual capacidade testar, qual instância comparar, qual integração trocar — e o
+motor executa a fórmula sobre o inventário. A IA nunca devolve um número; ela
+devolve qual conta fazer, e a conta é feita aqui, com a tarifa da região e o
+custo já atribuído ao ativo.
+
+O mapa `_ALLOWED` é o que impede a proposta de virar carta branca: um método só
+pode ser proposto para o sinal que ele responde. Sinal de shuffle não pede
+cálculo de spot, e um `rule_id` sem entrada aqui não aceita proposta nenhuma.
+"""
 
 from __future__ import annotations
 
@@ -6,6 +17,8 @@ from julius.collection.models import Account
 from julius.config import Config
 from julius.findings.investigation import AIEstimationProposal, ContextualEstimate
 from julius.findings.signal import Signal
+from julius.knowledge.rules.glue.estimation import window_baseline
+from julius.knowledge.rules.sagemaker.estimation import gpu_to_cpu_saving
 from julius.knowledge.rules.stepfunctions.estimation import (
     standard_to_express_saving,
 )
@@ -13,7 +26,12 @@ from julius.knowledge.rules.stepfunctions.estimation import (
 _ALLOWED = {
     "GLUE-IS-CAPACITY-REVIEW": "glue_interactive_capacity_reduction_v1",
     "SM-TRAINING-SPOT-CANDIDATE": "sagemaker_managed_spot_training_v1",
+    # O sinal de código diz **por que** o spot está bloqueado; o cenário a
+    # avaliar é o mesmo, e `_spot` já recusa sem checkpoint configurado.
+    "SM-CODE-NO-CHECKPOINT": "sagemaker_managed_spot_training_v1",
+    "SM-CODE-CPU-ONLY-ON-GPU": "sagemaker_gpu_to_cpu_instance_v1",
     "SFN-STANDARD-TO-EXPRESS": "sfn_standard_to_express_v1",
+    "GLUE-CODE-SHUFFLE": "glue_shuffle_reduction_v1",
 }
 
 
@@ -32,7 +50,100 @@ def evaluate_proposal(
         return _glue(account, signal, proposal, config)
     if proposal.method == "sagemaker_managed_spot_training_v1":
         return _spot(account, signal)
+    if proposal.method == "sagemaker_gpu_to_cpu_instance_v1":
+        return _gpu_to_cpu(account, signal, config)
+    if proposal.method == "glue_shuffle_reduction_v1":
+        return _shuffle(account, signal, proposal, config)
     return _express(account, signal, config)
+
+
+def _gpu_to_cpu(
+    account: Account,
+    signal: Signal,
+    config: Config,
+) -> ContextualEstimate:
+    """A troca de instância, calculada pela mesma função da regra determinística.
+
+    A regra já sabe fazer esta conta — ela só não a faz quando falta telemetria
+    que prove que a GPU ficou parada. O que a análise contextual acrescenta é
+    exatamente essa leitura, feita sobre o script inteiro em vez de sobre a AST.
+    """
+    job = next(
+        (item for item in account.sagemaker_jobs if item.name == signal.asset_name),
+        None,
+    )
+    if job is None:
+        raise ValueError("job proposto não existe no inventário")
+    estimation = gpu_to_cpu_saving(job, config)
+    if estimation.saving_quality == "unavailable":
+        return ContextualEstimate(
+            method="sagemaker_gpu_to_cpu_instance_v1",
+            status="needs_evidence",
+            missing_evidence=list(estimation.assumptions),
+        )
+    return ContextualEstimate(
+        method="sagemaker_gpu_to_cpu_instance_v1",
+        status="estimated",
+        baseline_cost=estimation.baseline_cost,
+        # A faixa cobre a hipótese que a conta não fecha: sem GPU em uso a
+        # duração tende a não mudar, mas pode aumentar numa instância menor.
+        estimated_low=round(estimation.estimated_saving * 0.50, 2),
+        estimated_expected=round(estimation.estimated_saving * 0.80, 2),
+        estimated_high=round(estimation.estimated_saving, 2),
+        assumptions=list(estimation.assumptions),
+    )
+
+
+def _shuffle(
+    account: Account,
+    signal: Signal,
+    proposal: AIEstimationProposal,
+    config: Config,
+) -> ContextualEstimate:
+    """Redução de shuffle, e por que ela nunca sai daqui como número seco.
+
+    O sinal existe porque `join`/`groupBy` são fato e a economia não: a mesma
+    transformação é indispensável num job e desperdício em outro. O motor
+    calcula a faixa sobre o custo real do job, e só quando há medição de shuffle
+    para ancorá-la — sem ela, o que sobraria seria a fração fixa que este
+    caminho foi criado para eliminar.
+    """
+    job = next(
+        (item for item in account.glue_jobs if item.name == signal.asset_name), None
+    )
+    if job is None:
+        raise ValueError("job proposto não existe no inventário")
+    fracao = float(proposal.target.get("expected_reduction") or 0)
+    if not 0 < fracao <= 0.5:
+        raise ValueError("expected_reduction deve estar entre 0 e 0.5")
+    # A mesma base das regras determinísticas de Glue: DPU-hora da janela pela
+    # tarifa que a alocação da fatura escolher.
+    baseline_value, _, _ = window_baseline(job, config.pricing)
+    missing = []
+    if not (job.shuffle_write_bytes or job.shuffle_read_bytes or job.has_spill_evidence):
+        missing.append("shuffle read/write ou spill medidos no Spark event log")
+    if baseline_value <= 0:
+        missing.append("DPU-hora observada do job na janela")
+    if missing:
+        return ContextualEstimate(
+            method="glue_shuffle_reduction_v1",
+            status="needs_evidence",
+            baseline_cost=round(baseline_value, 2) or None,
+            missing_evidence=missing,
+        )
+    return ContextualEstimate(
+        method="glue_shuffle_reduction_v1",
+        status="estimated",
+        baseline_cost=round(baseline_value, 2),
+        estimated_low=round(baseline_value * fracao * 0.4, 2),
+        estimated_expected=round(baseline_value * fracao * 0.7, 2),
+        estimated_high=round(baseline_value * fracao, 2),
+        assumptions=[
+            f"redução de {fracao:.0%} da duração proposta pela análise contextual",
+            "faixa condicionada a benchmark A/B com o mesmo volume de entrada",
+            "chaves e estratégia de join revisadas sem alterar o resultado",
+        ],
+    )
 
 
 def _glue(

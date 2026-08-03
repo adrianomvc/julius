@@ -417,6 +417,11 @@ class ReportViewModel:
     # marcador em cada item, e o leitor continua vendo onde está a
     # concentração sem uma segunda lista repetindo a primeira.
     focus_ids: list[str] = field(default_factory=list)
+    #: Hipóteses ainda em aberto, com ordem de grandeza e sem cifra. Ficam fora
+    #: de `table` e dos totais de propósito: o que decide prioridade entre elas
+    #: é a faixa, e o que decide o portfólio é a economia — não são a mesma
+    #: coisa e não podem somar na mesma linha.
+    signals: list[dict] = field(default_factory=list)
     ai_signal_verdicts: list[dict] = field(default_factory=list)
     ai_uncovered_findings: list[dict] = field(default_factory=list)
     ai_investigations: list[dict] = field(default_factory=list)

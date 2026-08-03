@@ -11,6 +11,7 @@ from julius.findings.opportunity import Estimation, Opportunity
 from julius.findings.recommendation import Recommendation
 from julius.findings.signal import Signal
 from julius.knowledge.rules.stepfunctions import estimation as sfn_est
+from julius.knowledge.signal_potential import potential
 
 _DOC_EXPRESS = (
     "https://docs.aws.amazon.com/step-functions/latest/dg/concepts-standard-vs-express.html"
@@ -31,9 +32,16 @@ def _express_candidate(sm: StateMachine, th) -> bool:
     campo, então `is True` nunca era verdade em conta real. Ela saiu porque
     tolerar semântica at-least-once é propriedade da lógica de negócio, não da
     configuração: vira sinal para a análise contextual julgar contra a ASL.
+
+    `express_blockers` entrou depois, e é o oposto: também vem da definição, mas
+    não pede julgamento nenhum. `.sync`, `waitForTaskToken` e timeout acima de
+    cinco minutos são recusados pela API do Express. Perguntar a alguém se
+    migra uma máquina que não pode migrar gasta a credibilidade do relatório
+    inteiro por um candidato que nunca ia dar em nada.
     """
     return (
         sm.type == "STANDARD"
+        and not sm.express_blockers
         and sm.executions_per_month >= th.sfn_express_min_executions
         and 0 < sm.avg_duration_sec <= th.sfn_short_duration_sec
     )
@@ -54,7 +62,11 @@ def detect(account: Account, config: Config, scan_id: str) -> list[Opportunity]:
 
         if sm.type == "STANDARD" and sm.has_polling_loop:
             out.append(_polling(account, sm, config, scan_id))
-        if sm.type == "STANDARD" and sm.failed_executions and sm.avg_failed_state_transitions:
+        if (
+            sm.type == "STANDARD"
+            and _execucoes_perdidas(sm)
+            and sm.avg_failed_state_transitions
+        ):
             out.append(_transition_waste(account, sm, config, scan_id, failed=True))
         if (
             sm.type == "STANDARD"
@@ -63,6 +75,32 @@ def detect(account: Account, config: Config, scan_id: str) -> list[Opportunity]:
         ):
             out.append(_transition_waste(account, sm, config, scan_id, failed=False))
     return out
+
+
+def _execucoes_perdidas(sm: StateMachine) -> int:
+    """Execuções que gastaram transição e não entregaram resultado.
+
+    A regra contava só `FAILED` e subestimava a própria cifra. Timeout e abort
+    param a máquina no meio exatamente como a falha: as transições até ali já
+    foram cobradas, e o trabalho terá de ser refeito. Os três estados vêm do
+    mesmo `list_executions`, sobre a mesma janela, então somá-los não mistura
+    fontes nem períodos.
+    """
+    return sm.failed_executions + sm.timed_out_executions + sm.aborted_executions
+
+
+def _composicao_perdidas(sm: StateMachine) -> str:
+    """Quais estados formam o total — um timeout não se corrige como uma falha."""
+    partes = [
+        f"{valor} {rotulo}"
+        for valor, rotulo in (
+            (sm.failed_executions, "com falha"),
+            (sm.timed_out_executions, "por timeout"),
+            (sm.aborted_executions, "abortadas"),
+        )
+        if valor
+    ]
+    return ", ".join(partes)
 
 
 def _transition_waste(
@@ -75,12 +113,13 @@ def _transition_waste(
 ) -> Opportunity:
     if failed:
         rule_id = "SFN-FAILED-TRANSITION-COST"
-        transitions = sm.failed_executions * (sm.avg_failed_state_transitions or 0)
-        title = "Falhas consomem transições cobradas"
-        action = "Corrigir a causa das execuções com falha"
+        perdidas = _execucoes_perdidas(sm)
+        transitions = perdidas * (sm.avg_failed_state_transitions or 0)
+        title = "Execuções que não completam consomem transições cobradas"
+        action = "Corrigir a causa das execuções que não completam"
         why = (
-            f"{sm.failed_executions} falhas observadas, com média de "
-            f"{sm.avg_failed_state_transitions} transições até falhar."
+            f"{perdidas} execuções não completaram ({_composicao_perdidas(sm)}), "
+            f"com média de {sm.avg_failed_state_transitions} transições até parar."
         )
     else:
         rule_id = "SFN-RETRY-WASTE"
@@ -265,6 +304,128 @@ def _polling(account: Account, sm: StateMachine, config: Config, scan_id: str) -
     return opportunity
 
 
+def _efeitos_externos(sm: StateMachine) -> str:
+    """Os estados de efeito externo, anexados à pergunta que fala deles.
+
+    A pergunta sobre idempotência já existia e era feita no vácuo: quem
+    respondesse precisava abrir a definição e procurar sozinho. Nomear os
+    estados não responde a pergunta — nada estático responde — mas transforma
+    "procure um efeito colateral" em "olhe estes três".
+    """
+    estados = sm.asl_patterns.get("external_side_effect") or []
+    if not estados:
+        return ""
+    return " Efeito externo sem deduplicação declarada em: " + ", ".join(estados) + "."
+
+
+#: O que cada padrão da ASL pergunta, e quando perguntá-lo. A condição existe
+#: porque veredito custa: o validador exige resposta para todo sinal do pacote,
+#: e repetir uma pergunta que outra regra já faz gasta a análise no que já foi
+#: perguntado em vez do que ninguém viu.
+_ASL_SIGNALS = {
+    "manual_polling": (
+        "SFN-ASL-MANUAL-POLLING",
+        "Integração com padrão .sync disponível é consultada em laço de espera: {estados}.",
+        "O laço existe por limitação real da integração, ou por hábito onde "
+        ".sync ou callback serviria? Cada volta do laço é transição cobrada.",
+        ["transições gastas em espera versus em trabalho"],
+        # `has_polling_loop` só reconhece o ciclo `Wait → … → Wait` no nível de
+        # topo. Quando ele reconhece, a oportunidade já tem cifra e dizer o
+        # mesmo sem número seria ruído; quando não, este sinal é o único que vê.
+        lambda sm: not sm.has_polling_loop,
+    ),
+    "retry_unbounded": (
+        "SFN-ASL-RETRY-UNBOUNDED",
+        "Retry declara cinco ou mais tentativas sem espaçamento em: {estados}.",
+        "A falha que dispara este retry é transitória? Sem backoff as "
+        "tentativas repetem o trabalho já cobrado em sequência imediata.",
+        ["taxa de falha por Task e quantas execuções chegam ao último retry"],
+        # `SFN-RETRY-MASKING` já pergunta sobre retry alto. Duas perguntas sobre
+        # retry na mesma máquina consomem dois vereditos e rendem um.
+        lambda sm: sm.max_retry_attempts < 5,
+    ),
+    "catch_swallow": (
+        "SFN-ASL-CATCH-SWALLOW",
+        "Catch conduz direto a Succeed em: {estados}.",
+        "A execução termina como sucesso mesmo quando o Task falha. Isso é "
+        "tratamento deliberado, ou esconde falha que alguém reprocessa depois?",
+        ["execuções que terminaram OK sem produzir a saída esperada"],
+        lambda sm: True,
+    ),
+    "unbounded_fanout": (
+        "SFN-ASL-UNBOUNDED-FANOUT",
+        "Map sem MaxConcurrency em: {estados}.",
+        "O paralelismo sem teto é intencional? Ele multiplica transições "
+        "cobradas e é a origem do backlog que a conta observa depois.",
+        ["itens por Map Run e pico de execuções simultâneas"],
+        lambda sm: True,
+    ),
+}
+
+
+#: Fração das transições da máquina que cada padrão pode devolver. Ordena
+#: hipóteses entre si; não promete economia — ver `signal_potential`.
+_ASL_FRACTIONS = {
+    "manual_polling": 0.30,
+    "retry_unbounded": 0.15,
+    "catch_swallow": 0.10,
+    "unbounded_fanout": 0.10,
+}
+
+
+def _transition_baseline(sm: StateMachine, config: Config) -> float | None:
+    """Custo mensal de transição da máquina — medido, não estimado.
+
+    `executions_per_month` vem do histórico e `avg_state_transitions` da amostra
+    de `GetExecutionHistory`. Sem a segunda não há base: zero transições é uma
+    afirmação, e uma afirmação falsa.
+    """
+    if sm.type != "STANDARD" or not sm.avg_state_transitions:
+        return None
+    return (
+        sm.executions_per_month
+        * sm.avg_state_transitions
+        * config.pricing.sfn_standard_per_transition
+    )
+
+
+def _asl_signals(sm: StateMachine, config: Config) -> list[Signal]:
+    """O que a definição levanta e o histórico não confirma.
+
+    Nenhum destes vira cifra. O Standard cobra por transição, então a ASL diz
+    quantas transições a máquina *pode* gastar — mas quantas ela gasta de fato
+    está no histórico, e é de lá que as regras com número já tiram o baseline.
+    """
+    out: list[Signal] = []
+    baseline = _transition_baseline(sm, config)
+    for padrao, (rule_id, texto, pergunta, falta, quando) in _ASL_SIGNALS.items():
+        estados = sm.asl_patterns.get(padrao) or []
+        if not estados or not quando(sm):
+            continue
+        out.append(
+            Signal(
+                kind="code",
+                rule_id=rule_id,
+                asset_type="state_machine",
+                asset_name=sm.name,
+                observation=texto.format(estados=", ".join(estados)),
+                question=pergunta,
+                missing_evidence=list(falta),
+                doc_links=[_DOC_RETRY if "RETRY" in rule_id else _DOC_SYNC],
+                potential_range=potential(
+                    baseline,
+                    fraction=_ASL_FRACTIONS[padrao],
+                    basis="transições/mês observadas × tarifa Standard",
+                    caveat=(
+                        "quantas transições o padrão responde só o histórico "
+                        "por estado diria; a fração é típica, não medida"
+                    ),
+                ),
+            )
+        )
+    return out
+
+
 def signals(account: Account, config: Config) -> list[Signal]:
     """O que a ASL levanta e a configuração não decide.
 
@@ -292,6 +453,7 @@ def signals(account: Account, config: Config) -> list[Signal]:
                         f"'{sm.name}' é STANDARD com {sm.executions_per_month} "
                         f"execuções/mês de ~{sm.avg_duration_sec:.0f}s — perfil de "
                         "Express, cuja semântica é at-least-once."
+                        + _efeitos_externos(sm)
                     ),
                     question=(
                         "A ASL tolera execução repetida? Há Task com efeito "
@@ -320,6 +482,7 @@ def signals(account: Account, config: Config) -> list[Signal]:
                     doc_links=[_DOC_EXPRESS],
                 )
             )
+        out += _asl_signals(sm, config)
         if sm.max_retry_attempts >= th.sfn_retry_attempts_high:
             out.append(
                 Signal(

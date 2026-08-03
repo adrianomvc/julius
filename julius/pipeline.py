@@ -9,8 +9,9 @@ from pathlib import Path
 from typing import Any
 
 from julius.collection.artifacts import (
-    GlueCodeArtifact,
-    load_glue_artifacts,
+    CodeArtifact,
+    load_code_artifacts,
+    summarize_artifact_health,
     summarize_glue_artifact_health,
 )
 from julius.collection.collectors import redshift_cost, sagemaker_cost
@@ -35,6 +36,8 @@ from julius.knowledge.recurrence import (
 )
 from julius.knowledge.rules import collect_signals, run_all
 from julius.knowledge.rules.glue.code import rules as glue_code
+from julius.knowledge.rules.sagemaker import code as sagemaker_code
+from julius.knowledge.verdict_facts import apply_verdicts
 from julius.reporting import ProductKPIs, compute_kpis
 from julius.reporting.formatters import money
 from julius.reporting.view_models import ReportViewModel
@@ -95,7 +98,11 @@ def analyze(
         if cadence == "monthly" and not account.financial_period:
             account.financial_period = account.window_start[:7]
     code_artifacts = (
-        load_glue_artifacts(artifacts_manifest, account.account_id)
+        load_code_artifacts(
+            artifacts_manifest,
+            account.account_id,
+            kinds=("glue_script", "sagemaker_script"),
+        )
         if artifacts_manifest
         else None
     )
@@ -113,13 +120,32 @@ def analyze(
         account.collection_health = [
             item
             for item in account.collection_health
-            if item.source != "Glue Scripts"
+            if item.source not in {"Glue Scripts", "SageMaker Scripts"}
         ]
         account.collection_health.append(
             summarize_glue_artifact_health(
                 artifacts_manifest,
                 account,
                 code_artifacts or [],
+            )
+        )
+        # Cobertura própria: um bundle que trouxe todo script Glue e nenhum
+        # script SageMaker está completo por uma métrica e vazio pela outra, e
+        # uma linha só de saúde faria a segunda desaparecer atrás da primeira.
+        account.collection_health.append(
+            summarize_artifact_health(
+                artifacts_manifest,
+                code_artifacts or [],
+                kind="sagemaker_script",
+                source="SageMaker Scripts",
+                expected_assets={
+                    job.name for job in sagemaker_code.analysable_jobs(account)
+                },
+                impact="; ".join(
+                    sagemaker_code.coverage_gaps(account, code_artifacts or [])
+                )
+                or "análise de código não cobre todos os jobs com script próprio",
+                next_action="revisar erros do manifesto e permissões s3:GetObject",
             )
         )
     return analyze_account(
@@ -145,7 +171,7 @@ def analyze_account(
     today: date | None = None,
     source: str = "dataset exportado",
     scan_id: str | None = None,
-    code_artifacts: list[GlueCodeArtifact] | None = None,
+    code_artifacts: list[CodeArtifact] | None = None,
     ledger: SignalLedger | None = None,
 ) -> Analysis:
     scan_id = scan_id or new_scan_id()
@@ -158,6 +184,11 @@ def analyze_account(
     _allocate_billing(account, config)
     account.process_costs = build_process_costs(account, config, today=today)
     graph = build_process_graph(account)
+    # Antes das regras, porque o que já foi julgado é fato de entrada delas: um
+    # veredito sobre idempotência é a condição que `SFN-STANDARD-TO-EXPRESS`
+    # exige, e aplicá-lo depois deixaria a regra rodar sobre o inventário velho.
+    if ledger is not None:
+        apply_verdicts(account, ledger.decisions_for(account.account_id))
     opportunities = run_all(account, config, scan_id)
     signals = collect_signals(account, config)
     opportunities, signals = _drop_non_recurrent(account, config, opportunities, signals)
@@ -180,6 +211,11 @@ def analyze_account(
         ]
         opportunities += code_opportunities
         signals += code_signals
+        sm_opportunities, sm_signals = sagemaker_code.detect(
+            account, code_artifacts, config, scan_id
+        )
+        opportunities += sm_opportunities
+        signals += sm_signals
     protected_signal_keys = {
         (signal.asset_type, signal.asset_name, signal.rule_id) for signal in signals
     }
@@ -326,6 +362,21 @@ def analyze_account(
         opportunity_count=len(opportunities),
     )
     vm = build_vm(account, opportunities, manifest)
+    # A faixa é o que permite ordenar hipótese contra hipótese. Sem ela, quinze
+    # sinais sem número se ordenam por nada, e o que vale dez mil por mês fica
+    # ao lado do que vale dez. A ordenação é aqui e não no consumidor porque o
+    # JSON, o Excel e o e-mail leem a mesma lista.
+    vm.signals = [
+        signal.to_dict()
+        for signal in sorted(
+            signals,
+            key=lambda item: (
+                -(item.potential_range.expected if item.potential_range else 0.0),
+                item.rule_id,
+                item.asset_name,
+            ),
+        )
+    ]
     vm.diff_events = [
         {
             "type": event.event_type,

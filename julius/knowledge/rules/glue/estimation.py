@@ -48,7 +48,7 @@ def billing_rate(job: GlueJob, pricing) -> tuple[float, str, str]:
     )
 
 
-def _baseline(job: GlueJob, pricing) -> tuple[float, str, str]:
+def window_baseline(job: GlueJob, pricing) -> tuple[float, str, str]:
     """Custo mensal do job ancorado na fatura quando a alocação existe."""
     rate, source, quality = billing_rate(job, pricing)
     return job.window_dpu_hours * rate, source, quality
@@ -67,7 +67,7 @@ def autoscaling_saving(job: GlueJob, config: Config) -> Estimation:
         )
     )
     ratio = max(0.0, min(0.6, 1 - util / config.thresholds.utilization_target))
-    baseline, source, quality = _baseline(job, pricing)
+    baseline, source, quality = window_baseline(job, pricing)
     saving = baseline * ratio
     validated = _capacity_benchmark_validated(job)
     return Estimation(
@@ -120,7 +120,7 @@ def version_upgrade_saving(job: GlueJob, config: Config) -> Estimation:
 def flex_saving(job: GlueJob, config: Config) -> Estimation:
     """Aplica ao custo do job a diferença tarifária versionada STANDARD→FLEX."""
     pricing = config.pricing
-    baseline, source, quality = _baseline(job, pricing)
+    baseline, source, quality = window_baseline(job, pricing)
     standard = pricing.glue_rate("STANDARD")
     # Ray fatura em M-DPU e não tem classe FLEX; sem desconto aplicável.
     discount = (
@@ -154,7 +154,7 @@ def flex_saving(job: GlueJob, config: Config) -> Estimation:
 def bookmark_saving(job: GlueJob, config: Config) -> Estimation:
     """Valoriza somente bytes redundantes medidos; não assume percentual fixo."""
     pricing = config.pricing
-    baseline, source, quality = _baseline(job, pricing)
+    baseline, source, quality = window_baseline(job, pricing)
     total = job.bytes_read_window
     redundant = job.redundant_read_bytes_window
     measured = (
@@ -311,7 +311,7 @@ def worker_type_downgrade_saving(job: GlueJob, config: Config) -> tuple[Estimati
     new_type = _DOWNGRADE.get(current_type, current_type)
     cur_dpu = _TYPE_DPU.get(current_type, job.dpu_per_worker)
     new_dpu = _TYPE_DPU.get(new_type, cur_dpu)
-    baseline, source, quality = _baseline(job, pricing)
+    baseline, source, quality = window_baseline(job, pricing)
     ratio = (cur_dpu - new_dpu) / cur_dpu if cur_dpu else 0
     saving = baseline * ratio
     validated = _capacity_benchmark_validated(job)
@@ -452,7 +452,7 @@ def worker_reduction_saving(job: GlueJob, config: Config) -> Estimation:
         if benchmark_validated and job.rightsize_tested_workers is not None
         else modeled_recommended
     )
-    baseline, source, quality = _baseline(job, pricing)
+    baseline, source, quality = window_baseline(job, pricing)
     ratio = (current_workers - recommended) / current_workers if current_workers else 0
     saving = baseline * ratio
     return Estimation(
@@ -493,7 +493,7 @@ def code_pattern_saving(
 ) -> Estimation:
     """Potencial conservador para antipadrão estático, pendente de benchmark."""
     pricing = config.pricing
-    baseline, source, quality = _baseline(job, pricing)
+    baseline, source, quality = window_baseline(job, pricing)
     fraction = max(0.0, min(0.30, potential_fraction))
     saving = baseline * fraction
     return Estimation(
@@ -520,9 +520,9 @@ def python_shell_migration_saving(job: GlueJob, config: Config) -> Estimation:
     bloqueada até um piloto confirmar runtime, memória, dependências e resultado.
     """
     pricing = config.pricing
-    baseline, source, quality = _baseline(job, pricing)
+    baseline, source, quality = window_baseline(job, pricing)
     if baseline <= 0:
-        # `_baseline` é DPU-hora da janela × tarifa: job que não rodou tem zero.
+        # `window_baseline` é DPU-hora da janela × tarifa: job que não rodou tem zero.
         # Emitir economia zero se lê como "não compensa migrar", quando o certo
         # é "não dá para estimar nesta janela" — e um job parado é candidato a
         # desligamento, não a migração.

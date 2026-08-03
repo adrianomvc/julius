@@ -624,3 +624,29 @@ def test_copy_on_versioned_bucket_is_blocked_until_noncurrent_cost_is_known():
     assert achado.blocked is True
     assert achado.include_in_portfolio is False
     assert any("versões não correntes" in item for item in achado.missing_evidence)
+
+
+def test_age_is_evidence_and_never_sizes_the_transition():
+    """Cruzar idade com classe exigiria uma distribuição conjunta que ninguém mede.
+
+    `bytes_by_age` e `bytes_by_class` são marginais. Usar as duas para separar
+    "bytes que compensam transitar" de "bytes que expiram antes do payback"
+    assumiria que a idade se distribui igual entre as classes — e o erro dessa
+    suposição cairia direto na cifra. Como evidência, a mesma marginal é honesta.
+    """
+    from julius.knowledge.rules.s3.storage_class import _perfil_de_idade
+
+    class _Prefixo:
+        bytes_by_age = {"0-30": 100.0, "180-365": 300.0, "365+": 600.0}
+        object_count_by_age = {"0-30": 1, "180-365": 3, "365+": 6}
+
+    class _Vazio:
+        bytes_by_age: dict = {}
+        object_count_by_age: dict = {}
+
+    linhas = _perfil_de_idade(_Prefixo())
+
+    assert len(linhas) == 1
+    assert "90% dos bytes com mais de 180 dias" in linhas[0]
+    # Sem listagem por idade, o silêncio é melhor que um percentual inventado.
+    assert _perfil_de_idade(_Vazio()) == []
