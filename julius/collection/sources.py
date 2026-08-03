@@ -525,7 +525,10 @@ def _collect_s3_prefixes(ctx: CollectionContext) -> list:
                 window=ctx.window,
                 stale_after_days=stale_after,
                 max_pages=None if ctx.s3_full_listing else MAX_LIST_PAGES,
-                workers=S3_LISTING_WORKERS if ctx.s3_full_listing else 1,
+                # O teto de páginas limita custo e cobertura; concorrência só
+                # sobrepõe a latência de prefixos independentes e não cria uma
+                # chamada adicional. Por isso vale também no modo limitado.
+                workers=S3_LISTING_WORKERS,
             )
         )
     return out

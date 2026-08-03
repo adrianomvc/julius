@@ -609,6 +609,40 @@ def test_stepfunctions_history_sampling_has_an_explicit_ceiling():
     assert client.history_calls == stepfunctions_collector._MAX_SAMPLED_EXECUTIONS
 
 
+def test_stepfunctions_reads_every_page_of_a_sampled_execution():
+    class Paginated(_PollingStepFunctions):
+        def get_execution_history(self, **kwargs):
+            self.history_calls += 1
+            if kwargs.get("nextToken") == "next":
+                return {
+                    "events": [
+                        {
+                            "type": "TaskStateEntered",
+                            "stateEnteredEventDetails": {"name": "Check"},
+                        }
+                    ]
+                }
+            return {
+                "events": [
+                    {
+                        "type": "TaskStateEntered",
+                        "stateEnteredEventDetails": {"name": "Start"},
+                    },
+                    {
+                        "type": "WaitStateEntered",
+                        "stateEnteredEventDetails": {"name": "Wait"},
+                    },
+                ],
+                "nextToken": "next",
+            }
+
+    machine = stepfunctions_collector.collect_state_machines(
+        Paginated(executions=1), window=AnalysisWindow.trailing()
+    )[0]
+
+    assert machine.avg_state_transitions == 3
+
+
 class _RedshiftCostExplorer:
     """Cobrança agregada por usage type, como o Cost Explorer entrega."""
 

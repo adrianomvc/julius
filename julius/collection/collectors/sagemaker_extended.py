@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import hashlib
 from collections import defaultdict
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
+from functools import partial
 from statistics import quantiles
 from typing import Any
 
@@ -22,6 +24,7 @@ from julius.collection.models import (
     SageMakerSpace,
 )
 from julius.collection.ownership_tags import owner_from_tags
+from julius.collection.session import SAGEMAKER_DETAIL_WORKERS
 from julius.collection.window import AnalysisWindow
 
 _JOB_SPECS = {
@@ -279,6 +282,7 @@ def collect_jobs(
     history_days: int = 90,
     low_utilization_threshold: float = 0.30,
     gaps: list[str] | None = None,
+    workers: int = SAGEMAKER_DETAIL_WORKERS,
 ) -> list[SageMakerJob]:
     """Inventaria todos os jobs; detalha métricas apenas dos mais caros."""
     history_window = AnalysisWindow(
@@ -299,38 +303,84 @@ def collect_jobs(
             CreationTimeBefore=window.end,
         )
         _gap(listed, spec["list"], gaps)
-        for summary in listed.items:
-            name = str(summary.get(spec["name"]) or "")
-            if not name:
+        summaries = list(listed.items)
+        describe_one = partial(
+            _describe_job_summary,
+            sagemaker_client,
+            kind,
+            spec,
+            window=window,
+            history_window=history_window,
+            pricing=pricing,
+        )
+        if workers <= 1 or len(summaries) <= 1:
+            described_jobs = [describe_one(summary) for summary in summaries]
+        else:
+            with ThreadPoolExecutor(
+                max_workers=min(workers, len(summaries))
+            ) as pool:
+                described_jobs = list(pool.map(describe_one, summaries))
+        for job, raw, error in described_jobs:
+            if job is None:
                 continue
-            described, error = safe_call(
-                sagemaker_client,
-                spec["describe"],
-                **{spec["arg"]: name},
-            )
             if error:
                 _append_gap(gaps, f"{spec['describe']}: {error}")
-            raw = {**summary, **described}
-            job = _normalize_job(kind, raw, window, history_window)
-            _apply_code_location(job, kind, raw)
             if kind == "transform":
                 _apply_model_code(
                     sagemaker_client, job, str(raw.get("ModelName") or ""), modelos, gaps
                 )
-            _apply_modeled_cost(job, pricing, kind)
             jobs.append(job)
 
     selected = jobs if full_metrics else _select_detailed(jobs, detailed_limit)
-    selected_ids = {(job.kind, job.name) for job in selected}
-    for job in jobs:
-        if (job.kind, job.name) not in selected_ids:
-            continue
-        _apply_job_metrics(cloudwatch_client, job, history_window)
-        job.owner_tag = _owner(
-            sagemaker_client, {"ResourceArn": job.arn}
-        )
+    _apply_jobs_metrics(cloudwatch_client, selected, history_window)
+    _apply_job_owners(sagemaker_client, selected, workers=workers)
     _apply_workload_history(jobs, low_utilization_threshold)
     return jobs
+
+
+def _describe_job_summary(
+    sagemaker_client,
+    kind: str,
+    spec: dict,
+    summary: dict,
+    window: AnalysisWindow,
+    history_window: AnalysisWindow,
+    pricing: Any,
+) -> tuple[SageMakerJob | None, dict, str]:
+    """Resolve um summary sem tocar listas compartilhadas dentro da thread."""
+    name = str(summary.get(spec["name"]) or "")
+    if not name:
+        return None, {}, ""
+    described, error = safe_call(
+        sagemaker_client,
+        spec["describe"],
+        **{spec["arg"]: name},
+    )
+    raw = {**summary, **described}
+    job = _normalize_job(kind, raw, window, history_window)
+    _apply_code_location(job, kind, raw)
+    _apply_modeled_cost(job, pricing, kind)
+    return job, raw, error
+
+
+def _apply_job_owners(
+    sagemaker_client, jobs: list[SageMakerJob], *, workers: int
+) -> None:
+    """Resolve tags dos jobs selecionados sem serializar uma chamada por ARN."""
+    if not jobs:
+        return
+    get_owner = partial(_owner_for_job, sagemaker_client)
+    if workers <= 1 or len(jobs) <= 1:
+        owners = [get_owner(job) for job in jobs]
+    else:
+        with ThreadPoolExecutor(max_workers=min(workers, len(jobs))) as pool:
+            owners = list(pool.map(get_owner, jobs))
+    for job, owner in zip(jobs, owners, strict=True):
+        job.owner_tag = owner
+
+
+def _owner_for_job(sagemaker_client, job: SageMakerJob) -> str | None:
+    return _owner(sagemaker_client, {"ResourceArn": job.arn})
 
 
 def _apply_modeled_cost(job: SageMakerJob, pricing, kind: str) -> None:
@@ -639,44 +689,85 @@ def _potential_cost(job: SageMakerJob) -> float:
 def _apply_job_metrics(
     cloudwatch_client, job: SageMakerJob, window: AnalysisWindow
 ) -> None:
+    """Compatibilidade para chamadores pontuais; o coletor usa o lote abaixo."""
+    _apply_jobs_metrics(cloudwatch_client, [job], window)
+
+
+_JOB_METRICS = (
+    ("CPUUtilization", "cpu_p95"),
+    ("GPUUtilization", "gpu_p95"),
+    ("MemoryUtilization", "memory_p95"),
+    ("DiskUtilization", "disk_p95"),
+)
+_MAX_CLOUDWATCH_QUERIES = 500
+
+
+def _apply_jobs_metrics(
+    cloudwatch_client, jobs: list[SageMakerJob], window: AnalysisWindow
+) -> None:
+    """Agrupa métricas de vários jobs em chamadas de até 500 consultas.
+
+    O caminho anterior fazia um `GetMetricData` por job. Quatro métricas para
+    os 100 jobs detalhados cabem numa única requisição inicial; `NextToken`
+    continua sendo seguido quando a quantidade de pontos exige paginação.
+    """
     if cloudwatch_client is None:
         return
-    namespace = _JOB_SPECS[job.kind]["namespace"]
-    queries = []
-    for index, metric in enumerate(
-        ("CPUUtilization", "GPUUtilization", "MemoryUtilization", "DiskUtilization")
-    ):
-        queries.append(
+    pending: list[tuple[dict, SageMakerJob, str]] = []
+    for job_index, job in enumerate(jobs):
+        namespace = _JOB_SPECS[job.kind]["namespace"]
+        for metric_index, (metric, field) in enumerate(_JOB_METRICS):
+            query_id = f"j{job_index}m{metric_index}"
+            pending.append((
             {
-                "Id": f"m{index}",
+                "Id": query_id,
                 "Expression": (
                     f"SEARCH('{{{namespace},Host}} MetricName=\"{metric}\" "
                     f"\"{job.name}\"', 'Average', 3600)"
                 ),
-                "Label": metric,
+                "Label": query_id,
                 "ReturnData": True,
-            }
-        )
-    try:
-        response = cloudwatch_client.get_metric_data(
-            MetricDataQueries=queries,
-            StartTime=window.start,
-            EndTime=window.end,
-            ScanBy="TimestampAscending",
-        )
-    except Exception:
-        return
-    values = {
-        str(item.get("Label") or ""): [
-            float(value) for value in item.get("Values", []) or []
-        ]
-        for item in response.get("MetricDataResults", []) or []
-    }
-    job.cpu_p95 = _p95(values.get("CPUUtilization", []))
-    job.gpu_p95 = _p95(values.get("GPUUtilization", []))
-    job.memory_p95 = _p95(values.get("MemoryUtilization", []))
-    job.disk_p95 = _p95(values.get("DiskUtilization", []))
-    job.detailed_metrics = True
+            },
+            job,
+            field,
+        ))
+
+    for offset in range(0, len(pending), _MAX_CLOUDWATCH_QUERIES):
+        block = pending[offset : offset + _MAX_CLOUDWATCH_QUERIES]
+        payload = [query for query, _job, _field in block]
+        targets: dict[str, tuple[SageMakerJob, str, list[float]]] = {
+            str(query["Id"]): (job, field, [])
+            for query, job, field in block
+        }
+        token = None
+        try:
+            while True:
+                kwargs = {
+                    "MetricDataQueries": payload,
+                    "StartTime": window.start,
+                    "EndTime": window.end,
+                    "ScanBy": "TimestampAscending",
+                }
+                if token:
+                    kwargs["NextToken"] = token
+                response = cloudwatch_client.get_metric_data(**kwargs)
+                for result in response.get("MetricDataResults", []) or []:
+                    target = targets.get(str(result.get("Id") or ""))
+                    if target is None:
+                        continue
+                    target[2].extend(
+                        float(value) for value in result.get("Values", []) or []
+                    )
+                token = response.get("NextToken")
+                if not token:
+                    break
+        except Exception:
+            # Mantém o isolamento anterior: uma falha de lote não inventa zero
+            # e não marca os jobs como detalhados.
+            continue
+        for job, field, values in targets.values():
+            setattr(job, field, _p95(values))
+            job.detailed_metrics = True
 
 
 def collect_feature_groups(

@@ -250,6 +250,19 @@ def test_parallel_listing_actually_overlaps_calls():
     assert client.pico_de_concorrencia > 1
 
 
+def test_limited_listing_can_overlap_without_crossing_the_page_ceiling():
+    objetos, known = _muitos_prefixos(12)
+    client = S3Falso(objetos, por_pagina=1, latencia=0.02)
+
+    prefixos = s3_collector.collect_prefixes(
+        client, known=known, window=JANELA, stale_after_days=30,
+        max_pages=MAX_LIST_PAGES, workers=8,
+    )
+
+    assert client.pico_de_concorrencia > 1
+    assert all(item.list_requests <= MAX_LIST_PAGES for item in prefixos)
+
+
 def test_one_worker_really_runs_in_series():
     """O contraste: sem ele, o teste acima passaria com qualquer número."""
     objetos, known = _muitos_prefixos(12)

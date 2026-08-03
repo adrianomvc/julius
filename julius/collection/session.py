@@ -28,9 +28,29 @@ S3_LISTING_WORKERS = 8
 #: inteiro. Mesma natureza do caso do S3 — latência, não CPU — e mesmo teto útil.
 GLUE_RUN_HISTORY_WORKERS = 8
 
+#: Máquinas Step Functions analisadas ao mesmo tempo. Cada alvo faz chamadas
+#: independentes de Describe/List/GetExecutionHistory; o limite evita que uma
+#: conta com muitas máquinas transforme latência de rede em uma fila serial.
+STEP_FUNCTIONS_WORKERS = 8
+
+#: Lotes de até 50 execuções Athena consultados ao mesmo tempo. Cinquenta é o
+#: limite de BatchGetQueryExecution; o número abaixo limita quantos lotes ficam
+#: em voo, sem alterar cobertura nem a ordem determinística do resultado.
+ATHENA_QUERY_BATCH_WORKERS = 4
+
+#: Descrições de jobs SageMaker em voo. As APIs List devolvem apenas resumo;
+#: configuração de instância, Spot e checkpoint exigem um Describe por job.
+SAGEMAKER_DETAIL_WORKERS = 8
+
 #: O maior grupo de threads que um cliente atende de uma vez. As fontes rodam em
 #: série, então nunca são os dois grupos somados.
-_MAX_CONCURRENT_WORKERS = max(S3_LISTING_WORKERS, GLUE_RUN_HISTORY_WORKERS)
+_MAX_CONCURRENT_WORKERS = max(
+    S3_LISTING_WORKERS,
+    GLUE_RUN_HISTORY_WORKERS,
+    STEP_FUNCTIONS_WORKERS,
+    ATHENA_QUERY_BATCH_WORKERS,
+    SAGEMAKER_DETAIL_WORKERS,
+)
 
 CLIENT_CONFIG = Config(
     retries={"mode": "adaptive", "max_attempts": 5},
