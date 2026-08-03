@@ -27,8 +27,9 @@ lê o campo. A distinção é editorial e mora aqui.
 | `S3Prefix.bytes_by_age`, `object_count_by_age` | **não** dimensionam a transição: `bytes_by_age` e `bytes_by_class` são distribuições **marginais**, e separar "bytes que compensam transitar" de "bytes que expiram antes do payback" exigiria assumir que a idade se distribui igual entre as classes. Nada mede isso, e o erro cairia direto na cifra. Entram como evidência do quanto do prefixo é antigo | **ligado** como evidência |
 | `S3Prefix.bytes_by_size` | quanto a compactação precisa ler e regravar — a recomendação pedia a reescrita sem dizer o tamanho do trabalho. Só as faixas pequenas entram: objeto já no tamanho alvo não é tocado | **ligado** como evidência |
 | `AthenaQuery.p50_ms`, `p95_ms` | **não** viram cifra: o Athena on-demand cobra por bytes lidos, não por tempo, e uma regra que transformasse latência em dinheiro estaria inventando o mecanismo. Servem como evidência de impacto num achado que já tem cifra própria — a pressão de fila das reservas as regras de capacidade já leem, por `query_queue_p95_ms` | **ligado** como evidência |
-| `StateMachine.duration_p95_ms` | uma máquina cujo p95 passa de 300 s tem execuções que o Express mataria, mesmo com média dentro do limiar — vira motivo em `express_blockers` | **ligado** (via balde b) |
-| `GlueJob.max_execution_sec`, `bytes_written_window` | timeout dimensionado e volume escrito por execução | pendente |
+| `StateMachine.duration_p95_ms` | uma máquina cujo p95 passa de 300 s tem execuções que o Express mataria, mesmo com média dentro do limiar — vira motivo em `express_blockers` | ligado, mas **continua na lista**: quem o consome é a própria coleta, e o guard só conta leitor a jusante — é balde (b), não (a) |
+| `GlueJob.max_execution_sec` | piso do timeout sugerido por `GLUE-TIMEOUT-EXCESSIVE`: dobrar o p95 podia propor um limite abaixo de uma execução que a janela registrou completando, e aplicá-lo cortaria um pico legítimo | **ligado** |
+| `GlueJob.bytes_written_window` | sem mecanismo de cobrança que sustente afirmação — o Glue cobra DPU-hora, não bytes escritos. Candidato ao balde (c) na próxima revisão, junto da chamada que o preenche | pendente |
 
 ### (b) Intermediário legítimo da coleta
 
