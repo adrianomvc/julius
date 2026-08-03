@@ -13,10 +13,14 @@ cálculo de spot, e um `rule_id` sem entrada aqui não aceita proposta nenhuma.
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 from julius.collection.models import Account
 from julius.config import Config
 from julius.findings.investigation import AIEstimationProposal, ContextualEstimate
+from julius.findings.maturity import Maturity
 from julius.findings.signal import Signal
+from julius.knowledge.estimate_contract import enforce
 from julius.knowledge.rules.glue.estimation import window_baseline
 from julius.knowledge.rules.sagemaker.estimation import gpu_to_cpu_saving
 from julius.knowledge.rules.stepfunctions.estimation import (
@@ -80,14 +84,41 @@ def evaluate_proposal(
             f"método {proposal.method!r} não é permitido para {signal.rule_id}"
         )
     if proposal.method == "glue_interactive_capacity_reduction_v1":
-        return _glue(account, signal, proposal, config)
-    if proposal.method == "sagemaker_managed_spot_training_v1":
-        return _spot(account, signal)
-    if proposal.method == "sagemaker_gpu_to_cpu_instance_v1":
-        return _gpu_to_cpu(account, signal, config)
-    if proposal.method == "glue_shuffle_reduction_v1":
-        return _shuffle(account, signal, proposal, config)
-    return _express(account, signal, config)
+        bruta = _glue(account, signal, proposal, config)
+    elif proposal.method == "sagemaker_managed_spot_training_v1":
+        bruta = _spot(account, signal)
+    elif proposal.method == "sagemaker_gpu_to_cpu_instance_v1":
+        bruta = _gpu_to_cpu(account, signal, config)
+    elif proposal.method == "glue_shuffle_reduction_v1":
+        bruta = _shuffle(account, signal, proposal, config)
+    else:
+        bruta = _express(account, signal, config)
+    return enforce(_com_procedencia(bruta, signal, config), baseline_currency=config.pricing.currency)
+
+
+def _com_procedencia(
+    estimate: ContextualEstimate, signal: Signal, config: Config
+) -> ContextualEstimate:
+    """Carimba de onde veio a tarifa e sobre qual evidência a conta foi feita.
+
+    Fica num lugar só porque é idêntico para os cinco métodos, e porque a
+    alternativa — cada método preenchendo os seus — é como um deles acaba sem
+    região e ninguém percebe até dois números de continentes diferentes serem
+    somados.
+    """
+    return replace(
+        estimate,
+        pricing_region=config.pricing.region,
+        currency=config.pricing.currency,
+        period="monthly",
+        method_version=estimate.method.rsplit("_", 1)[-1],
+        evidence_hash=signal.evidence_signature(),
+        maturity=(
+            Maturity.PILOT_REQUIRED
+            if estimate.status == "estimated"
+            else Maturity.CONTEXTUAL_ESTIMATE
+        ),
+    )
 
 
 def _gpu_to_cpu(

@@ -3,8 +3,8 @@
 > **Escopo desta versão:** análise e proposta. Nenhum schema, regra financeira ou item do
 > portfólio é alterado por este documento.
 >
-> **Estado de execução:** as **Ondas 1, 2, 3, 4 e 5 foram implementadas em 2026-08-03** —
-> ver §34. As Ondas 6, 7, 8, 9, 10 e 11 continuam propostas. Os trechos que descrevem P4 e D1 ficaram como
+> **Estado de execução:** as **Ondas 1, 2, 3, 4, 5 e 6 foram implementadas em 2026-08-03**
+> — ver §34. As Ondas 7, 8, 9, 10 e 11 continuam propostas. Os trechos que descrevem P4 e D1 ficaram como
 > registro histórico, marcados **[Resolvido]**.
 >
 > **Base analisada:** Julius na branch `agent/pending-followups` (contém `origin/main`,
@@ -1535,7 +1535,7 @@ insuficiente. `_shuffle()` exige `target.expected_reduction` e `_glue()` exige
 `rejected`. Por isso a onda também passou a gerar o alvo exigido, e o quarto teste amarra
 o que é declarado ao que a validação de fato cobra.
 
-### Onda 6 — Contrato de estimativa e as 22 proibições
+### Onda 6 — Contrato de estimativa e as 22 proibições ✅ **CONCLUÍDA em 2026-08-03**
 
 **Objetivo:** eliminar P6 e P9 e fechar as 11 lacunas da §18.
 **Arquivos afetados:** `julius/knowledge/estimate_contract.py` (novo),
@@ -1551,10 +1551,25 @@ metadado e passam por guardas.
 fora entra.
 **Compatibilidade:** campos novos com default; JSON antigo do ledger continua legível
 (`_decision()` já usa `.get()` com default).
-**Testes:** os 17 casos da §30, com os 11 novos priorizados.
-**Riscos:** uma guarda nova recusar estimativa que hoje passa. É o objetivo, mas precisa ser
-visível: a onda mede quantas estimativas mudam de estado.
-**Critério de conclusão:** as 22 proibições têm teste; nenhuma é só prosa.
+**Testes (implementados):** 28 em `tests/test_estimate_contract.py`.
+Suíte: 892 passed (era 864).
+**Riscos:** uma guarda nova recusar estimativa que hoje passa. **Verificado explicitamente**:
+4 dos 5 métodos continuam produzindo `estimated` com procedência completa; o quinto
+(`glue_interactive_capacity_reduction_v1`) já devolvia `needs_evidence` por desenho. Sem essa
+checagem, uma guarda que rebaixasse tudo passaria despercebida — a maior parte dos testes
+existentes só afirma `include_in_portfolio is False`, que continua verdadeiro no rebaixamento.
+**Critério de conclusão:** ✅ as guardas são código; nenhuma é só prosa.
+
+**Decisão de desenho: violação rebaixa, não levanta exceção.** `ValueError` seria a resposta
+certa se o chamador tivesse errado — e ele não errou, o cenário é que não fecha. Rebaixar
+para `needs_evidence` com o motivo em `missing_evidence` preserva a informação: quem lê o
+relatório vê *por que* aquele sinal não virou cifra, em vez de não ver o sinal.
+
+**Falso positivo corrigido na Onda 2.** `test_human_approval_required_for_changes` usava
+regex e acusou a própria mensagem de erro que **reporta** a violação
+(`f"include_in_portfolio=True com maturidade ..."`). Passou a varrer por AST — `ast.keyword` e
+`ast.Assign` com valor `True`. É o mesmo erro do `urllib` da Onda 2: medir a grafia em vez do
+que o código faz.
 **Rollback:** as guardas são verificações adicionais; desligá-las restaura o comportamento.
 
 ### Onda 7 — Estimativa contextual generativa
@@ -1796,7 +1811,7 @@ O plano está cumprido quando:
 | ~~**P1**~~ ✅ | ~~Fonte canônica + registry com drift~~ **feito em 2026-08-03** | 3 | P1, P2, P5 | Nenhum |
 | ~~**P1**~~ ✅ | ~~Regras globais e fronteira S3 escrita~~ **feito em 2026-08-03** | 1 | P11, D7 | Nenhum |
 | ~~**P2**~~ ✅ | ~~Playbooks + JIT~~ **feito em 2026-08-03** | 4 | P3 | Indireto |
-| **P2** | Contrato de estimativa + 22 proibições | 6 | P6, P9 | Nenhum |
+| ~~**P2**~~ ✅ | ~~Contrato de estimativa + 22 proibições~~ **feito em 2026-08-03** | 6 | P6, P9 | Nenhum |
 | **P3** | Fatos semânticos tipados | 8 | P8 | Positivo indireto |
 | **P3** | Estimativa contextual generativa | 7 | P7 | Zero no portfólio |
 | **P4** | Evals versionados | 9 | §29, §30 | Nenhum |

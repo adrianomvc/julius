@@ -22,6 +22,17 @@ class AIEstimationProposal:
 
 @dataclass(frozen=True)
 class ContextualEstimate:
+    """A conta que o motor fez a partir do cenário que a análise escolheu.
+
+    Os campos de procedência não são burocracia. `Estimation`, do caminho
+    determinístico, sempre carregou região, moeda e versão do cálculo; esta
+    estrutura nasceu sem eles e virou uma segunda forma de dizer a mesma coisa,
+    pior. Sem região não há como recusar a soma de dois números tarifados em
+    lugares diferentes; sem moeda, a de duas moedas; sem período, a de um mês com
+    uma janela de noventa dias. As três somas são fáceis de fazer sem perceber, e
+    nenhuma delas é detectável depois.
+    """
+
     method: str
     status: str
     baseline_cost: float | None = None
@@ -32,6 +43,20 @@ class ContextualEstimate:
     include_in_portfolio: bool = False
     missing_evidence: list[str] = field(default_factory=list)
     assumptions: list[str] = field(default_factory=list)
+    #: Em que ponto do amadurecimento este número está. Ver `findings/maturity.py`.
+    maturity: str = "pilot_required"
+    #: Procedência da tarifa: sem isto não há como impedir mistura de região,
+    #: de moeda ou de período.
+    pricing_region: str = ""
+    currency: str = "USD"
+    period: str = "monthly"
+    #: A versão do método que produziu estes números. Mudar a fórmula é criar uma
+    #: versão nova, nunca reescrever a anterior — estimativa antiga continua
+    #: explicável.
+    method_version: str = ""
+    #: A assinatura da evidência sobre a qual esta conta foi feita. É o que
+    #: permite invalidá-la quando o script muda de hash ou a métrica aparece.
+    evidence_hash: str = ""
 
 
 @dataclass(frozen=True)

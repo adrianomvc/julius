@@ -212,11 +212,27 @@ def test_human_approval_required_for_changes():
 
     assert ContextualEstimate(method="x", status="estimated").include_in_portfolio is False
 
+    # A varredura é por AST, não por texto. A primeira versão era um regex e
+    # acusou a própria mensagem de erro que **reporta** a violação — medir a
+    # grafia em vez do que o código faz é o mesmo erro que barrar `urllib` pelo
+    # nome do pacote, e produz o mesmo tipo de falso positivo.
     ligam = []
-    padrao = re.compile(r"include_in_portfolio\s*=\s*True")
     for caminho in PACOTE.rglob("*.py"):
-        if padrao.search(caminho.read_text(encoding="utf-8")):
-            ligam.append(caminho.relative_to(PACOTE).as_posix())
+        arvore = ast.parse(caminho.read_text(encoding="utf-8"))
+        for no in ast.walk(arvore):
+            alvos: list[str] = []
+            if isinstance(no, ast.keyword) and no.arg == "include_in_portfolio":
+                if isinstance(no.value, ast.Constant) and no.value.value is True:
+                    alvos.append("keyword")
+            elif isinstance(no, ast.Assign) and isinstance(no.value, ast.Constant):
+                if no.value.value is True and any(
+                    (isinstance(t, ast.Name) and t.id == "include_in_portfolio")
+                    or (isinstance(t, ast.Attribute) and t.attr == "include_in_portfolio")
+                    for t in no.targets
+                ):
+                    alvos.append("assign")
+            if alvos:
+                ligam.append(caminho.relative_to(PACOTE).as_posix())
 
     assert not ligam, (
         f"estimativa contextual entrando no portfólio sem aprovação humana: {ligam}"
