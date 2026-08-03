@@ -134,6 +134,82 @@ def load_skills() -> list[SkillSource]:
     return [load_skill(p) for p in sorted((CANONICO / "skills").glob("*/SKILL.md"))]
 
 
+#: Os três casos que toda Skill precisa ter antes de existir. É o mínimo do
+#: Alfred — "uma Skill nasce de uma lacuna observada, com 2-3 casos concretos" —
+#: e para aqui de propósito: o resto entra quando houver falha real que o
+#: justifique, não porque a lista ficaria mais bonita completa.
+CASOS_OBRIGATORIOS = ("confirmed", "rejected", "needs_evidence")
+
+
+@dataclass(frozen=True)
+class Eval:
+    """Um caso de aceitação, e o teste que o cobra.
+
+    `enforced_by` é o que separa isto de prosa. Um eval que descrevesse o
+    comportamento esperado sem apontar quem o verifica seria uma segunda fonte de
+    verdade sobre o mesmo assunto — e a que envelhece primeiro, porque nada
+    quebra quando ela fica errada.
+    """
+
+    skill: str
+    case: str
+    rule_id: str
+    enforced_by: str
+    path: Path
+
+
+def load_evals(skill_name: str) -> list[Eval]:
+    pasta = CANONICO / "evals" / skill_name
+    encontrados = []
+    for caminho in sorted(pasta.glob("*.md")):
+        dados, _ = _parse_frontmatter(caminho.read_text(encoding="utf-8"), caminho)
+        faltando = [
+            chave
+            for chave in ("skill", "case", "rule_id", "enforced_by")
+            if chave not in dados
+        ]
+        if faltando:
+            raise SkillSourceError(f"{caminho}: eval sem {', '.join(faltando)}")
+        encontrados.append(
+            Eval(
+                skill=str(dados["skill"]),
+                case=str(dados["case"]),
+                rule_id=str(dados["rule_id"]),
+                enforced_by=str(dados["enforced_by"]),
+                path=caminho,
+            )
+        )
+    return encontrados
+
+
+def eval_problems() -> list[str]:
+    """Skill sem os casos obrigatórios, ou eval mal formado."""
+    achados: list[str] = []
+    for skill in load_skills():
+        try:
+            evals = load_evals(skill.name)
+        except SkillSourceError as exc:
+            achados.append(str(exc))
+            continue
+        if not evals:
+            achados.append(f"Skill sem evals: {skill.name}")
+            continue
+        casos = {item.case for item in evals}
+        faltando = [caso for caso in CASOS_OBRIGATORIOS if caso not in casos]
+        if faltando:
+            achados.append(
+                f"{skill.name}: falta eval para {', '.join(faltando)}"
+            )
+        divergentes = [
+            item.path.name for item in evals if item.skill != skill.name
+        ]
+        if divergentes:
+            achados.append(
+                f"{skill.name}: eval declarando outra Skill: {divergentes}"
+            )
+    return achados
+
+
 def engine_fields() -> dict[str, object]:
     """O que o motor sabe e a Skill não pode contradizer.
 
@@ -285,7 +361,7 @@ def write_all() -> list[Path]:
 
 def check() -> list[str]:
     """O que está fora do lugar. Lista vazia significa sem drift."""
-    problemas = []
+    problemas = eval_problems()
     for caminho, esperado in expected_files().items():
         relativo = caminho.relative_to(RAIZ).as_posix()
         if not caminho.is_file():
