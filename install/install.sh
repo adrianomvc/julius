@@ -227,6 +227,9 @@ fi
 # sem cópia nenhuma.
 #
 # `.agents/skills/` é **artefato gerado** a partir de docs/ai/, e vem commitado.
+# O artefato equivalente do Claude Code fica em `.claude/skills/` e é lido pelo
+# host direto do repositório, sem cópia — por isso não há passo de instalação
+# para ele aqui. Quem quiser a Skill global copia para ~/.claude/skills/.
 # O instalador só copia: gerar aqui exigiria Python antes do virtualenv existir,
 # e um instalador que depende do que ele ainda vai instalar quebra na primeira
 # máquina limpa. Quem garante que o artefato está em dia é

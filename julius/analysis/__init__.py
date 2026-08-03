@@ -16,7 +16,7 @@ from julius.analysis.providers import (
     Workspace,
 )
 from julius.analysis.response_validator import (
-    DEVIN_OUTPUT_SCHEMA,
+    ANALYSIS_OUTPUT_SCHEMA,
     AgentOutputError,
     ContextualAnalysis,
     ContextualRecommendation,
@@ -35,7 +35,7 @@ from julius.analysis.workspace import (
 )
 
 __all__ = [
-    "DEVIN_OUTPUT_SCHEMA",
+    "ANALYSIS_OUTPUT_SCHEMA",
     "PROMPT_VERSION",
     "PROVIDERS",
     "RULES",

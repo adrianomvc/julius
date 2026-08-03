@@ -3,8 +3,8 @@
 > **Escopo desta versão:** análise e proposta. Nenhum schema, regra financeira ou item do
 > portfólio é alterado por este documento.
 >
-> **Estado de execução:** as **Ondas 1 a 9 foram implementadas em 2026-08-03** — ver §34.
-> As Ondas 10 e 11 continuam propostas. Os trechos que descrevem P4 e D1 ficaram como
+> **Estado de execução:** as **Ondas 1 a 10 foram implementadas em 2026-08-03** — ver §34.
+> Resta a Onda 11, que depende de decisão humana. Os trechos que descrevem P4 e D1 ficaram como
 > registro histórico, marcados **[Resolvido]**.
 >
 > **Base analisada:** Julius na branch `agent/pending-followups` (contém `origin/main`,
@@ -1699,7 +1699,7 @@ justifique, não porque a lista ficaria mais bonita completa.
 **Critério de conclusão:** ✅ Skill sem eval falha no `--check`, com contraprova.
 **Rollback:** remover a verificação do `--check`.
 
-### Onda 10 — Adapter de host adicional
+### Onda 10 — Adapter de host adicional ✅ **CONCLUÍDA em 2026-08-03**
 
 **Objetivo:** provar a independência de host gerando um segundo artefato do mesmo canônico.
 **Arquivos afetados:** `julius/analysis/providers/claude.py` (novo),
@@ -1877,7 +1877,7 @@ O plano está cumprido quando:
 | ~~**P3**~~ ✅ | ~~Fatos semânticos tipados~~ **feito em 2026-08-03** | 8 | P8 | Nenhum — ver correção |
 | ~~**P3**~~ ✅ | ~~Estimativa contextual generativa~~ **feito em 2026-08-03** | 7 | P7 | Zero no portfólio |
 | ~~**P4**~~ ✅ | ~~Evals versionados~~ **feito em 2026-08-03** | 9 | §29, §30 | Nenhum |
-| **P4** | Adapter de host adicional | 10 | P2, P11 | Nenhum |
+| ~~**P4**~~ ✅ | ~~Adapter de host adicional~~ **feito em 2026-08-03** | 10 | P2, P11 | Nenhum |
 | **P5** | Dívida `evidence_only` | 11 | P10 | A decidir |
 
 **Justificativa da ordem.** P0 é o que já está pago e não está sendo usado (Onda 5) e o que

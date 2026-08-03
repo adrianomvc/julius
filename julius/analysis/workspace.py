@@ -19,7 +19,7 @@ from pathlib import Path
 from julius.analysis.context_builder import AgentContext, build_agent_context
 from julius.analysis.providers.base import Workspace
 from julius.analysis.response_validator import (
-    DEVIN_OUTPUT_SCHEMA,
+    ANALYSIS_OUTPUT_SCHEMA,
     AgentOutputError,
     ContextualAnalysis,
     validate_agent_output,
@@ -61,7 +61,7 @@ def write_package(
         json.dumps(context.to_dict(), ensure_ascii=False, indent=2), encoding="utf-8"
     )
     workspace.schema.write_text(
-        json.dumps(DEVIN_OUTPUT_SCHEMA, ensure_ascii=False, indent=2), encoding="utf-8"
+        json.dumps(ANALYSIS_OUTPUT_SCHEMA, ensure_ascii=False, indent=2), encoding="utf-8"
     )
     workspace.instructions.write_text(
         instructions(

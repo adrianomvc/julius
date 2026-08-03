@@ -25,5 +25,7 @@ aplica, e são injetados no frontmatter de cada artefato.
 
 | Host | Artefato |
 |---|---|
+| `claude` | [.claude/skills/julius-aws-analysis/SKILL.md](.claude/skills/julius-aws-analysis/SKILL.md) |
+| `claude` | [.claude/skills/julius-signal-economic-analysis/SKILL.md](.claude/skills/julius-signal-economic-analysis/SKILL.md) |
 | `devin` | [.agents/skills/julius-aws-analysis/SKILL.md](.agents/skills/julius-aws-analysis/SKILL.md) |
 | `devin` | [.agents/skills/julius-signal-economic-analysis/SKILL.md](.agents/skills/julius-signal-economic-analysis/SKILL.md) |

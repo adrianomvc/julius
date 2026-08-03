@@ -1,4 +1,4 @@
-# Julius — MVP 4: IA no Devin
+# Julius — portfólio de otimização de custo AWS
 
 Portfólio contínuo de oportunidades de otimização de custo AWS para contas
 Consumer (Data Mesh), usado como ferramenta especializada pelo agente Devin.
@@ -43,12 +43,25 @@ Ver o plano completo (fases 1A→4) em `../.claude/plans/quero-criar-uma-ia-comp
 - Calibração por regra após pelo menos três benefícios validados.
 - Eventos de lifecycle, diff e validações persistidos em DuckDB/Parquet.
 
-## Julius como IA no Devin (MVP 4)
+## Julius como ferramenta de um agente
 
-O usuário interage diretamente com o **Devin**, pelo CLI ou pela interface web.
-O Devin encontra a Skill versionada em
-`.agents/skills/julius-aws-analysis/SKILL.md` e usa o CLI Julius como sua
-ferramenta especializada. O Julius não chama a API do Devin.
+O usuário interage com um agente — Devin ou Claude Code —, que encontra a Skill
+versionada e usa o CLI Julius como ferramenta especializada. O Julius não chama a
+API de nenhum deles: ele escreve um pacote em disco e lê um resultado de volta.
+
+A Skill é a mesma nos dois. A fonte canônica vive em `docs/ai/`, em português e
+sem host, e os artefatos instalados são gerados dela:
+
+| Host | Artefato | Provedor |
+|---|---|---|
+| Devin | `.agents/skills/julius-aws-analysis/SKILL.md` | `--provider devin` |
+| Claude Code | `.claude/skills/julius-aws-analysis/SKILL.md` | `--provider claude` |
+| nenhum | — | `--provider manual` |
+
+Os dois artefatos carregam o mesmo corpo; o que difere é o bloco de procedimento
+do host. Para mudar o que a Skill diz, edite `docs/ai/` e rode
+`python scripts/generate_skill_registry.py` — editar o artefato à mão falha nos
+testes.
 
 As responsabilidades são separadas:
 
