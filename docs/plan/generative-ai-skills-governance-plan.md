@@ -1804,8 +1804,11 @@ do relatório mantendo-os no `result.json` para auditoria.
 
 ## 37. Decisões humanas pendentes
 
-1. **`evidence_only` (P10, Onda 11).** Remover o código morto ou criar um terceiro perfil de
-   escopo que o produza? Impacto financeiro para quem adotar o perfil.
+1. ~~**`evidence_only` (P10, Onda 11).**~~ **Resolvido em 2026-08-03: perfil criado.**
+   `CONSUMER_EVIDENCE_ONLY` produz `s3_mode="evidence_only"`. A remoção foi descartada porque
+   a leitura do modo mostrou intenção real: `small_files.py` mantém a recomendação quando o
+   processo produtor é conhecido, porque aí a ação é sobre o código que escreve e não sobre
+   o bucket. Nenhuma conta existente muda.
 2. **Fator conservador de `validated_model`.** Que fator, e quem assina a promoção ao
    portfólio? `EstimatedGain.realization_factor` usa `0.8` como padrão hoje — o contextual
    validado deveria usar o mesmo, ou um mais duro?
@@ -1818,9 +1821,10 @@ do relatório mantendo-os no `result.json` para auditoria.
 4. ~~**`AGENTS.md` em português.**~~ **Resolvido: traduzido em 2026-08-03**, seguindo a
    decisão de idioma dada no início ("tudo em português, iterações e MDs"). O arquivo ganhou
    também a tabela de artefatos por host e a regra de conteúdo externo.
-5. **Quais 3 `rule_id` abrem a Onda 7.** A proposta é `GLUE-CODE-PYTHON-UDF`,
-   `GLUE-CODE-DRIVER-MATERIALIZATION` e `SM-CODE-FIXED-EPOCHS` — os três com baseline mais
-   confiável e mecanismo de cobrança mais direto. Precisa de confirmação.
+5. ~~**Quais 3 `rule_id` abrem a Onda 7.**~~ **Resolvido em 2026-08-03: os três propostos.**
+   `GLUE-CODE-PYTHON-UDF`, `GLUE-CODE-DRIVER-MATERIALIZATION` e `SM-CODE-FIXED-EPOCHS`, cada
+   um verificado como sinal com baseline real. `test_no_eligible_rule_also_has_a_deterministic_method`
+   garante que nenhum deles tenha também fórmula no motor.
 6. ~~**CUR.**~~ **Resolvido em 2026-08-03: saiu da lista.** Exige configuração na conta
    pagadora — `Put*`, fora do alcance do Consumer.
 7. ~~**Alfred como referência viva ou congelada.**~~ **Resolvido em 2026-08-03: referência
@@ -1845,6 +1849,20 @@ do relatório mantendo-os no `result.json` para auditoria.
    recomendação. O teste da Onda 2 varre **oportunidades**, não sinais, e isso está
    documentado no docstring. Se a fronteira dever alcançar sinais também, o texto muda de
    "ligue X" para "sem X esta pergunta não se responde".
+
+### Ainda abertas
+
+Duas, e as duas dependem de julgamento que não é técnico.
+
+**Fator conservador de `validated_model` (decisão 2).** É o único ponto que ainda separa
+estimativa validada de economia oficial. `Maturity.VALIDATED_MODEL` existe, e nada nunca
+chega lá sem esse fator e sem quem assine a promoção.
+
+**Verificação da tabela de preço de `sa-east-1`.** Ela sai do repositório com
+`verified=False`, e o gate por seção faz o esperado: na conta de exemplo, 9 das 19
+oportunidades saem sem cifra e o portfólio soma US$ 1.140,70/mês em vez do total real.
+Verificar é ato humano — exige abrir a fonte e assinar que o número confere. Automatizar
+seria o "preço sem fonte" que este plano proíbe.
 
 ---
 
