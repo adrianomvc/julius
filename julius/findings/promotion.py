@@ -29,6 +29,39 @@ from julius.findings.signal import Signal
 PROMOTED_RULE_VERSION = "1.0.0"
 
 
+def _com_piloto(signal: Signal, config: Any, pilot: Any) -> Estimation:
+    """A cifra que o piloto mediu, reduzida pelo fator contextual."""
+    medido = float(getattr(pilot, "measured_monthly", 0.0))
+    fator = float(getattr(config, "contextual_realization_factor", 0.6))
+    return Estimation(
+        method=f"{signal.rule_id.lower().replace('-', '_')}_pilot_validated_v1",
+        baseline_cost=medido,
+        projected_cost=0.0,
+        estimated_saving=round(medido * fator, 2),
+        assumptions=[
+            f"piloto mediu {medido:.2f}/mês; fator contextual {fator:.0%} aplicado",
+            f"validado por {getattr(pilot, 'actor', '?')} "
+            f"em {str(getattr(pilot, 'validated_at', ''))[:10]}",
+            "o piloto confirma uma execução; a generalização é premissa",
+        ],
+        pricing_region=config.pricing.region,
+        estimation_version=config.pricing.version,
+        # O piloto mediu a cobrança real do ativo, antes e depois. Isso é
+        # `allocated` no vocabulário de baseline — ancorado na fatura, não em
+        # tarifa. A distinção decide o portão de preço: exigir tabela verificada
+        # aqui bloquearia uma cifra que não veio de tabela nenhuma.
+        #
+        # `measured` seria o valor intuitivo e está fora desta escala — ele
+        # pertence a `saving_quality`. Inventar um valor faria o achado cair no
+        # fallback e receber a pior nota da escala, silenciosamente.
+        baseline_quality="allocated",
+        # A economia foi medida numa execução e generalizada para o escopo. Isso
+        # é evidência modelada, não medição do todo — e o fator conservador é o
+        # que cobre a diferença.
+        saving_quality="modeled_evidence",
+    )
+
+
 def promote(
     signal: Signal,
     rationale: str,
@@ -36,20 +69,35 @@ def promote(
     account: str,
     config: Any,
     scan_id: str,
+    pilot: Any = None,
 ) -> Opportunity:
-    """Monta a investigação que nasce de um sinal confirmado."""
-    estimation = Estimation(
-        method=f"{signal.rule_id.lower().replace('-', '_')}_ai_confirmed_v1",
-        baseline_cost=0.0,
-        projected_cost=0.0,
-        estimated_saving=0.0,
-        assumptions=[
-            "confirmação contextual não quantifica economia",
-            "medir o custo do padrão antes de propor mudança",
-        ],
-        pricing_region=config.pricing.region,
-        estimation_version=config.pricing.version,
-        saving_quality="unavailable",
+    """Monta a investigação que nasce de um sinal confirmado.
+
+    Com `pilot`, o que nasce é outra coisa: um achado com cifra. É o único
+    caminho pelo qual economia nascida de interpretação encosta no total oficial,
+    e ele exige as duas metades — alguém mediu, e alguém assinou.
+
+    O fator conservador é mais duro que o determinístico e a razão não é o
+    tamanho do número, é a origem: a oportunidade determinística parte de fato
+    medido e o piloto confirma a conta; a contextual parte de leitura de código,
+    e o piloto confirma **uma execução**. O que se generaliza dali é menos.
+    """
+    estimation = (
+        _com_piloto(signal, config, pilot)
+        if pilot is not None
+        else Estimation(
+            method=f"{signal.rule_id.lower().replace('-', '_')}_ai_confirmed_v1",
+            baseline_cost=0.0,
+            projected_cost=0.0,
+            estimated_saving=0.0,
+            assumptions=[
+                "confirmação contextual não quantifica economia",
+                "medir o custo do padrão antes de propor mudança",
+            ],
+            pricing_region=config.pricing.region,
+            estimation_version=config.pricing.version,
+            saving_quality="unavailable",
+        )
     )
     opportunity = build(
         Finding(
@@ -63,17 +111,34 @@ def promote(
         ),
         Recommendation(
             difficulty=3,
-            action="Medir o custo do padrão confirmado antes de alterar o ativo",
+            action=(
+                "Aplicar a mudança validada pelo piloto no restante do escopo"
+                if pilot is not None
+                else "Medir o custo do padrão confirmado antes de alterar o ativo"
+            ),
             how_to_apply=(
-                "Coletar a evidência que falta e comparar uma execução de "
+                "Repetir no restante do escopo a mudança que o piloto mediu, "
+                "conferindo que o volume e o padrão de entrada são comparáveis."
+                if pilot is not None
+                else "Coletar a evidência que falta e comparar uma execução de "
                 "controle antes de mudar a definição."
             ),
             how_to_validate=(
                 "Comparar duração, consumo e saída antes e depois, no mesmo volume."
             ),
-            risks=["confirmação contextual não substitui benchmark"],
+            risks=(
+                [
+                    "o piloto mediu uma execução; o restante do escopo pode "
+                    "responder diferente",
+                    "o fator conservador cobre parte dessa diferença, não toda",
+                ]
+                if pilot is not None
+                else ["confirmação contextual não substitui benchmark"]
+            ),
             docs=list(signal.doc_links),
-            blocked=True,
+            # Bloqueado enquanto ninguém mediu. O piloto é exatamente o que
+            # desbloqueia — e é por isso que ele exige quem assina.
+            blocked=pilot is None,
         ),
         Evidence(
             items=[

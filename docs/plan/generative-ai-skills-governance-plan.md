@@ -1809,9 +1809,13 @@ do relatório mantendo-os no `result.json` para auditoria.
    a leitura do modo mostrou intenção real: `small_files.py` mantém a recomendação quando o
    processo produtor é conhecido, porque aí a ação é sobre o código que escreve e não sobre
    o bucket. Nenhuma conta existente muda.
-2. **Fator conservador de `validated_model`.** Que fator, e quem assina a promoção ao
-   portfólio? `EstimatedGain.realization_factor` usa `0.8` como padrão hoje — o contextual
-   validado deveria usar o mesmo, ou um mais duro?
+2. ~~**Fator conservador de `validated_model`.**~~ **Resolvido em 2026-08-03: 0.6, e assina
+   quem roda o comando.** `Config.contextual_realization_factor = 0.6`, contra `0.8` do
+   determinístico. A diferença não é de tamanho, é de procedência: a oportunidade
+   determinística parte de fato medido e o piloto confirma a conta; a contextual parte de
+   leitura de código, e o piloto confirma **uma execução**. O que se generaliza dali é menos.
+   Quem assina é o `--actor` de `julius validate-pilot`, mesma convenção de
+   `julius validate` — sem ele o registro é recusado.
 3. ~~**Granularidade de versão.**~~ **Resolvido em 2026-08-03: versão única.**
    `PROMPT_VERSION` versiona o contrato inteiro e qualquer mudança a sobe. É o que faz o
    rastro funcionar: todo veredito grava a versão em `state/history.py` como coluna
@@ -1852,11 +1856,7 @@ do relatório mantendo-os no `result.json` para auditoria.
 
 ### Ainda abertas
 
-Duas, e as duas dependem de julgamento que não é técnico.
-
-**Fator conservador de `validated_model` (decisão 2).** É o único ponto que ainda separa
-estimativa validada de economia oficial. `Maturity.VALIDATED_MODEL` existe, e nada nunca
-chega lá sem esse fator e sem quem assine a promoção.
+Uma, e ela depende de julgamento que não é técnico.
 
 **Verificação da tabela de preço de `sa-east-1`.** Ela sai do repositório com
 `verified=False`, e o gate por seção faz o esperado: na conta de exemplo, 9 das 19

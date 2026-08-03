@@ -60,6 +60,24 @@ _KEEPS_OPEN = frozenset({"needs_evidence"})
 
 
 @dataclass
+class PilotResult:
+    """O que um piloto mediu, e quem assina que mediu.
+
+    É o único caminho pelo qual uma estimativa nascida de interpretação encosta
+    no dinheiro oficial. Sem `actor` a promoção seria automática, e a regra é a
+    oposta: a IA propõe, o humano decide mudança material.
+
+    `measured_monthly` é o que o piloto observou — não o que a faixa previa. Se
+    fosse a faixa, o piloto não teria servido para nada além de carimbar.
+    """
+
+    actor: str
+    measured_monthly: float
+    validated_at: str
+    notes: str = ""
+
+
+@dataclass
 class SignalDecision:
     """O que ficou decidido sobre um sinal, e sobre qual evidência."""
 
@@ -79,6 +97,7 @@ class SignalDecision:
     recommendation: AIRecommendation | None = None
     estimation_proposal: AIEstimationProposal | None = None
     contextual_estimate: AIContextualEstimate | None = None
+    pilot: PilotResult | None = None
 
 
 @dataclass
@@ -192,6 +211,45 @@ class SignalLedger:
             result.suppressed.append(signal.fingerprint(account))
         return result
 
+    def record_pilot(
+        self,
+        fingerprint: str,
+        *,
+        actor: str,
+        measured_monthly: float,
+        notes: str = "",
+        validated_at: datetime | None = None,
+    ) -> PilotResult:
+        """Grava o resultado do piloto. Exige um sinal já confirmado.
+
+        Sem o veredito antes, o piloto validaria uma hipótese que ninguém leu —
+        e o número mediria a mudança sem ninguém ter dito que a mudança fazia
+        sentido.
+        """
+        store = self._load()
+        entrada = store.get(fingerprint)
+        if entrada is None:
+            raise KeyError(f"sinal desconhecido: {fingerprint}")
+        if entrada.get("verdict") != "confirmed":
+            raise ValueError(
+                f"piloto exige veredito confirmed; atual: {entrada.get('verdict')!r}"
+            )
+        if measured_monthly <= 0:
+            raise ValueError("o piloto precisa ter medido economia positiva")
+        if not actor.strip():
+            raise ValueError("o piloto precisa dizer quem assina")
+        resultado = PilotResult(
+            actor=actor.strip(),
+            measured_monthly=float(measured_monthly),
+            validated_at=(validated_at or datetime.now(timezone.utc)).isoformat(),
+            notes=notes,
+        )
+        entrada["pilot"] = asdict(resultado)
+        entrada["status"] = "validated_model"
+        store[fingerprint] = entrada
+        self._save(store)
+        return resultado
+
     def pending_promotions(self, account: str) -> list[SignalDecision]:
         """Confirmados que ainda não viraram achado no backlog."""
         return [
@@ -247,6 +305,11 @@ def _decision(fingerprint: str, entry: dict) -> SignalDecision:
         contextual_estimate=(
             AIContextualEstimate(**entry["contextual_estimate"])
             if isinstance(entry.get("contextual_estimate"), dict)
+            else None
+        ),
+        pilot=(
+            PilotResult(**entry["pilot"])
+            if isinstance(entry.get("pilot"), dict)
             else None
         ),
     )
