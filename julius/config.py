@@ -140,6 +140,17 @@ class Config:
     s3_cost: S3CostTaxonomy = field(default_factory=S3CostTaxonomy)
     # Fator de realização padrão (parte da economia efetivamente capturada).
     realization_factor: float = 0.8
+    # O mesmo, para economia que nasceu de interpretação e passou por piloto.
+    #
+    # Mais duro que o determinístico de propósito, e a razão não é o tamanho do
+    # número — é a origem dele. Uma oportunidade determinística parte de fato
+    # medido e o piloto confirma a conta; uma estimativa contextual parte de
+    # leitura de código, e o piloto confirma **uma execução**. O que se generaliza
+    # dali é menos, e o fator diz isso em vez de fingir que as duas coisas têm a
+    # mesma procedência.
+    #
+    # Decisão do dono do produto, 2026-08-03.
+    contextual_realization_factor: float = 0.6
     preferred_glue_version: str = "5.1"
     # Mês/ano de referência para "realizável no ano" (dez do ano corrente).
     year_end_month: int = 12

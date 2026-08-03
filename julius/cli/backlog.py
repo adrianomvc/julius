@@ -276,3 +276,49 @@ def _opportunity_by_id(analysis, opportunity_id: str):
     return opportunity
 
 
+@app.command("validate-pilot")
+def validate_pilot_command(
+    fingerprint: str = typer.Option(..., "--fingerprint"),
+    measured_monthly: float = typer.Option(..., "--measured-monthly"),
+    actor: str = typer.Option(..., "--actor"),
+    notes: str = typer.Option("", "--notes"),
+    ledger: str = typer.Option("data/state/signals.json", "--signal-ledger"),
+) -> None:
+    """Registra o piloto de uma estimativa contextual e quem assina por ele.
+
+    É o único caminho pelo qual economia nascida de interpretação encosta no
+    total oficial. Espelha `julius validate` de propósito: mesmo `--actor`,
+    mesma exigência de um estado anterior, mesma gravação com data.
+
+    A diferença é o momento. `julius validate` mede o que aconteceu **depois**
+    de implementar; este mede o piloto que decide **se vale** implementar. O
+    número que entra é o que o piloto observou, reduzido pelo fator contextual —
+    o piloto confirma uma execução, e generalizar para o escopo inteiro continua
+    sendo premissa.
+    """
+    from julius.config import DEFAULT_CONFIG
+    from julius.state import SignalLedger
+
+    livro = SignalLedger(ledger)
+    try:
+        resultado = livro.record_pilot(
+            fingerprint,
+            actor=actor,
+            measured_monthly=measured_monthly,
+            notes=notes,
+        )
+    except (KeyError, ValueError) as exc:
+        raise typer.BadParameter(str(exc)) from exc
+
+    fator = DEFAULT_CONFIG.contextual_realization_factor
+    typer.echo(
+        f"Piloto registrado por {resultado.actor} em {resultado.validated_at[:10]}."
+    )
+    typer.echo(
+        f"Medido {measured_monthly:.2f}/mês; entra no portfólio como "
+        f"{measured_monthly * fator:.2f}/mês (fator contextual {fator:.0%})."
+    )
+    typer.echo(
+        "O piloto confirma uma execução. Generalizar para o escopo inteiro "
+        "continua sendo premissa, e é o que o fator cobre."
+    )
