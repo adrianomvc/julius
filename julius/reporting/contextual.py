@@ -58,6 +58,11 @@ def attach_contextual_analysis(
         if item.verdict in {"confirmed", "needs_evidence"}
     ]
     vm.ai_uncovered_findings = [asdict(item) for item in analysis.uncovered_findings]
+    # Aparece mesmo quando vazio: a lista vazia diz "procurei e não achei", que é
+    # afirmação diferente de "não procurei".
+    vm.ai_suspected_injections = [
+        asdict(item) for item in analysis.suspected_injections
+    ]
     return vm
 
 

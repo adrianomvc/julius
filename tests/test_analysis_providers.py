@@ -80,6 +80,7 @@ def _result_for(workspace: Workspace) -> dict:
             for signal in context["signals"]
         ],
         "uncovered_findings": [],
+        "suspected_injections": [],
     }
 
 

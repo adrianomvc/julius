@@ -80,6 +80,7 @@ def _valid_result(context) -> dict:
             for signal in context.signals
         ],
         "uncovered_findings": [],
+        "suspected_injections": [],
     }
 
 
