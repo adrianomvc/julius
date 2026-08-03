@@ -188,7 +188,6 @@ O que procurar, por tipo de ativo:
 #: manter essa lista curta é o que impede o prompt de virar host-específico.
 SKILL_PATH_BY_HOST = {
     "devin": ".agents/skills/julius-aws-analysis/SKILL.md",
-    "claude": ".claude/skills/julius-aws-analysis/SKILL.md",
     "manual": "docs/ai/skills/julius-aws-analysis/SKILL.md",
 }
 

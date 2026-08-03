@@ -666,11 +666,13 @@ impede tarifa obsoleta de sustentar valor no portfólio.
 
 **Prioridade das fontes financeiras** (a do pedido, confirmada contra o código):
 
-1. custo atribuído real; 2. CUR; 3. Cost Explorer; 4. AWS Price List API;
-5. tabela de preços versionada; 6. modelagem local validada.
+1. custo atribuído real; 2. Cost Explorer; 3. AWS Price List API;
+4. tabela de preços versionada; 5. modelagem local validada.
 
-**[Observação]** O Julius consome hoje 1, 3, 4 e 5. CUR (2) não está implementado — fica
-registrado como lacuna, não como proposta desta onda.
+**[Decisão do dono do produto, 2026-08-03]** O Julius consome as cinco. O **CUR saiu da
+lista**: ele exige configuração na conta pagadora, que é `Put*` e está fora do alcance do
+perfil Consumer. Listar uma fonte inalcançável faz a hierarquia parecer incompleta quando ela
+está certa — e transforma em dívida permanente algo que nunca será feito daqui.
 
 **Invariante:** a tarifa é resolvida pelo Python. A IA pode interpretar a documentação que
 explica *como* se cobra; nunca fornece *quanto* custa. `Estimation.pricing_dependencies`
@@ -1807,25 +1809,35 @@ do relatório mantendo-os no `result.json` para auditoria.
 2. **Fator conservador de `validated_model`.** Que fator, e quem assina a promoção ao
    portfólio? `EstimatedGain.realization_factor` usa `0.8` como padrão hoje — o contextual
    validado deveria usar o mesmo, ou um mais duro?
-3. **Granularidade de versão.** `PROMPT_VERSION` passa a versionar Skill, playbook, contrato
-   de estimativa e schema juntos, ou cada um ganha versão própria? A resposta muda o
-   `estimate_id` (§17).
+3. ~~**Granularidade de versão.**~~ **Resolvido em 2026-08-03: versão única.**
+   `PROMPT_VERSION` versiona o contrato inteiro e qualquer mudança a sobe. É o que faz o
+   rastro funcionar: todo veredito grava a versão em `state/history.py` como coluna
+   `NOT NULL`, e com quatro versões separadas reproduzir um julgamento exigiria quatro
+   números. `tests/test_single_version.py` congela um dígito do contrato — mudar conteúdo sem
+   subir a versão falha, com a instrução do que fazer.
 4. ~~**`AGENTS.md` em português.**~~ **Resolvido: traduzido em 2026-08-03**, seguindo a
    decisão de idioma dada no início ("tudo em português, iterações e MDs"). O arquivo ganhou
    também a tabela de artefatos por host e a regra de conteúdo externo.
 5. **Quais 3 `rule_id` abrem a Onda 7.** A proposta é `GLUE-CODE-PYTHON-UDF`,
    `GLUE-CODE-DRIVER-MATERIALIZATION` e `SM-CODE-FIXED-EPOCHS` — os três com baseline mais
    confiável e mecanismo de cobrança mais direto. Precisa de confirmação.
-6. **CUR.** A prioridade de fontes financeiras (§15) lista CUR em segundo lugar e o Julius
-   não o consome. Entra no roadmap ou sai da lista?
-7. **Alfred como referência viva ou congelada.** Congelar na v2.0.0 dá reprodutibilidade;
-   acompanhar dá correções. A proposta é congelar e revisar por decisão explícita.
+6. ~~**CUR.**~~ **Resolvido em 2026-08-03: saiu da lista.** Exige configuração na conta
+   pagadora — `Put*`, fora do alcance do Consumer.
+7. ~~**Alfred como referência viva ou congelada.**~~ **Resolvido em 2026-08-03: referência
+   removida.** O que foi adotado já está implementado e testado no Julius; as menções ao
+   Alfred no código viraram o **motivo** da decisão, escrito de forma autossuficiente. Um
+   comentário que diz "é o antipadrão do gerador do Alfred" amarra o Julius ao estado de
+   outro repositório para explicar algo que se explica sozinho. Este plano mantém as
+   referências como registro histórico da análise.
 8. ~~**`suspected_injections` (§27).**~~ **Resolvido em 2026-08-03: campo no schema.**
    A alternativa (log) foi descartada porque a regra em `docs/ai/precedencia.md` mandava
    registrar e não havia onde — prosa sem quem a cumprisse. O campo é **obrigatório**: lista
    vazia afirma "procurei e não achei", e a ausência se leria como "não procurei", que é o
    default perigoso. Custou atualizar duas fixtures de teste.
-9. **Habilitar fonte de acesso é infraestrutura?** *(surgiu na Onda 2)* O sinal
+9. ~~**Habilitar fonte de acesso é infraestrutura?**~~ **Resolvido em 2026-08-03: não se
+   habilita nada, nem para coleta.** O texto do sinal deixou de listar o que ligar e passou
+   a dizer que a pergunta não se responde com o que a conta expõe hoje. A coleta verifica em
+   execução o que está ligado; o que não estiver é limite, não tarefa. Pergunta original: *(surgiu na Onda 2)* O sinal
    `S3-STORAGE-CLASS-TRANSITION` lista em `missing_evidence` o que ligar para obter
    evidência de leitura — *"server access logging, Storage Lens advanced, Storage Class
    Analysis"*. Habilitar qualquer uma delas é `Put*` na configuração do bucket. Mas é

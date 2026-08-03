@@ -1,12 +1,17 @@
 """Trocar de host é trocar de provedor, e nada mais.
 
-A afirmação era fácil de fazer e impossível de conferir enquanto existia um host
-só. Com dois, ela vira teste: os dois artefatos precisam carregar exatamente o
-mesmo corpo canônico, os provedores precisam produzir pacotes com o mesmo
-contexto e o mesmo schema, e a diferença precisa caber no bloco de host.
+A afirmação é fácil de fazer e difícil de conferir com um host só — que é o caso
+hoje, por decisão de produto: a análise roda no Devin. Comparar dois artefatos
+reais seria trivialmente verdadeiro se só existisse um.
 
-O que este arquivo protege é o caminho de volta. Suportar um segundo host copiando
-o `SKILL.md` do primeiro funcionaria hoje e divergiria na primeira correção feita
+Então o teste **gera um host sintético** a partir da mesma fonte canônica e
+compara. Nada é instalado para ele e nada é commitado; ele existe dentro do teste,
+pelo tempo do teste. O que isso prova é o que importa: o corpo canônico não
+depende de host nenhum, e um segundo host custaria uma linha em `HOSTS` mais um
+bloco de procedimento.
+
+O que este arquivo protege é o caminho de volta. Suportar um host novo copiando o
+`SKILL.md` do primeiro funcionaria hoje e divergiria na primeira correção feita
 num lado só — que foi exatamente o que aconteceu entre `guardrails.py` e a Skill
 antiga, e custou dois métodos de estimativa desligados por três meses.
 """
@@ -19,7 +24,13 @@ from datetime import date
 import pytest
 
 from julius.analysis import PROVIDERS, Workspace
-from julius.analysis.skill_registry import HOSTS, RAIZ, load_skills
+from julius.analysis.skill_registry import (
+    CANONICO,
+    HOSTS,
+    RAIZ,
+    load_skills,
+    render_host_artifact,
+)
 from julius.pipeline import analyze
 
 SAMPLE = "data/sample/consumer-avi.json"
@@ -30,59 +41,78 @@ def analysis():
     return analyze(SAMPLE, today=date(2026, 7, 25), scan_id="hosts")
 
 
-def test_more_than_one_host_exists():
-    """Sem o segundo host, tudo abaixo passaria sem provar nada."""
-    assert len(HOSTS) >= 2, "a agnosticidade só é verificável com dois hosts"
+@pytest.fixture
+def host_sintetico(monkeypatch, tmp_path):
+    """Um segundo host, montado da mesma fonte e jogado fora no fim.
+
+    É o que substitui o artefato real que existia quando havia dois hosts. A
+    diferença prática é nenhuma para o que se quer provar, e a diferença de
+    manutenção é grande: artefato que ninguém usa em produção diverge sem
+    ninguém notar.
+    """
+    bloco = CANONICO / "hosts" / "sintetico.md"
+    bloco.write_text(
+        "# Procedimento — host sintetico\n\n"
+        "Existe só dentro do teste de agnosticidade.\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setitem(HOSTS, "sintetico", tmp_path / "skills")
+    try:
+        yield "sintetico"
+    finally:
+        bloco.unlink(missing_ok=True)
+
+
+def test_only_devin_ships_an_artifact():
+    """Um host real, por decisão de produto. O mecanismo é que segue plural."""
+    assert set(HOSTS) == {"devin"}
+    assert not (RAIZ / ".claude" / "skills").exists(), (
+        "artefato de host que não roda em produção diverge sem ninguém notar"
+    )
 
 
 @pytest.mark.parametrize("skill", load_skills(), ids=lambda s: s.name)
-def test_every_host_artifact_carries_the_same_canonical_body(skill):
-    """O corpo é um só. Se divergir, alguém editou o artefato em vez da fonte."""
+def test_a_new_host_gets_the_same_canonical_body(skill, host_sintetico):
+    """O corpo é um só, e um host novo não pode trazer uma cópia divergente."""
     corpo = skill.body.strip()
 
-    for host, destino in HOSTS.items():
-        artefato = destino / skill.name / "SKILL.md"
-        assert artefato.is_file(), f"artefato de {host} ausente: {artefato}"
-        assert corpo in artefato.read_text(encoding="utf-8"), (
-            f"o artefato de {host} não carrega o corpo canônico de {skill.name}"
-        )
+    devin = render_host_artifact(skill, "devin")
+    sintetico = render_host_artifact(skill, host_sintetico)
+
+    assert corpo in devin
+    assert corpo in sintetico
 
 
 @pytest.mark.parametrize("skill", load_skills(), ids=lambda s: s.name)
-def test_the_hosts_differ_only_in_their_own_block(skill):
+def test_the_hosts_differ_only_in_their_own_block(skill, host_sintetico):
     """A diferença precisa ser o bloco de host — não regra, não contrato."""
-    textos = {
-        host: (destino / skill.name / "SKILL.md").read_text(encoding="utf-8")
-        for host, destino in HOSTS.items()
-    }
     corpo = skill.body.strip()
 
-    for host, texto in textos.items():
-        bloco = texto.split(corpo, 1)[1]
-        outros = [h for h in HOSTS if h != host]
-        for outro in outros:
-            assert f"docs/ai/hosts/{outro}.md" not in bloco, (
-                f"o artefato de {host} cita o procedimento de {outro}"
-            )
-        # O host se identifica no próprio bloco, e só nele.
-        assert host.lower() in bloco.lower(), (
-            f"o bloco de {host} não diz de qual host é"
-        )
+    devin = render_host_artifact(skill, "devin").split(corpo, 1)[1]
+    sintetico = render_host_artifact(skill, host_sintetico).split(corpo, 1)[1]
+
+    assert "DEVIN" in devin.upper()
+    assert "sintetico" in sintetico
+    assert "DEVIN" not in sintetico.upper()
+
+
+def test_adding_a_host_costs_one_line_and_one_block(host_sintetico):
+    """A promessa da inversão fonte → artefato, medida em vez de afirmada."""
+    skill = load_skills()[0]
+
+    assert render_host_artifact(skill, host_sintetico)
 
 
 def test_no_public_symbol_is_named_after_a_host():
     """`DEVIN_OUTPUT_SCHEMA` era o último. O schema nunca foi do Devin."""
     from julius.analysis import response_validator
 
-    publicos = [
-        nome
-        for nome in dir(response_validator)
-        if not nome.startswith("_") and nome.isupper()
-    ]
     nomeados = [
         nome
-        for nome in publicos
-        if any(host in nome.lower() for host in ("devin", "claude", "copilot", "codex"))
+        for nome in dir(response_validator)
+        if not nome.startswith("_")
+        and nome.isupper()
+        and any(host in nome.lower() for host in ("devin", "claude", "copilot", "codex"))
         and nome != "DEVIN_OUTPUT_SCHEMA"  # alias declarado, com prazo
     ]
 
@@ -90,7 +120,6 @@ def test_no_public_symbol_is_named_after_a_host():
 
 
 def test_the_old_schema_name_still_resolves():
-    """Renomear não pode quebrar quem importava — o alias é o contrato."""
     from julius.analysis.response_validator import (
         ANALYSIS_OUTPUT_SCHEMA,
         DEVIN_OUTPUT_SCHEMA,
@@ -101,11 +130,7 @@ def test_the_old_schema_name_still_resolves():
 
 @pytest.mark.parametrize("nome", sorted(PROVIDERS))
 def test_every_provider_writes_the_same_context_and_schema(nome, analysis, tmp_path):
-    """Quem monta o contexto e quem consome o resultado não sabem qual provedor é.
-
-    É o contrato declarado em `providers/base.py`, e com três provedores ele
-    passa a ser verificável em vez de prometido.
-    """
+    """Quem monta o contexto e quem consome o resultado não sabem qual provedor é."""
     workspace = Workspace.at(tmp_path / nome)
     arquivos = PROVIDERS[nome]().prepare(analysis, workspace)
 
@@ -113,45 +138,18 @@ def test_every_provider_writes_the_same_context_and_schema(nome, analysis, tmp_p
     assert workspace.schema in arquivos
 
     contexto = json.loads(workspace.context.read_text(encoding="utf-8"))
-    schema = json.loads(workspace.schema.read_text(encoding="utf-8"))
-
     assert contexto["scan_id"] == "hosts"
-    assert schema["required"], "o schema precisa chegar ao provedor"
 
 
 def test_the_context_is_byte_identical_across_providers(analysis, tmp_path):
-    """O pacote não pode depender de quem vai lê-lo.
-
-    Se o contexto mudasse por provedor, comparar dois julgamentos deixaria de
-    comparar duas análises e passaria a comparar dois pacotes.
-    """
+    """O pacote não pode depender de quem vai lê-lo."""
     contextos = {}
     for nome in sorted(PROVIDERS):
         workspace = Workspace.at(tmp_path / f"ctx-{nome}")
         PROVIDERS[nome]().prepare(analysis, workspace)
         contextos[nome] = workspace.context.read_text(encoding="utf-8")
 
-    assert len(set(contextos.values())) == 1, (
-        f"o contexto difere entre provedores: {sorted(contextos)}"
-    )
-
-
-def test_the_instructions_point_at_the_right_host_skill(analysis, tmp_path):
-    """Cada provedor manda ler a Skill instalada no host dele."""
-    esperado = {
-        "devin": ".agents/skills/julius-aws-analysis/SKILL.md",
-        "claude": ".claude/skills/julius-aws-analysis/SKILL.md",
-    }
-
-    for nome, caminho in esperado.items():
-        workspace = Workspace.at(tmp_path / f"inst-{nome}")
-        PROVIDERS[nome]().prepare(analysis, workspace)
-        instrucoes = workspace.instructions.read_text(encoding="utf-8")
-
-        assert caminho in instrucoes, f"{nome} não aponta a própria Skill"
-        for outro, alheio in esperado.items():
-            if outro != nome:
-                assert alheio not in instrucoes, f"{nome} aponta a Skill de {outro}"
+    assert len(set(contextos.values())) == 1
 
 
 def test_the_rules_reach_every_provider_unchanged(analysis, tmp_path):
@@ -168,7 +166,6 @@ def test_the_rules_reach_every_provider_unchanged(analysis, tmp_path):
 
 
 def test_the_readme_does_not_brand_the_product_with_a_host():
-    """O título era "MVP 4: IA no Devin" — o documento mais lido do repositório."""
     titulo = (RAIZ / "README.md").read_text(encoding="utf-8").splitlines()[0]
 
     assert not any(

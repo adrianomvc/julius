@@ -98,11 +98,10 @@ def test_the_engine_fields_reach_the_artifact():
 def test_the_generator_holds_no_prose_of_its_own():
     """O gerador monta; ele não guarda o texto.
 
-    É o antipadrão do gerador equivalente no Alfred, que carrega a prosa inteira
-    do registry dentro do `.py`: o arquivo passa a ser "gerado" e o conteúdo
-    passa a morar no gerador — uma segunda fonte de verdade, escondida onde
-    ninguém procura. Aqui nenhuma frase do corpo canônico pode aparecer no
-    módulo que o monta.
+    O antipadrão é o gerador que carrega a prosa inteira dentro do `.py`: o
+    arquivo passa a ser "gerado" e o conteúdo passa a morar no gerador — uma
+    segunda fonte de verdade, escondida onde ninguém procura. Aqui nenhuma frase
+    do corpo canônico pode aparecer no módulo que o monta.
     """
     fonte = (
         RAIZ / "julius" / "analysis" / "skill_registry.py"
