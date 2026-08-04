@@ -15,6 +15,11 @@ from julius.analysis import (
     validate_result_file,
     write_validated_result,
 )
+from julius.analysis.domain_worker import (
+    InboxDomainProvider,
+    merge_results,
+    process_next,
+)
 from julius.cli._shared import (
     _DEFAULT_INPUT,
     _DEFAULT_SIGNALS,
@@ -68,6 +73,68 @@ def agent_next(
     typer.echo(f"Payload verificado: {checkpoint.payload_path}")
     typer.echo(f"Hash: {checkpoint.payload_hash}")
     typer.echo("Nenhum cliente boto3 foi entregue ao worker.")
+
+
+@agent_app.command("work-domains")
+def agent_work_domains(
+    run_store: str = typer.Option(..., "--run-store", help="Ledger DuckDB da fila."),
+    inbox: str = typer.Option(..., "--inbox", help="Respostas por conta/scan/hash."),
+    output: str = typer.Option(
+        "data/state/contextual-results",
+        "--output",
+        "-o",
+        help="Resultados validados e imutáveis.",
+    ),
+    provider_name: str = typer.Option("file", "--provider-name"),
+    max_jobs: int = typer.Option(10, "--max-jobs", min=1, max=1_000),
+    recover_running: bool = typer.Option(
+        False,
+        "--recover-running",
+        help="Recoloca jobs abandonados em pending antes de iniciar.",
+    ),
+) -> None:
+    """Processa pacotes de domínio sem sessão ou cliente boto3."""
+    provider = InboxDomainProvider(inbox, name=provider_name)
+    with RunStore(run_store) as store:
+        if recover_running:
+            recovered = store.requeue_running()
+            typer.echo(f"Jobs abandonados recuperados: {recovered}")
+        processed = 0
+        for _ in range(max_jobs):
+            outcome = process_next(store, provider, output)
+            if outcome is None:
+                break
+            if outcome.status == "pending":
+                typer.echo(f"Resposta ainda ausente: {outcome.result_path}")
+                break
+            processed += 1
+            typer.echo(
+                f"Job {outcome.task_id}: {outcome.status}"
+                + (f" · {outcome.result_path}" if outcome.result_path else "")
+                + (
+                    f" · {outcome.error_category}"
+                    if outcome.error_category
+                    else ""
+                )
+            )
+    typer.echo(f"Jobs processados: {processed}. Nenhum cliente boto3 foi criado.")
+
+
+@agent_app.command("merge-domains")
+def agent_merge_domains(
+    run_store: str = typer.Option(..., "--run-store", help="Ledger DuckDB da fila."),
+    account_id: str = typer.Option(..., "--account-id"),
+    scan_id: str = typer.Option(..., "--scan-id"),
+    output: str = typer.Option(..., "--output", "-o"),
+) -> None:
+    """Compõe anexos contextuais validados sem regravar o dataset oficial."""
+    try:
+        with RunStore(run_store) as store:
+            path = merge_results(store, account_id, scan_id, output)
+    except (FileNotFoundError, json.JSONDecodeError, KeyError, ValueError) as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    typer.echo(f"Contexto por domínio mesclado: {path}")
+    typer.echo("O dataset determinístico não foi alterado.")
 
 
 @agent_app.command("prepare")

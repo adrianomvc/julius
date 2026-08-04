@@ -55,6 +55,19 @@ class DomainCheckpoint:
     sources: dict[str, str]
 
 
+@dataclass(frozen=True)
+class ContextualResult:
+    task_id: str
+    account_id: str
+    scan_id: str
+    domain: str
+    context_hash: str
+    provider: str
+    status: str
+    result_path: str
+    result_hash: str
+
+
 class RunStore:
     """Ledger DuckDB local; nenhum worker de IA toca a coleta boto3."""
 
@@ -114,6 +127,18 @@ class RunStore:
                 error_category VARCHAR NOT NULL,
                 created_at TIMESTAMP NOT NULL,
                 updated_at TIMESTAMP NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS contextual_results (
+                task_id VARCHAR PRIMARY KEY,
+                account_id VARCHAR NOT NULL,
+                scan_id VARCHAR NOT NULL,
+                domain VARCHAR NOT NULL,
+                context_hash VARCHAR NOT NULL,
+                provider VARCHAR NOT NULL,
+                status VARCHAR NOT NULL,
+                result_path VARCHAR NOT NULL,
+                result_hash VARCHAR NOT NULL,
+                created_at TIMESTAMP NOT NULL
             );
             """
         )
@@ -425,6 +450,69 @@ class RunStore:
                 scan_id,
                 "enriched" if cross_service_completed else "ai_partial",
             )
+
+    def record_contextual_result(
+        self,
+        task_id: str,
+        *,
+        provider: str,
+        status: str,
+        result_path: str,
+        result_hash: str,
+    ) -> None:
+        """Anexa resultado somente ao job exato que está reservado."""
+        if status not in {"enriched", "needs_evidence"}:
+            raise ValueError(f"estado contextual inválido: {status}")
+        with self._lock:
+            row = self._db.execute(
+                """SELECT account_id, scan_id, domain, context_hash, status
+                   FROM ai_jobs WHERE task_id=?""",
+                [task_id],
+            ).fetchone()
+            if row is None:
+                raise KeyError(f"job desconhecido: {task_id}")
+            if str(row[4]) != "running":
+                raise ValueError(f"job contextual não reservado: {task_id}")
+            existing = self._db.execute(
+                """SELECT provider, status, result_path, result_hash
+                   FROM contextual_results WHERE task_id=?""",
+                [task_id],
+            ).fetchone()
+            expected = (provider, status, result_path, result_hash)
+            if existing is not None:
+                if tuple(str(value) for value in existing) != expected:
+                    raise ValueError(f"resultado contextual divergente: {task_id}")
+                return
+            self._db.execute(
+                """
+                INSERT INTO contextual_results VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                [
+                    task_id,
+                    str(row[0]),
+                    str(row[1]),
+                    str(row[2]),
+                    str(row[3]),
+                    provider,
+                    status,
+                    result_path,
+                    result_hash,
+                    _now(),
+                ],
+            )
+
+    def contextual_results(
+        self, account_id: str, scan_id: str
+    ) -> list[ContextualResult]:
+        with self._lock:
+            rows = self._db.execute(
+                """SELECT task_id, account_id, scan_id, domain, context_hash,
+                          provider, status, result_path, result_hash
+                   FROM contextual_results
+                   WHERE account_id=? AND scan_id=? ORDER BY domain, task_id""",
+                [account_id, scan_id],
+            ).fetchall()
+        return [ContextualResult(*row) for row in rows]
 
 
 def file_sha256(path: str | Path) -> str:

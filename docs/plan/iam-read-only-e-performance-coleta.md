@@ -466,13 +466,13 @@ homologação na mesma conta, janela e cobertura.
 | P1 | S3 Inventory existente | Implementado localmente; homologação pendente |
 | P2 | Expandir snapshots elegíveis | Parcial: `S3 Config` pronto |
 | P2 | Checkpoints por domínio e retomada | Parcial: `RunStore` pronto |
-| P2 | Worker assíncrono e merge da IA | Planejado |
+| P2 | Worker assíncrono e merge da IA | Implementado localmente |
 | P3 | Prioridade por caminho crítico e memória | Planejado |
 | P0 | Homologação read-only na conta | Bloqueada por acesso/aprovação |
 
 ## 14. Próxima execução de implementação
 
-1. separar worker/merge da IA do pool boto3;
-2. expandir snapshots e retomada incremental por domínio;
+1. expandir snapshots e retomada incremental por domínio;
+2. implementar supersessão proativa de scans e jobs antigos;
 3. adicionar caminho crítico, backpressure e limites de memória;
 4. homologar Inventory e a policy read-only na conta somente com aprovação humana.
