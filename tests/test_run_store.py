@@ -133,3 +133,28 @@ def test_worker_claim_is_ordered_and_running_jobs_can_be_recovered(tmp_path: Pat
         assert store.requeue_running() == 1
         pending = {task.task_id: task for task in store.tasks()}
         assert pending[first_id].error_category == "worker_restarted"
+
+
+def test_new_scan_supersedes_only_older_contextual_work(tmp_path: Path) -> None:
+    account = "123456789012"
+    with RunStore(tmp_path / "runs.duckdb") as store:
+        store.create_run(account, "scan-a", status="deterministic_published")
+        old_task = store.enqueue_ai(
+            account,
+            "scan-a",
+            "s3",
+            context_hash="old",
+            payload_path="old.json",
+        )
+        store.create_run(account, "scan-m", status="collecting")
+        store.create_run(account, "scan-z", status="created")
+
+        runs, jobs = store.supersede_older_context(account, "scan-z")
+
+        assert (runs, jobs) == (1, 1)
+        assert store.run_status(account, "scan-a") == "superseded"
+        assert store.run_status(account, "scan-m") == "collecting"
+        assert store.run_status(account, "scan-z") == "created"
+        superseded = store.tasks(status="superseded")
+        assert superseded[0].task_id == old_task
+        assert superseded[0].error_category == "newer_scan"

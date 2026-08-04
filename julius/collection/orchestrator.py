@@ -7,13 +7,20 @@ identidade e percorre `SOURCES`. Fonte nova é uma linha de dado em
 
 from __future__ import annotations
 
+import hashlib
+import json
+from dataclasses import asdict, is_dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 import boto3
 
-from julius.collection.checkpoints import CheckpointStore, DomainCheckpointWriter
+from julius.collection.checkpoints import (
+    CheckpointStore,
+    DomainCheckpointWriter,
+    resume_ready_domains,
+)
 from julius.collection.collectors.last_read import apply_last_read
 from julius.collection.health import CollectionRecorder, RequiredCollectionError
 from julius.collection.models import Account
@@ -58,6 +65,7 @@ def collect_account(
     checkpoint_dir: str | Path | None = None,
     enqueue_domain_ai: bool = True,
     denied_iam_actions: frozenset[str] = frozenset(),
+    resume_checkpoints: bool = False,
 ) -> Account:
     """Coleta uma conta. `config` chega de cima e não tem default aqui.
 
@@ -125,20 +133,39 @@ def collect_account(
     )
 
     checkpoint_writer = None
+    completed_sources: frozenset[str] = frozenset()
     if run_store is not None:
         if not scan_id or checkpoint_dir is None:
             raise ValueError(
                 "scan_id e checkpoint_dir são obrigatórios quando run_store é usado"
             )
         run_store.create_run(ident, scan_id)
+        supersede = getattr(run_store, "supersede_older_context", None)
+        if not resume_checkpoints and callable(supersede):
+            supersede(ident, scan_id)
         if run_store.run_status(ident, scan_id) == "created":
             run_store.transition(ident, scan_id, "collecting")
+        fingerprint = _collection_fingerprint(
+            context,
+            collection_execution=collection_execution,
+            include_cloudtrail=include_cloudtrail,
+        )
+        if resume_checkpoints:
+            resumed, resumed_health = resume_ready_domains(
+                run_store,
+                account,
+                scan_id,
+                collection_fingerprint=fingerprint,
+            )
+            completed_sources = frozenset(resumed)
+            health.entries.extend(resumed_health)
         checkpoint_writer = DomainCheckpointWriter(
             run_store,
             checkpoint_dir,
             account,
             scan_id,
             enqueue_ai=enqueue_domain_ai,
+            collection_fingerprint=fingerprint,
         )
 
     try:
@@ -150,6 +177,7 @@ def collect_account(
             on_source_applied=(
                 checkpoint_writer.source_completed if checkpoint_writer else None
             ),
+            completed_sources=completed_sources,
         )
     except RequiredCollectionError:
         if checkpoint_writer is not None:
@@ -183,6 +211,57 @@ def collect_account(
     }:
         run_store.transition(ident, scan_id, "deterministic_ready")
     return account
+
+
+def _collection_fingerprint(
+    context: CollectionContext,
+    *,
+    collection_execution: str,
+    include_cloudtrail: bool,
+) -> str:
+    payload = {
+        "window": {
+            "start": context.window.start.isoformat(),
+            "end": context.window.end.isoformat(),
+            "days": context.window.days,
+        },
+        "scope_policy": context.scope_policy,
+        "catalog_scope": context.catalog_scope,
+        "config": context.config,
+        "touches_table": context.touches_table,
+        "athena_workgroup": context.athena_workgroup,
+        "athena_history_workgroups": context.athena_history_workgroups,
+        "athena_workgroup_roles": context.athena_workgroup_roles,
+        "athena_output": context.athena_output,
+        "include_cloudtrail": include_cloudtrail,
+        "datawarm_job": context.datawarm_job,
+        "s3_full_listing": context.s3_full_listing,
+        "s3_inventory": context.s3_inventory,
+        "sagemaker_full_metrics": context.sagemaker_full_metrics,
+        "collection_execution": collection_execution,
+        "denied_iam_actions": context.denied_iam_actions,
+    }
+    encoded = json.dumps(
+        _canonical(payload),
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode()
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _canonical(value: Any) -> Any:
+    if is_dataclass(value) and not isinstance(value, type):
+        return _canonical(asdict(value))
+    if isinstance(value, dict):
+        return {str(key): _canonical(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_canonical(item) for item in value]
+    if isinstance(value, (set, frozenset)):
+        return sorted(_canonical(item) for item in value)
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    return str(value)
 
 
 def _record_read_evidence(account: Account, health: CollectionRecorder) -> None:

@@ -7,9 +7,10 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from julius.collection.health import CollectionRecorder
-from julius.collection.models import Account
+from julius.collection.models import Account, GlueTrigger
 from julius.collection.snapshot import CollectionSnapshotStore, SnapshotPolicy
 from julius.collection.sources import (
+    SOURCES,
     CollectionContext,
     Source,
     apply_result,
@@ -125,6 +126,35 @@ def test_partial_source_is_never_saved(tmp_path: Path) -> None:
         scope=source.snapshot_policy.scope(context),
         policy=source.snapshot_policy,
     ) is None
+
+
+def test_glue_trigger_definitions_are_explicitly_snapshot_eligible(tmp_path: Path) -> None:
+    instant = datetime(2026, 8, 4, 12, tzinfo=timezone.utc)
+    source = next(item for item in SOURCES if item.name == "Glue Triggers")
+    assert source.snapshot_policy is not None
+    context = _context(CollectionSnapshotStore(tmp_path), instant)
+    trigger = GlueTrigger(name="daily", job_names=["job-a"])
+    policy = source.snapshot_policy
+    store = CollectionSnapshotStore(tmp_path, now=lambda: instant)
+
+    store.save(
+        account_id=context.account.account_id,
+        region=context.account.region,
+        source=source.name,
+        scope=policy.scope(context),
+        policy=policy,
+        value=[trigger],
+    )
+    hit = store.load(
+        account_id=context.account.account_id,
+        region=context.account.region,
+        source=source.name,
+        scope=policy.scope(context),
+        policy=policy,
+    )
+
+    assert hit is not None
+    assert hit.value == [trigger]
 
 
 def _context(

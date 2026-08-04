@@ -53,7 +53,13 @@ from julius.collection.collectors.metrics import MetricBatchCoordinator
 from julius.collection.collectors.s3_evidence import MAX_LIST_PAGES, parse_location
 from julius.collection.health import CollectionRecorder, RequiredCollectionError
 from julius.collection.iam import gaps_from_text
-from julius.collection.models import Account, CollectionHealth, IamGap, S3BucketConfig
+from julius.collection.models import (
+    Account,
+    CollectionHealth,
+    GlueTrigger,
+    IamGap,
+    S3BucketConfig,
+)
 from julius.collection.policy import ScopePolicy, policy_for_profile
 from julius.collection.scope import CatalogScope
 from julius.collection.session import S3_LISTING_WORKERS, make_client
@@ -543,6 +549,17 @@ def _s3_config_snapshot_policy() -> SnapshotPolicy:
     )
 
 
+def _glue_triggers_snapshot_policy() -> SnapshotPolicy:
+    """Definição de trigger muda pouco e não contém histórico ou métrica."""
+    return SnapshotPolicy(
+        ttl_seconds=5 * 60,
+        collector_version="glue-triggers-v1",
+        serialize=lambda values: [asdict(value) for value in values],
+        deserialize=lambda values: [GlueTrigger(**value) for value in values],
+        scope=lambda ctx: {"scope_profile": ctx.scope_policy.profile},
+    )
+
+
 # --------------------------------------------------------------------------
 # Ajustes pós-coleta que não cabem num atributo
 # --------------------------------------------------------------------------
@@ -951,6 +968,7 @@ SOURCES: tuple[Source, ...] = (
         count=len,
         impact="frequência e grafo de processos podem ficar incompletos",
         next_action="validar glue:GetTriggers",
+        snapshot_policy=_glue_triggers_snapshot_policy(),
     ),
     Source(
         name="Glue DataBrew",

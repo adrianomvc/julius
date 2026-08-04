@@ -15,9 +15,11 @@ from typing import Protocol
 
 from julius.collection.models import Account, CollectionHealth
 from julius.collection.normalizers.dump import account_fields_to_dataset
+from julius.collection.normalizers.loader import account_from_dataset
+from julius.collection.settings import DATASET_SCHEMA_VERSION
 from julius.collection.sources import Source
 
-CHECKPOINT_SCHEMA_VERSION = "1.0"
+CHECKPOINT_SCHEMA_VERSION = "2.0"
 
 DOMAIN_SOURCES: dict[str, frozenset[str]] = {
     "glue": frozenset(
@@ -162,6 +164,7 @@ class DomainCheckpointWriter:
         scan_id: str,
         *,
         enqueue_ai: bool = True,
+        collection_fingerprint: str = "",
     ) -> None:
         if not scan_id:
             raise ValueError("scan_id é obrigatório para checkpoints")
@@ -170,6 +173,7 @@ class DomainCheckpointWriter:
         self.account = account
         self.scan_id = scan_id
         self.enqueue_ai = enqueue_ai
+        self.collection_fingerprint = collection_fingerprint
         self._statuses: dict[str, str] = {}
         self._health: dict[str, list[CollectionHealth]] = {}
         self._closed: set[str] = set()
@@ -212,6 +216,7 @@ class DomainCheckpointWriter:
             },
             "scan_id": self.scan_id,
             "domain": domain,
+            "collection_fingerprint": self.collection_fingerprint,
             "status": status,
             "window": {
                 "start": self.account.window_start,
@@ -283,6 +288,99 @@ class DomainCheckpointWriter:
         self._finished = True
         if first_error is not None and raise_errors:
             raise first_error
+
+
+def resume_ready_domains(
+    store: CheckpointStore,
+    account: Account,
+    scan_id: str,
+    *,
+    collection_fingerprint: str,
+) -> tuple[set[str], list[CollectionHealth]]:
+    """Reidrata somente domínios completos e exatamente compatíveis."""
+    checkpoints = getattr(store, "checkpoints", None)
+    verified = getattr(store, "verified_checkpoint", None)
+    if not callable(checkpoints) or not callable(verified):
+        return set(), []
+    resumed: set[str] = set()
+    health: list[CollectionHealth] = []
+    for record in checkpoints(account.account_id, scan_id):
+        domain = str(getattr(record, "domain", ""))
+        if domain not in DOMAIN_FIELDS or getattr(record, "status", "") != "ready":
+            continue
+        try:
+            current = verified(account.account_id, scan_id, domain)
+            raw = json.loads(Path(current.payload_path).read_text(encoding="utf-8"))
+            if not _compatible_checkpoint(
+                raw,
+                account,
+                scan_id,
+                domain,
+                collection_fingerprint,
+                current.sources,
+            ):
+                continue
+            loaded = account_from_dataset(
+                {
+                    "dataset_schema_version": DATASET_SCHEMA_VERSION,
+                    "account": account.account_id,
+                    "scope": {
+                        "profile": account.scope_profile,
+                        "s3_mode": account.s3_mode,
+                    },
+                    "region": account.region,
+                    "window": raw.get("window", {}),
+                    "collection_health": raw.get("collection_health", []),
+                    **dict(raw.get("payload") or {}),
+                }
+            )
+        except (KeyError, OSError, TypeError, ValueError, json.JSONDecodeError):
+            continue
+        _apply_domain(account, loaded, domain)
+        for entry in loaded.collection_health:
+            entry.result_origin = "resumed"
+            entry.duration_ms = 0
+            health.append(entry)
+        resumed.update(DOMAIN_SOURCES[domain])
+    return resumed, health
+
+
+def _compatible_checkpoint(
+    raw: dict,
+    account: Account,
+    scan_id: str,
+    domain: str,
+    fingerprint: str,
+    sources: dict[str, str],
+) -> bool:
+    account_raw = raw.get("account") or {}
+    return (
+        raw.get("checkpoint_schema_version") == CHECKPOINT_SCHEMA_VERSION
+        and raw.get("scan_id") == scan_id
+        and raw.get("domain") == domain
+        and raw.get("collection_fingerprint") == fingerprint
+        and account_raw.get("id") == account.account_id
+        and account_raw.get("region") == account.region
+        and raw.get("window", {}).get("start") == account.window_start
+        and raw.get("window", {}).get("end") == account.window_end
+        and set(sources) == set(DOMAIN_SOURCES[domain])
+        and all(status == "ok" for status in sources.values())
+    )
+
+
+def _apply_domain(target: Account, loaded: Account, domain: str) -> None:
+    for field in DOMAIN_FIELDS[domain]:
+        if field == "stepfunctions_operational":
+            for suffix in (
+                "map_backlog",
+                "open_executions",
+                "service_integration_failures",
+                "service_integration_timeouts",
+            ):
+                name = f"stepfunctions_{suffix}"
+                setattr(target, name, getattr(loaded, name))
+            continue
+        setattr(target, field, getattr(loaded, field))
 
 
 def _checkpoint_status(statuses) -> str:

@@ -142,6 +142,36 @@ def test_dependency_is_applied_before_dependent_source_starts():
     assert context.account.schedules == ["schedule-for-machine"]
 
 
+def test_resumed_source_satisfies_dependency_without_new_aws_work():
+    calls: list[str] = []
+    sources = (
+        _source(
+            "inventário",
+            lambda _ctx: calls.append("inventário") or ["new"],
+            into="state_machines",
+        ),
+        _source(
+            "dependente",
+            lambda ctx: calls.append("dependente")
+            or [f"schedule-for-{ctx.account.state_machines[0]}"],
+            into="schedules",
+            depends_on=frozenset({"inventário"}),
+        ),
+    )
+    account = Account(account_id="123456789012", state_machines=["resumed"])
+    context = _context(account)
+
+    run_sources(
+        sources,
+        context,
+        CollectionRecorder(),
+        completed_sources=frozenset({"inventário"}),
+    )
+
+    assert calls == ["dependente"]
+    assert account.schedules == ["schedule-for-resumed"]
+
+
 def test_serial_mode_is_the_semantic_rollback():
     sources = (
         _source("inventário", lambda _ctx: ["machine"], into="state_machines"),

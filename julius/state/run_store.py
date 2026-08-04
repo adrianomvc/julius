@@ -14,7 +14,7 @@ _RUN_TRANSITIONS = {
     "collecting": {"collection_partial", "deterministic_ready", "cancelled"},
     "collection_partial": {"deterministic_ready", "cancelled"},
     "deterministic_ready": {"deterministic_published", "cancelled"},
-    "deterministic_published": {"ai_pending", "enriched", "ai_failed"},
+    "deterministic_published": {"ai_pending", "enriched", "ai_failed", "superseded"},
     "ai_pending": {"ai_partial", "enriched", "ai_failed", "superseded"},
     "ai_partial": {"enriched", "ai_failed", "superseded"},
     "ai_failed": {"ai_pending", "superseded"},
@@ -367,6 +367,73 @@ class RunStore:
                 [error_category, _now()],
             )
         return count
+
+    def supersede_older_context(
+        self, account_id: str, keep_scan_id: str
+    ) -> tuple[int, int]:
+        """Arquiva somente fases contextuais anteriores ao scan corrente.
+
+        Runs em ``collecting``/``collection_partial`` podem ser outra coleta
+        legítima em paralelo e nunca são tocados aqui.
+        """
+        eligible = (
+            "deterministic_published",
+            "ai_pending",
+            "ai_partial",
+            "ai_failed",
+        )
+        with self._lock:
+            self._db.execute("BEGIN TRANSACTION")
+            try:
+                keep = self._db.execute(
+                    """SELECT created_at FROM pipeline_runs
+                       WHERE account_id=? AND scan_id=?""",
+                    [account_id, keep_scan_id],
+                ).fetchone()
+                if keep is None:
+                    raise KeyError(f"run desconhecido: {account_id}/{keep_scan_id}")
+                older = self._db.execute(
+                    """SELECT scan_id FROM pipeline_runs
+                       WHERE account_id=? AND scan_id<>?
+                         AND (created_at < ? OR (created_at = ? AND scan_id < ?))
+                         AND status IN (?, ?, ?, ?)""",
+                    [
+                        account_id,
+                        keep_scan_id,
+                        keep[0],
+                        keep[0],
+                        keep_scan_id,
+                        *eligible,
+                    ],
+                ).fetchall()
+                scan_ids = [str(row[0]) for row in older]
+                if not scan_ids:
+                    self._db.execute("COMMIT")
+                    return 0, 0
+                placeholders = ",".join("?" for _ in scan_ids)
+                task_count = self._db.execute(
+                    f"""SELECT count(*) FROM ai_jobs
+                        WHERE account_id=? AND scan_id IN ({placeholders})
+                          AND status IN ('pending', 'running', 'failed')""",  # noqa: S608
+                    [account_id, *scan_ids],
+                ).fetchone()
+                self._db.execute(
+                    f"""UPDATE ai_jobs SET status='superseded',
+                               error_category='newer_scan', updated_at=?
+                        WHERE account_id=? AND scan_id IN ({placeholders})
+                          AND status IN ('pending', 'running', 'failed')""",  # noqa: S608
+                    [_now(), account_id, *scan_ids],
+                )
+                self._db.execute(
+                    f"""UPDATE pipeline_runs SET status='superseded', updated_at=?
+                        WHERE account_id=? AND scan_id IN ({placeholders})""",  # noqa: S608
+                    [_now(), account_id, *scan_ids],
+                )
+                self._db.execute("COMMIT")
+            except BaseException:
+                self._db.execute("ROLLBACK")
+                raise
+        return len(scan_ids), int(task_count[0]) if task_count is not None else 0
 
     def task_for_context(
         self,

@@ -13,6 +13,7 @@ from julius.collection.checkpoints import (
     DOMAIN_FIELDS,
     DOMAIN_SOURCES,
     DomainCheckpointWriter,
+    resume_ready_domains,
 )
 from julius.collection.models import Account, AthenaQuery, CollectionHealth
 from julius.collection.normalizers.dump import (
@@ -177,3 +178,62 @@ def test_domain_serializer_matches_public_dataset_schema() -> None:
         assert account_fields_to_dataset(account, fields) == {
             field: full[field] for field in fields
         }
+
+
+def test_ready_domain_resumes_only_with_same_fingerprint(tmp_path: Path) -> None:
+    original = Account(
+        account_id=ACCOUNT,
+        scan_id=SCAN,
+        region="sa-east-1",
+        window_start="2026-07-01",
+        window_end="2026-07-31",
+        window_days=30,
+    )
+    original.athena_queries = [AthenaQuery(query_id="resumed-query")]
+    with RunStore(tmp_path / "runs.duckdb") as store:
+        store.create_run(ACCOUNT, SCAN, status="collecting")
+        writer = DomainCheckpointWriter(
+            store,
+            tmp_path / "payloads",
+            original,
+            SCAN,
+            collection_fingerprint="same-config",
+        )
+        _close_domain(writer, "athena")
+        writer.wait()
+        resumed_account = Account(
+            account_id=ACCOUNT,
+            scan_id=SCAN,
+            region="sa-east-1",
+            window_start="2026-07-01",
+            window_end="2026-07-31",
+            window_days=30,
+        )
+
+        sources, health = resume_ready_domains(
+            store,
+            resumed_account,
+            SCAN,
+            collection_fingerprint="same-config",
+        )
+
+        assert sources == set(DOMAIN_SOURCES["athena"])
+        assert resumed_account.athena_queries[0].query_id == "resumed-query"
+        assert health and all(entry.result_origin == "resumed" for entry in health)
+
+        mismatch = Account(
+            account_id=ACCOUNT,
+            scan_id=SCAN,
+            region="sa-east-1",
+            window_start="2026-07-01",
+            window_end="2026-07-31",
+            window_days=30,
+        )
+        skipped, _ = resume_ready_domains(
+            store,
+            mismatch,
+            SCAN,
+            collection_fingerprint="changed-config",
+        )
+        assert skipped == set()
+        assert mismatch.athena_queries == []

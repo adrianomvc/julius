@@ -139,6 +139,14 @@ def collect(
             "pacotes imutáveis sem esperar o restante da coleta."
         ),
     ),
+    resume_scan_id: str = typer.Option(
+        "",
+        "--resume-scan-id",
+        help=(
+            "Retoma domínios ready do mesmo scan quando hash, janela, escopo "
+            "e opções coincidirem; requer --run-store."
+        ),
+    ),
     checkpoint_dir: str = typer.Option(
         "",
         "--checkpoint-dir",
@@ -191,6 +199,8 @@ def collect(
         raise typer.BadParameter(
             "--collection-execution deve ser parallel ou serial"
         )
+    if resume_scan_id and not run_store:
+        raise typer.BadParameter("--resume-scan-id requer --run-store")
     if bootstrap and cadence == "monthly":
         raise typer.BadParameter(
             "--bootstrap não se aplica a --cadence monthly: o mês-calendário é "
@@ -245,7 +255,9 @@ def collect(
     except ValueError as exc:
         raise typer.BadParameter(str(exc)) from exc
     pipeline_store = RunStore(run_store) if run_store else None
-    scan_id = new_scan_id() if pipeline_store is not None else ""
+    scan_id = ""
+    if pipeline_store is not None:
+        scan_id = resume_scan_id or new_scan_id()
     resolved_checkpoint_dir = (
         Path(checkpoint_dir)
         if checkpoint_dir
@@ -287,6 +299,7 @@ def collect(
                 for action in denied_iam_actions.split(",")
                 if action.strip()
             ),
+            resume_checkpoints=bool(resume_scan_id),
         )
     except RequiredCollectionError as exc:
         if pipeline_store is not None:

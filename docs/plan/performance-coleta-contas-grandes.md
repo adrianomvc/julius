@@ -564,10 +564,11 @@ diferentes nunca são misturados.
 ### Onda 6 — snapshots e incremental
 
 **Estado:** parcialmente implementada. O store versionado, telemetria de
-hit/miss e a primeira política segura (`S3 Config`, TTL de 15 minutos) estão
-disponíveis com `julius collect --snapshot-dir DIRETÓRIO`. Métricas, custos e
-históricos continuam sempre frescos. A expansão para outras fontes depende de
-separar configuração estável de estado operacional volátil em seus payloads.
+hit/miss e políticas seguras para `S3 Config` (TTL de 15 minutos) e
+`Glue Triggers` (TTL de 5 minutos) estão disponíveis com
+`julius collect --snapshot-dir DIRETÓRIO`. Métricas, custos e históricos
+continuam sempre frescos. Novas fontes só entram depois de separar configuração
+estável de estado operacional volátil em seus payloads.
 
 **Entrega**
 
@@ -620,6 +621,12 @@ persiste checkpoints por domínio e publica o dataset determinístico sem espera
 fila contextual. `agent next --run-store` reserva atomicamente o próximo pacote,
 valida seu hash e entrega somente caminho, conta, scan e domínio — nunca sessão ou
 cliente AWS. Jobs `running` podem voltar a `pending` após queda do worker.
+
+**Ampliado localmente em 2026-08-04:** `collect --resume-scan-id` reidrata apenas
+domínios `ready` do mesmo scan cujo arquivo, schema, conta, região, janela,
+fontes e fingerprint de configuração ainda coincidam. O DAG trata essas fontes
+como concluídas e executa somente o restante. Um scan novo marca runs e jobs
+contextuais anteriores como `superseded`, sem tocar outra coleta ainda ativa.
 
 ### Onda 9 — análise contextual por checkpoint
 

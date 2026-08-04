@@ -126,6 +126,11 @@ class UnsupportedDatasetVersionError(RuntimeError):
 
 def load_account(path: str | Path) -> Account:
     raw = json.loads(Path(path).read_text(encoding="utf-8"))
+    return account_from_dataset(raw)
+
+
+def account_from_dataset(raw: dict) -> Account:
+    """Carrega payload já decodificado; usado por retomada de domínio validada."""
     version = int(raw.get("dataset_schema_version", 1))
     if version != DATASET_SCHEMA_VERSION:
         raise UnsupportedDatasetVersionError(version)
