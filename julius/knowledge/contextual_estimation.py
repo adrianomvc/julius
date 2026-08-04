@@ -36,6 +36,18 @@ _ALLOWED = {
     "SM-CODE-CPU-ONLY-ON-GPU": "sagemaker_gpu_to_cpu_instance_v1",
     "SFN-STANDARD-TO-EXPRESS": "sfn_standard_to_express_v1",
     "GLUE-CODE-SHUFFLE": "glue_shuffle_reduction_v1",
+    # A mesma conta responde as três, e a razão está no que a fórmula pede:
+    # `expected_reduction` é uma fração da duração do job, e nas três o que se
+    # corrige é a distribuição do dado entre executores. `spark.sql.shuffle.partitions`
+    # mal dimensionado e `coalesce(1)` produzem o mesmo gargalo que um join sem
+    # chave revisada — e o gate de `_shuffle` é o mesmo: sem shuffle ou spill medido,
+    # nenhuma delas fecha.
+    #
+    # Ligar só uma das três era acidente de quem escreveu a primeira, não decisão:
+    # `rules/glue/code/rules.py::_has_runtime_correlation` já as tratava como a
+    # mesma classe de evidência.
+    "GLUE-CODE-SHUFFLE-PARTITIONS": "glue_shuffle_reduction_v1",
+    "GLUE-CODE-SINGLE-PARTITION": "glue_shuffle_reduction_v1",
 }
 
 #: O parâmetro que cada método espera em `AIEstimationProposal.target`, e o

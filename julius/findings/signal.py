@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, fields
 
 
 @dataclass(frozen=True)
@@ -46,6 +46,11 @@ class PotentialRange:
     #: O que a faixa assume e ninguém verificou.
     caveat: str
     quality: str = "potential"
+    #: O custo do ativo sobre o qual a faixa foi calculada. Guardado porque `basis`
+    #: é prosa e não dá para conferir conta com prosa: sem o número, ninguém
+    #: consegue verificar se três faixas do mesmo ativo somam mais do que ele custa
+    #: — que é exatamente o erro que elas produzem quando ninguém olha.
+    baseline: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -72,6 +77,30 @@ class Signal:
     #: há base — e `None` é resposta melhor que zero, que se leria como "não há
     #: o que ganhar aqui".
     potential_range: PotentialRange | None = None
+    #: A que ação de remediação este sinal pertence, e quanto custa descobrir se
+    #: ele vale. Os dois vêm do catálogo em `knowledge/remediation.py` e chegam
+    #: preenchidos por `classify` — a camada `findings` não pode importar
+    #: `knowledge`, então o resultado viaja aqui em vez de ser consultado.
+    #:
+    #: O esforço é o de **medir**, nunca o de corrigir: `Recommendation.difficulty`
+    #: já responde a segunda pergunta. O default é o degrau mais caro porque sinal
+    #: não classificado não pode competir por atenção com o que já foi medido.
+    remediation_family: str = ""
+    measurement_effort: int = 5
+
+    @property
+    def next_action(self) -> str:
+        """O próximo passo do usuário, e ele nunca é "corrigir".
+
+        Um sinal é uma pergunta em aberto; agir sobre ele antes de responder é
+        exatamente o que este tipo existe para evitar. A frase sai de
+        `missing_evidence`, que cada regra já escreve dizendo o que faltou — o que
+        faltava era o verbo, e sem ele o relatório mostrava uma observação onde
+        precisava mostrar uma tarefa.
+        """
+        if not self.missing_evidence:
+            return "Julgar o padrão contra o artefato completo"
+        return "Levantar: " + "; ".join(self.missing_evidence)
 
     def fingerprint(self, account: str) -> str:
         """Identidade estável entre execuções, para religar sinal e veredito.
@@ -103,4 +132,30 @@ class Signal:
         return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:16]
 
     def to_dict(self) -> dict:
-        return asdict(self)
+        # `asdict` não enxerga propriedade, e `next_action` é o campo que o
+        # relatório mostra — sem esta linha o usuário recebe a observação e não a
+        # tarefa. Mesmo motivo de `Opportunity.to_dict` publicar seus derivados.
+        payload = asdict(self)
+        payload["next_action"] = self.next_action
+        return payload
+
+    @classmethod
+    def from_dict(cls, payload: dict) -> Signal:
+        """O inverso de `to_dict`, e ele não é `cls(**payload)`.
+
+        Duas assimetrias, e as duas mordem tarde. A primeira é `next_action`, que
+        `to_dict` publica e o construtor não aceita — um pacote gravado por
+        `agent prepare` deixaria de virar `Signal` em `agent validate`, e o erro
+        apareceria no fim do fluxo contextual, longe da linha que o causou.
+
+        A segunda é `potential_range`: `asdict` achata a faixa em dicionário, e
+        reconstruir sem cuidado devolve um `Signal` cujo `potential_range` é um
+        `dict`. Nada falha na hora — falha quando alguém lê `.expected` para
+        ordenar, e aí o sinal com faixa some do topo da lista sem explicação.
+        """
+        conhecidos = {item.name for item in fields(cls)}
+        dados = {k: v for k, v in payload.items() if k in conhecidos}
+        faixa = dados.get("potential_range")
+        if isinstance(faixa, dict):
+            dados["potential_range"] = PotentialRange(**faixa)
+        return cls(**dados)

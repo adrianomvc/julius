@@ -243,6 +243,34 @@
         "type": "new_opportunity"
       },
       {
+        "asset": "gera_base_legado",
+        "current": 0.0,
+        "previous": null,
+        "rule_id": "GLUE-TIMEOUT-EXCESSIVE",
+        "type": "new_opportunity"
+      },
+      {
+        "asset": "agrega_vendas",
+        "current": 0.0,
+        "previous": null,
+        "rule_id": "GLUE-TIMEOUT-EXCESSIVE",
+        "type": "new_opportunity"
+      },
+      {
+        "asset": "treina_features",
+        "current": 0.0,
+        "previous": null,
+        "rule_id": "GLUE-TIMEOUT-EXCESSIVE",
+        "type": "new_opportunity"
+      },
+      {
+        "asset": "treina_features",
+        "current": 0.0,
+        "previous": null,
+        "rule_id": "GLUE-AUTOSCALING",
+        "type": "new_opportunity"
+      },
+      {
         "asset": "etl-explore",
         "current": 77.92,
         "previous": null,
@@ -257,6 +285,27 @@
         "type": "new_opportunity"
       },
       {
+        "asset": "sync_parceiros",
+        "current": 63.0,
+        "previous": null,
+        "rule_id": "GLUE-FLEX-CANDIDATE",
+        "type": "new_opportunity"
+      },
+      {
+        "asset": "processa_interacoes",
+        "current": 0.0,
+        "previous": null,
+        "rule_id": "GLUE-OVERPROVISIONED",
+        "type": "new_opportunity"
+      },
+      {
+        "asset": "agrega_vendas",
+        "current": 0.0,
+        "previous": null,
+        "rule_id": "GLUE-OVERPROVISIONED",
+        "type": "new_opportunity"
+      },
+      {
         "asset": "agrega_vendas",
         "current": 43.76,
         "previous": null,
@@ -268,6 +317,13 @@
         "current": 50.4,
         "previous": null,
         "rule_id": "ATHENA-EXCESSIVE-SCAN",
+        "type": "new_opportunity"
+      },
+      {
+        "asset": "relatorio_diario",
+        "current": 25.2,
+        "previous": null,
+        "rule_id": "ATHENA-RESULT-REUSE",
         "type": "new_opportunity"
       },
       {
@@ -303,6 +359,27 @@
         "current": 1.64,
         "previous": null,
         "rule_id": "ATHENA-EXCESSIVE-SCAN",
+        "type": "new_opportunity"
+      },
+      {
+        "asset": "processa_interacoes",
+        "current": 0.0,
+        "previous": null,
+        "rule_id": "GLUE-VERSION-OLD",
+        "type": "new_opportunity"
+      },
+      {
+        "asset": "dw-legado",
+        "current": 0.0,
+        "previous": null,
+        "rule_id": "REDSHIFT-OVERSIZED",
+        "type": "new_opportunity"
+      },
+      {
+        "asset": "processa_interacoes",
+        "current": 0.0,
+        "previous": null,
+        "rule_id": "GLUE-BOOKMARK-OFF",
         "type": "new_opportunity"
       },
       {
@@ -369,9 +446,9 @@
       "confidence": 0.86,
       "confidence_label": "Alta",
       "data_sources": [
+        "Redshift DescribeClusters",
         "CloudWatch",
-        "Cost Explorer GetCostAndUsage",
-        "Redshift DescribeClusters"
+        "Cost Explorer GetCostAndUsage"
       ],
       "difficulty_score": 2,
       "doc_links": [
@@ -424,14 +501,13 @@
         "CPU média 2%",
         "30 dias com métrica",
         "compute rateado 1412.60 USD na janela",
-        "histórico de query não coletado: SVV_*/STL_* exigem acesso de banco",
-        "Achados relacionados no mesmo ativo: Cluster com CPU baixa até no pico (REDSHIFT-OVERSIZED)"
+        "histórico de query não coletado: SVV_*/STL_* exigem acesso de banco"
       ],
       "evidence_coverage": 1.0,
       "evidence_quality": "allocated",
       "evidence_refs": [],
       "execution_priority": 43,
-      "finding": "Cluster sem conexão observada na janela (+1 achado relacionado)",
+      "finding": "Cluster sem conexão observada na janela",
       "first_seen": "",
       "gain_score": 100,
       "how_to_apply": "Confirmar com o dono se o cluster ainda é necessário; havendo uso esporádico, agendar pausa fora da janela de trabalho.",
@@ -452,10 +528,10 @@
       "process_cost_window": null,
       "process_criticality": 0.0,
       "recommended_action": "Avaliar pausa agendada ou desprovisionamento do cluster",
+      "remediation_family": "idle_capacity",
       "risks": [
         "cluster pausado não aceita conexão: confirmar janelas de carga",
-        "conexões podem existir sem aparecer na métrica agregada por dia",
-        "Ação relacionada REDSHIFT-OVERSIZED: Avaliar elastic resize para menos nós. Validar: Comparar CPU, duração de query e fila antes e depois do resize."
+        "conexões podem existir sem aparecer na métrica agregada por dia"
       ],
       "rule_id": "REDSHIFT-IDLE-CLUSTER",
       "rule_version": "1.0.0",
@@ -565,6 +641,7 @@
       "process_cost_window": 535.35,
       "process_criticality": 0.4,
       "recommended_action": "Revisar: descomissionar/consolidar ou formalizar como produto",
+      "remediation_family": "data_demand",
       "risks": [
         "o único consumidor pode ser crítico",
         "reduzir frequência pode defasar o dado"
@@ -679,6 +756,7 @@
       "process_cost_window": 52.8,
       "process_criticality": 0.0,
       "recommended_action": "Pausar/descomissionar o processo que gera a base sem uso",
+      "remediation_family": "data_demand",
       "risks": [
         "consumidor não mapeado",
         "base pode ser exigência regulatória/retenção"
@@ -769,7 +847,7 @@
         "taxa de falha 25% em 60 execuções observadas",
         "~15 execuções falhas/mês cobrando DPU-hora",
         "max_retries=3",
-        "Achados relacionados no mesmo ativo: Job batch elegível a ExecutionClass FLEX (GLUE-FLEX-CANDIDATE); Timeout muito acima da duração média (GLUE-TIMEOUT-EXCESSIVE)"
+        "Achados relacionados no mesmo ativo: Timeout muito acima da duração média (GLUE-TIMEOUT-EXCESSIVE)"
       ],
       "evidence_coverage": 1.0,
       "evidence_quality": "modeled",
@@ -786,7 +864,7 @@
         }
       ],
       "execution_priority": 6,
-      "finding": "Job falha com frequência e cobra DPU-hora à toa (+2 achados relacionados)",
+      "finding": "Job falha com frequência e cobra DPU-hora à toa (+1 achado relacionado)",
       "first_seen": "",
       "gain_score": 21,
       "how_to_apply": "Investigar os logs/Spark UI das execuções que falham, corrigir a causa (dados/OOM/permissão) e revisar MaxRetries.",
@@ -807,9 +885,9 @@
       "process_cost_window": 264.0,
       "process_criticality": 0.0,
       "recommended_action": "Corrigir a causa das falhas/retries",
+      "remediation_family": "failure_waste",
       "risks": [
         "a causa pode estar em dados/dependência externa",
-        "Ação relacionada GLUE-FLEX-CANDIDATE: Mudar ExecutionClass para FLEX. Validar: Comparar custo por execução e tempo de conclusão por 2 semanas.",
         "Ação relacionada GLUE-TIMEOUT-EXCESSIVE: Alinhar o timeout à duração real (com folga). Validar: Confirmar que execuções normais não são cortadas e que travadas param cedo."
       ],
       "rule_id": "GLUE-FAILING-JOB",
@@ -922,6 +1000,7 @@
       "process_cost_window": null,
       "process_criticality": 0.0,
       "recommended_action": "Apagar os resultados de query além da janela de reutilização",
+      "remediation_family": "lifecycle_cleanup",
       "risks": [
         "confirmar que nenhum processo relê estes objetos"
       ],
@@ -1033,6 +1112,7 @@
       "process_cost_window": null,
       "process_criticality": 0.0,
       "recommended_action": "Abortar os uploads multipart pendentes",
+      "remediation_family": "lifecycle_cleanup",
       "risks": [
         "upload em andamento de uma carga longa seria interrompido"
       ],
@@ -1149,6 +1229,7 @@
       "process_cost_window": 535.35,
       "process_criticality": 0.0,
       "recommended_action": "Apagar os event logs anteriores à janela de análise",
+      "remediation_family": "lifecycle_cleanup",
       "risks": [
         "confirmar que nenhum processo relê estes objetos",
         "listagem parcial: o volume real pode ser maior"
@@ -1266,6 +1347,7 @@
       "process_cost_window": null,
       "process_criticality": 0.0,
       "recommended_action": "Habilitar ou reduzir o idle shutdown",
+      "remediation_family": "idle_capacity",
       "risks": [
         "shutdown pode interromper sessão com trabalho não salvo"
       ],
@@ -1297,10 +1379,8 @@
       "confidence": 0.68,
       "confidence_label": "Média",
       "data_sources": [
-        "CloudWatch",
-        "GetJobRuns",
         "Glue GetJob",
-        "Glue GetJobRuns"
+        "GetJobRuns"
       ],
       "difficulty_score": 1,
       "doc_links": [
@@ -1351,8 +1431,7 @@
       },
       "evidence": [
         "timeout=2880 min",
-        "duração média 60 min",
-        "Achados relacionados no mesmo ativo: Capacidade superdimensionada (GLUE-OVERPROVISIONED); Glue 1.0 desatualizado (avaliar 5.1) (GLUE-VERSION-OLD); Job recorrente sem job bookmarks (reprocessa dados) (GLUE-BOOKMARK-OFF)"
+        "duração média 60 min"
       ],
       "evidence_coverage": 1.0,
       "evidence_quality": "modeled_rule",
@@ -1369,7 +1448,7 @@
         }
       ],
       "execution_priority": 63,
-      "finding": "Timeout muito acima da duração média (+3 achados relacionados)",
+      "finding": "Timeout muito acima da duração média",
       "first_seen": "",
       "gain_score": 92,
       "how_to_apply": "Definir Timeout ~120 min — o maior entre 2× a duração p95 e 1,25× a execução mais longa observada.",
@@ -1393,11 +1472,9 @@
       "process_cost_window": 535.35,
       "process_criticality": 0.0,
       "recommended_action": "Alinhar o timeout à duração real (com folga)",
+      "remediation_family": "failure_waste",
       "risks": [
-        "timeout curto demais pode cortar picos legítimos",
-        "Ação relacionada GLUE-OVERPROVISIONED: Reduzir o número de workers após teste controlado. Validar: Comparar DPUSeconds, duração p95, memória, disco, spill, erros e equivalência da saída em cada candidato.",
-        "Ação relacionada GLUE-VERSION-OLD: Avaliar migração para a versão preferencial configurada (5.1). Validar: Comparar custo/execução e duração; validar saídas com testes.",
-        "Ação relacionada GLUE-BOOKMARK-OFF: Habilitar job bookmarks (processamento incremental). Validar: Comparar bytes lidos e DPU-h por execução após ativar bookmarks."
+        "timeout curto demais pode cortar picos legítimos"
       ],
       "rule_id": "GLUE-TIMEOUT-EXCESSIVE",
       "rule_version": "1.0.0",
@@ -1407,6 +1484,513 @@
       "strategic_priority": 44,
       "urgency": 1.0,
       "why": "Timeout de 2880 min para um job que roda ~60 min — se travar, cobra DPU-hora até o timeout.",
+      "window_end": "2026-07-23"
+    },
+    {
+      "account": "consumer-avi",
+      "actionable": false,
+      "actor": "Squad AVI",
+      "actor_confidence": 1.0,
+      "actor_source": "tag Owner do recurso",
+      "asset_name": "gera_base_legado",
+      "asset_type": "glue_job",
+      "blocked": true,
+      "bucket": "investigar_primeiro",
+      "calibrated_gain": null,
+      "calibration": null,
+      "calibration_factor": 1.0,
+      "category": "cost_optimization",
+      "classification": "modeled_opportunity",
+      "confidence": 0.68,
+      "confidence_label": "Média",
+      "data_sources": [
+        "Glue GetJob",
+        "GetJobRuns"
+      ],
+      "difficulty_score": 1,
+      "doc_links": [
+        "https://docs.aws.amazon.com/glue/latest/dg/monitor-glue.html"
+      ],
+      "downstream_consumers": 0,
+      "estimated_gain": {
+        "annual_potential": 0.0,
+        "is_strategic": true,
+        "likely_implementation_date": null,
+        "monthly_expected": 0.0,
+        "monthly_high": 0.0,
+        "monthly_low": 0.0,
+        "realizable_year": 0.0,
+        "realization_factor": 0.8
+      },
+      "estimation": {
+        "assumptions": [
+          "timeout 2880 min vs. duração p95 30 min",
+          "nenhuma execução atingiu timeout na janela: sem frequência observada, não há economia a projetar",
+          "uma trava até o timeout custaria US$ 167.20 (2850 min × 8 DPU)",
+          "custo alocado do Cost Explorer (0.4400 USD/DPU-h observado no mês, qualidade reconciled)"
+        ],
+        "avoidable_bytes": null,
+        "baseline_bytes": null,
+        "baseline_cost": 0.0,
+        "baseline_quality": "allocated",
+        "break_even_months": null,
+        "currency": "USD",
+        "estimated_saving": 0.0,
+        "estimated_saving_high": null,
+        "estimated_saving_low": null,
+        "estimation_version": "2.0-usd",
+        "exposure_cost": 167.2,
+        "first_month_net_saving": null,
+        "is_strategic": true,
+        "maximum_profitable_reads": null,
+        "method": "glue_timeout_guardrail_v2",
+        "monthly_recurring_saving": null,
+        "one_time_cost": null,
+        "pricing_dependencies": [
+          "glue"
+        ],
+        "pricing_region": "sa-east-1",
+        "projected_bytes": null,
+        "projected_cost": 0.0,
+        "saving_quality": "unavailable"
+      },
+      "evidence": [
+        "timeout=2880 min",
+        "duração média 30 min"
+      ],
+      "evidence_coverage": 1.0,
+      "evidence_quality": "modeled_rule",
+      "evidence_refs": [
+        {
+          "actual_dpu_hours": 120.0,
+          "collected_at": "2026-07-23",
+          "data_through": "",
+          "estimated_dpu_hours": 0.0,
+          "resource_name": "gera_base_legado",
+          "resource_type": "glue_job",
+          "run_ids": [],
+          "source": "Glue GetJobRuns"
+        }
+      ],
+      "execution_priority": 63,
+      "finding": "Timeout muito acima da duração média",
+      "first_seen": "",
+      "gain_score": 92,
+      "how_to_apply": "Definir Timeout ~60 min — o maior entre 2× a duração p95 e 1,25× a execução mais longa observada.",
+      "how_to_validate": "Confirmar que execuções normais não são cortadas e que travadas param cedo.",
+      "julius_version": "0.6.0",
+      "knowledge_version": "glue-knowledge-2026-07",
+      "last_seen": "",
+      "missing_evidence": [
+        "métricas operacionais parciais",
+        "contrafactual de bytes/custo ainda não medido"
+      ],
+      "next_action": "validar evidência antes de implementar",
+      "opportunity_id": "GLUE-TIMEOUT-EXCESSIVE-d2d7cc59",
+      "origin": "rule",
+      "owner": "Squad AVI",
+      "owner_confidence": 1.0,
+      "owner_event_name": "",
+      "owner_event_time": "",
+      "owner_source": "tag oficial",
+      "process_cost_monthly": 53.57,
+      "process_cost_window": 52.8,
+      "process_criticality": 0.0,
+      "recommended_action": "Alinhar o timeout à duração real (com folga)",
+      "remediation_family": "failure_waste",
+      "risks": [
+        "timeout curto demais pode cortar picos legítimos"
+      ],
+      "rule_id": "GLUE-TIMEOUT-EXCESSIVE",
+      "rule_version": "1.0.0",
+      "scan_id": "baseline",
+      "source_process": null,
+      "status": "detected",
+      "strategic_priority": 44,
+      "urgency": 1.0,
+      "why": "Timeout de 2880 min para um job que roda ~30 min — se travar, cobra DPU-hora até o timeout.",
+      "window_end": "2026-07-23"
+    },
+    {
+      "account": "consumer-avi",
+      "actionable": false,
+      "actor": "Squad AVI",
+      "actor_confidence": 1.0,
+      "actor_source": "tag Owner do recurso",
+      "asset_name": "agrega_vendas",
+      "asset_type": "glue_job",
+      "blocked": true,
+      "bucket": "investigar_primeiro",
+      "calibrated_gain": null,
+      "calibration": null,
+      "calibration_factor": 1.0,
+      "category": "cost_optimization",
+      "classification": "modeled_opportunity",
+      "confidence": 0.68,
+      "confidence_label": "Média",
+      "data_sources": [
+        "Glue GetJob",
+        "GetJobRuns"
+      ],
+      "difficulty_score": 1,
+      "doc_links": [
+        "https://docs.aws.amazon.com/glue/latest/dg/monitor-glue.html"
+      ],
+      "downstream_consumers": 1,
+      "estimated_gain": {
+        "annual_potential": 0.0,
+        "is_strategic": true,
+        "likely_implementation_date": null,
+        "monthly_expected": 0.0,
+        "monthly_high": 0.0,
+        "monthly_low": 0.0,
+        "realizable_year": 0.0,
+        "realization_factor": 0.8
+      },
+      "estimation": {
+        "assumptions": [
+          "timeout 2880 min vs. duração p95 50 min",
+          "nenhuma execução atingiu timeout na janela: sem frequência observada, não há economia a projetar",
+          "uma trava até o timeout custaria US$ 415.07 (2830 min × 20 DPU)",
+          "custo alocado do Cost Explorer (0.4400 USD/DPU-h observado no mês, qualidade reconciled)"
+        ],
+        "avoidable_bytes": null,
+        "baseline_bytes": null,
+        "baseline_cost": 0.0,
+        "baseline_quality": "allocated",
+        "break_even_months": null,
+        "currency": "USD",
+        "estimated_saving": 0.0,
+        "estimated_saving_high": null,
+        "estimated_saving_low": null,
+        "estimation_version": "2.0-usd",
+        "exposure_cost": 415.07,
+        "first_month_net_saving": null,
+        "is_strategic": true,
+        "maximum_profitable_reads": null,
+        "method": "glue_timeout_guardrail_v2",
+        "monthly_recurring_saving": null,
+        "one_time_cost": null,
+        "pricing_dependencies": [
+          "glue"
+        ],
+        "pricing_region": "sa-east-1",
+        "projected_bytes": null,
+        "projected_cost": 0.0,
+        "saving_quality": "unavailable"
+      },
+      "evidence": [
+        "timeout=2880 min",
+        "duração média 50 min",
+        "Grafo: cadeia atende 1 conta(s) Consumer"
+      ],
+      "evidence_coverage": 1.0,
+      "evidence_quality": "modeled_rule",
+      "evidence_refs": [
+        {
+          "actual_dpu_hours": 416.7,
+          "collected_at": "2026-07-23",
+          "data_through": "",
+          "estimated_dpu_hours": 0.0,
+          "resource_name": "agrega_vendas",
+          "resource_type": "glue_job",
+          "run_ids": [],
+          "source": "Glue GetJobRuns"
+        }
+      ],
+      "execution_priority": 63,
+      "finding": "Timeout muito acima da duração média",
+      "first_seen": "",
+      "gain_score": 92,
+      "how_to_apply": "Definir Timeout ~100 min — o maior entre 2× a duração p95 e 1,25× a execução mais longa observada.",
+      "how_to_validate": "Confirmar que execuções normais não são cortadas e que travadas param cedo.",
+      "julius_version": "0.6.0",
+      "knowledge_version": "glue-knowledge-2026-07",
+      "last_seen": "",
+      "missing_evidence": [
+        "métricas operacionais parciais",
+        "contrafactual de bytes/custo ainda não medido"
+      ],
+      "next_action": "validar evidência antes de implementar",
+      "opportunity_id": "GLUE-TIMEOUT-EXCESSIVE-6951574d",
+      "origin": "rule",
+      "owner": "Squad AVI",
+      "owner_confidence": 1.0,
+      "owner_event_name": "",
+      "owner_event_time": "",
+      "owner_source": "tag oficial",
+      "process_cost_monthly": 543.16,
+      "process_cost_window": 535.35,
+      "process_criticality": 0.4,
+      "recommended_action": "Alinhar o timeout à duração real (com folga)",
+      "remediation_family": "failure_waste",
+      "risks": [
+        "timeout curto demais pode cortar picos legítimos"
+      ],
+      "rule_id": "GLUE-TIMEOUT-EXCESSIVE",
+      "rule_version": "1.0.0",
+      "scan_id": "baseline",
+      "source_process": null,
+      "status": "detected",
+      "strategic_priority": 52,
+      "urgency": 1.0,
+      "why": "Timeout de 2880 min para um job que roda ~50 min — se travar, cobra DPU-hora até o timeout.",
+      "window_end": "2026-07-23"
+    },
+    {
+      "account": "consumer-avi",
+      "actionable": false,
+      "actor": "Squad AVI",
+      "actor_confidence": 1.0,
+      "actor_source": "tag Owner do recurso",
+      "asset_name": "treina_features",
+      "asset_type": "glue_job",
+      "blocked": true,
+      "bucket": "investigar_primeiro",
+      "calibrated_gain": null,
+      "calibration": null,
+      "calibration_factor": 1.0,
+      "category": "cost_optimization",
+      "classification": "modeled_opportunity",
+      "confidence": 0.68,
+      "confidence_label": "Média",
+      "data_sources": [
+        "Glue GetJob",
+        "GetJobRuns"
+      ],
+      "difficulty_score": 1,
+      "doc_links": [
+        "https://docs.aws.amazon.com/glue/latest/dg/monitor-glue.html"
+      ],
+      "downstream_consumers": 0,
+      "estimated_gain": {
+        "annual_potential": 0.0,
+        "is_strategic": true,
+        "likely_implementation_date": null,
+        "monthly_expected": 0.0,
+        "monthly_high": 0.0,
+        "monthly_low": 0.0,
+        "realizable_year": 0.0,
+        "realization_factor": 0.8
+      },
+      "estimation": {
+        "assumptions": [
+          "timeout 2880 min vs. duração p95 20 min",
+          "nenhuma execução atingiu timeout na janela: sem frequência observada, não há economia a projetar",
+          "uma trava até o timeout custaria US$ 503.36 (2860 min × 24 DPU)",
+          "custo alocado do Cost Explorer (0.4400 USD/DPU-h observado no mês, qualidade reconciled)"
+        ],
+        "avoidable_bytes": null,
+        "baseline_bytes": null,
+        "baseline_cost": 0.0,
+        "baseline_quality": "allocated",
+        "break_even_months": null,
+        "currency": "USD",
+        "estimated_saving": 0.0,
+        "estimated_saving_high": null,
+        "estimated_saving_low": null,
+        "estimation_version": "2.0-usd",
+        "exposure_cost": 503.36,
+        "first_month_net_saving": null,
+        "is_strategic": true,
+        "maximum_profitable_reads": null,
+        "method": "glue_timeout_guardrail_v2",
+        "monthly_recurring_saving": null,
+        "one_time_cost": null,
+        "pricing_dependencies": [
+          "glue"
+        ],
+        "pricing_region": "sa-east-1",
+        "projected_bytes": null,
+        "projected_cost": 0.0,
+        "saving_quality": "unavailable"
+      },
+      "evidence": [
+        "timeout=2880 min",
+        "duração média 20 min"
+      ],
+      "evidence_coverage": 1.0,
+      "evidence_quality": "modeled_rule",
+      "evidence_refs": [
+        {
+          "actual_dpu_hours": 160.0,
+          "collected_at": "2026-07-23",
+          "data_through": "",
+          "estimated_dpu_hours": 0.0,
+          "resource_name": "treina_features",
+          "resource_type": "glue_job",
+          "run_ids": [],
+          "source": "Glue GetJobRuns"
+        }
+      ],
+      "execution_priority": 63,
+      "finding": "Timeout muito acima da duração média",
+      "first_seen": "",
+      "gain_score": 92,
+      "how_to_apply": "Definir Timeout ~40 min — o maior entre 2× a duração p95 e 1,25× a execução mais longa observada.",
+      "how_to_validate": "Confirmar que execuções normais não são cortadas e que travadas param cedo.",
+      "julius_version": "0.6.0",
+      "knowledge_version": "glue-knowledge-2026-07",
+      "last_seen": "",
+      "missing_evidence": [
+        "métricas operacionais parciais",
+        "contrafactual de bytes/custo ainda não medido"
+      ],
+      "next_action": "validar evidência antes de implementar",
+      "opportunity_id": "GLUE-TIMEOUT-EXCESSIVE-67f00015",
+      "origin": "rule",
+      "owner": "Squad AVI",
+      "owner_confidence": 1.0,
+      "owner_event_name": "",
+      "owner_event_time": "",
+      "owner_source": "tag oficial",
+      "process_cost_monthly": 71.43,
+      "process_cost_window": 70.4,
+      "process_criticality": 0.0,
+      "recommended_action": "Alinhar o timeout à duração real (com folga)",
+      "remediation_family": "failure_waste",
+      "risks": [
+        "timeout curto demais pode cortar picos legítimos"
+      ],
+      "rule_id": "GLUE-TIMEOUT-EXCESSIVE",
+      "rule_version": "1.0.0",
+      "scan_id": "baseline",
+      "source_process": null,
+      "status": "detected",
+      "strategic_priority": 44,
+      "urgency": 1.0,
+      "why": "Timeout de 2880 min para um job que roda ~20 min — se travar, cobra DPU-hora até o timeout.",
+      "window_end": "2026-07-23"
+    },
+    {
+      "account": "consumer-avi",
+      "actionable": false,
+      "actor": "Squad AVI",
+      "actor_confidence": 1.0,
+      "actor_source": "tag Owner do recurso",
+      "asset_name": "treina_features",
+      "asset_type": "glue_job",
+      "blocked": true,
+      "bucket": "investigar_primeiro",
+      "calibrated_gain": null,
+      "calibration": null,
+      "calibration_factor": 1.0,
+      "category": "cost_optimization",
+      "classification": "modeled_opportunity",
+      "confidence": 0.5,
+      "confidence_label": "Baixa",
+      "data_sources": [
+        "CloudWatch",
+        "Glue GetJob",
+        "Glue GetJobRuns"
+      ],
+      "difficulty_score": 1,
+      "doc_links": [
+        "https://docs.aws.amazon.com/glue/latest/dg/auto-scaling.html"
+      ],
+      "downstream_consumers": 0,
+      "estimated_gain": {
+        "annual_potential": 0.0,
+        "is_strategic": true,
+        "likely_implementation_date": null,
+        "monthly_expected": 0.0,
+        "monthly_high": 0.0,
+        "monthly_low": 0.0,
+        "realizable_year": 0.0,
+        "realization_factor": 0.8
+      },
+      "estimation": {
+        "assumptions": [
+          "mesmo volume e frequência de execução",
+          "utilização observada 20% vs. alvo 75%",
+          "Auto Scaling reduz workers ociosos (redução limitada a 60%)",
+          "custo alocado do Cost Explorer (0.4400 USD/DPU-h observado no mês, qualidade reconciled)",
+          "economia não quantificada: evidência de memória, disco e spill incompleta"
+        ],
+        "avoidable_bytes": null,
+        "baseline_bytes": null,
+        "baseline_cost": 70.4,
+        "baseline_quality": "allocated",
+        "break_even_months": null,
+        "currency": "USD",
+        "estimated_saving": 0.0,
+        "estimated_saving_high": null,
+        "estimated_saving_low": null,
+        "estimation_version": "2.0-usd",
+        "exposure_cost": null,
+        "first_month_net_saving": null,
+        "is_strategic": true,
+        "maximum_profitable_reads": null,
+        "method": "glue_autoscaling_v1",
+        "monthly_recurring_saving": null,
+        "one_time_cost": null,
+        "pricing_dependencies": [
+          "glue"
+        ],
+        "pricing_region": "sa-east-1",
+        "projected_bytes": null,
+        "projected_cost": 70.4,
+        "saving_quality": "potential"
+      },
+      "evidence": [
+        "utilização média 20% em 20 execuções",
+        "workers=6 fixos (G.4X)",
+        "sem --enable-auto-scaling",
+        "~160 DPU-h/mês (GetJobRuns)",
+        "Achados relacionados no mesmo ativo: Worker type G.4X candidato a experimento (GLUE-WORKER-TYPE-OVERSIZED)"
+      ],
+      "evidence_coverage": 1.0,
+      "evidence_quality": "modeled_rule",
+      "evidence_refs": [
+        {
+          "actual_dpu_hours": 160.0,
+          "collected_at": "2026-07-23",
+          "data_through": "",
+          "estimated_dpu_hours": 0.0,
+          "resource_name": "treina_features",
+          "resource_type": "glue_job",
+          "run_ids": [],
+          "source": "Glue GetJobRuns"
+        }
+      ],
+      "execution_priority": 46,
+      "finding": "Job com baixa utilização e capacidade fixa (sem Auto Scaling) (+1 achado relacionado)",
+      "first_seen": "",
+      "gain_score": 92,
+      "how_to_apply": "No job: ativar --enable-auto-scaling e definir max workers ~3; executar ao menos 3 testes comparáveis antes de alterar produção.",
+      "how_to_validate": "Comparar DPU-h e duração média por execução após a mudança.",
+      "julius_version": "0.6.0",
+      "knowledge_version": "glue-knowledge-2026-07",
+      "last_seen": "",
+      "missing_evidence": [
+        "métricas operacionais parciais"
+      ],
+      "next_action": "validar evidência antes de implementar",
+      "opportunity_id": "GLUE-AUTOSCALING-67f00015",
+      "origin": "rule",
+      "owner": "Squad AVI",
+      "owner_confidence": 1.0,
+      "owner_event_name": "",
+      "owner_event_time": "",
+      "owner_source": "tag oficial",
+      "process_cost_monthly": 71.43,
+      "process_cost_window": 70.4,
+      "process_criticality": 0.0,
+      "recommended_action": "Habilitar Auto Scaling e revisar o teto de workers",
+      "remediation_family": "capacity_sizing",
+      "risks": [
+        "reprocessamento",
+        "picos de partição em estágio único",
+        "Ação relacionada GLUE-WORKER-TYPE-OVERSIZED: Testar worker type G.2X em experimento controlado. Validar: Validar saída equivalente, nenhuma falha nova e duração até 10% maior."
+      ],
+      "rule_id": "GLUE-AUTOSCALING",
+      "rule_version": "1.0.0",
+      "scan_id": "baseline",
+      "source_process": null,
+      "status": "detected",
+      "strategic_priority": 28,
+      "urgency": 1.0,
+      "why": "Utilização média 20% com 6 workers fixos (G.4X) e sem --enable-auto-scaling.",
       "window_end": "2026-07-23"
     },
     {
@@ -1518,6 +2102,7 @@
       "process_cost_window": 0.0,
       "process_criticality": 0.0,
       "recommended_action": "Reduzir somente o idle_timeout da sessão",
+      "remediation_family": "idle_capacity",
       "risks": [
         "perder estado da sessão em uso ativo"
       ],
@@ -1626,6 +2211,7 @@
       "process_cost_window": null,
       "process_criticality": 0.0,
       "recommended_action": "Definir BytesScannedCutoffPerQuery no workgroup",
+      "remediation_family": "read_pruning",
       "risks": [
         "teto baixo demais cancela carga legítima",
         "o limite protege contra o acidente, não reduz o custo atual"
@@ -1646,6 +2232,397 @@
       "actor": "Squad AVI",
       "actor_confidence": 1.0,
       "actor_source": "tag Owner do recurso",
+      "asset_name": "sync_parceiros",
+      "asset_type": "glue_job",
+      "blocked": true,
+      "bucket": "investigar_primeiro",
+      "calibrated_gain": null,
+      "calibration": null,
+      "calibration_factor": 1.0,
+      "category": "cost_optimization",
+      "classification": "modeled_opportunity",
+      "confidence": 0.68,
+      "confidence_label": "Média",
+      "data_sources": [
+        "Glue GetJob"
+      ],
+      "difficulty_score": 1,
+      "doc_links": [
+        "https://docs.aws.amazon.com/glue/latest/dg/aws-glue-api-jobs-runs.html"
+      ],
+      "downstream_consumers": 0,
+      "estimated_gain": {
+        "annual_potential": 756.0,
+        "is_strategic": false,
+        "likely_implementation_date": "2026-07",
+        "monthly_expected": 63.0,
+        "monthly_high": 88.2,
+        "monthly_low": 37.8,
+        "realizable_year": 252.0,
+        "realization_factor": 0.8
+      },
+      "estimation": {
+        "assumptions": [
+          "job em batch, não sensível a tempo (sem SLA rígido)",
+          "tarifa versionada STANDARD=0.4400 e FLEX=0.2900 USD/DPU-h",
+          "diferença tarifária modelada de 34%",
+          "tolera variação no tempo de início",
+          "custo alocado do Cost Explorer (0.4400 USD/DPU-h observado no mês, qualidade reconciled)",
+          "economia esperada aplica fator conservador de realização de 70%",
+          "economia limitada ao saldo não comprometido dos processos relacionados (236.59 USD)"
+        ],
+        "avoidable_bytes": null,
+        "baseline_bytes": null,
+        "baseline_cost": 264.0,
+        "baseline_quality": "allocated",
+        "break_even_months": null,
+        "currency": "USD",
+        "estimated_saving": 63.0,
+        "estimated_saving_high": 88.2,
+        "estimated_saving_low": 37.8,
+        "estimation_version": "2.0-usd",
+        "exposure_cost": null,
+        "first_month_net_saving": null,
+        "is_strategic": false,
+        "maximum_profitable_reads": null,
+        "method": "glue_flex_v1",
+        "monthly_recurring_saving": null,
+        "one_time_cost": null,
+        "pricing_dependencies": [
+          "glue"
+        ],
+        "pricing_region": "sa-east-1",
+        "projected_bytes": null,
+        "projected_cost": 201.0,
+        "saving_quality": "modeled"
+      },
+      "evidence": [
+        "execution_class=STANDARD",
+        "tolerância a início adiado não confirmada",
+        "60.9 execuções/mês"
+      ],
+      "evidence_coverage": 1.0,
+      "evidence_quality": "modeled",
+      "evidence_refs": [
+        {
+          "actual_dpu_hours": 600.0,
+          "collected_at": "2026-07-23",
+          "data_through": "",
+          "estimated_dpu_hours": 0.0,
+          "resource_name": "sync_parceiros",
+          "resource_type": "glue_job",
+          "run_ids": [],
+          "source": "Glue GetJobRuns"
+        }
+      ],
+      "execution_priority": 29,
+      "finding": "Job batch elegível a ExecutionClass FLEX",
+      "first_seen": "",
+      "gain_score": 42,
+      "how_to_apply": "Definir --execution-class FLEX no job; validar que o SLA tolera variação de início.",
+      "how_to_validate": "Comparar custo por execução e tempo de conclusão por 2 semanas.",
+      "julius_version": "0.6.0",
+      "knowledge_version": "glue-knowledge-2026-07",
+      "last_seen": "",
+      "missing_evidence": [
+        "confirmação de que o SLA tolera início adiado e capacidade não garantida"
+      ],
+      "next_action": "validar evidência antes de implementar",
+      "opportunity_id": "GLUE-FLEX-CANDIDATE-d5b0d101",
+      "origin": "rule",
+      "owner": "Squad AVI",
+      "owner_confidence": 1.0,
+      "owner_event_name": "",
+      "owner_event_time": "",
+      "owner_source": "tag oficial",
+      "process_cost_monthly": 267.85,
+      "process_cost_window": 264.0,
+      "process_criticality": 0.0,
+      "recommended_action": "Mudar ExecutionClass para FLEX",
+      "remediation_family": "runtime_modality",
+      "risks": [
+        "tempo de início variável",
+        "capacidade não garantida"
+      ],
+      "rule_id": "GLUE-FLEX-CANDIDATE",
+      "rule_version": "1.0.0",
+      "scan_id": "baseline",
+      "source_process": null,
+      "status": "detected",
+      "strategic_priority": 17,
+      "urgency": 1.0,
+      "why": "'sync_parceiros' ainda usa STANDARD; a tarifa FLEX versionada é 34% menor, se o SLA tolerar início adiado.",
+      "window_end": "2026-07-23"
+    },
+    {
+      "account": "consumer-avi",
+      "actionable": false,
+      "actor": "Squad AVI",
+      "actor_confidence": 1.0,
+      "actor_source": "tag Owner do recurso",
+      "asset_name": "processa_interacoes",
+      "asset_type": "glue_job",
+      "blocked": true,
+      "bucket": "investigar_primeiro",
+      "calibrated_gain": null,
+      "calibration": null,
+      "calibration_factor": 1.0,
+      "category": "cost_optimization",
+      "classification": "modeled_opportunity",
+      "confidence": 0.5,
+      "confidence_label": "Baixa",
+      "data_sources": [
+        "Glue GetJobRuns",
+        "CloudWatch"
+      ],
+      "difficulty_score": 2,
+      "doc_links": [
+        "https://docs.aws.amazon.com/glue/latest/dg/monitor-spark-ui.html"
+      ],
+      "downstream_consumers": 0,
+      "estimated_gain": {
+        "annual_potential": 0.0,
+        "is_strategic": true,
+        "likely_implementation_date": null,
+        "monthly_expected": 0.0,
+        "monthly_high": 0.0,
+        "monthly_low": 0.0,
+        "realizable_year": 0.0,
+        "realization_factor": 0.8
+      },
+      "estimation": {
+        "assumptions": [
+          "mesmo volume processado",
+          "workers 20 → 6 (utilização 22%)",
+          "redução só é acionável com memória, disco e spill observados",
+          "ganho potencial até concluir três runs por candidato",
+          "custo alocado do Cost Explorer (0.4400 USD/DPU-h observado no mês, qualidade reconciled)",
+          "economia não quantificada: evidência de memória, disco e spill incompleta"
+        ],
+        "avoidable_bytes": null,
+        "baseline_bytes": null,
+        "baseline_cost": 352.0,
+        "baseline_quality": "allocated",
+        "break_even_months": null,
+        "currency": "USD",
+        "estimated_saving": 0.0,
+        "estimated_saving_high": 246.4,
+        "estimated_saving_low": 0.0,
+        "estimation_version": "2.0-usd",
+        "exposure_cost": null,
+        "first_month_net_saving": null,
+        "is_strategic": true,
+        "maximum_profitable_reads": null,
+        "method": "glue_worker_reduction_v1",
+        "monthly_recurring_saving": null,
+        "one_time_cost": null,
+        "pricing_dependencies": [
+          "glue"
+        ],
+        "pricing_region": "sa-east-1",
+        "projected_bytes": null,
+        "projected_cost": 352.0,
+        "saving_quality": "potential"
+      },
+      "evidence": [
+        "utilização média 22%",
+        "workers=20 (G.1X)",
+        "candidatos adaptativos 2–10=10, 8, 6",
+        "spill não coletado",
+        "benchmark controlado ainda não concluído"
+      ],
+      "evidence_coverage": 1.0,
+      "evidence_quality": "modeled_rule",
+      "evidence_refs": [
+        {
+          "actual_dpu_hours": 800.0,
+          "collected_at": "2026-07-23",
+          "data_through": "",
+          "estimated_dpu_hours": 0.0,
+          "resource_name": "processa_interacoes",
+          "resource_type": "glue_job",
+          "run_ids": [],
+          "source": "Glue GetJobRuns"
+        }
+      ],
+      "execution_priority": 23,
+      "finding": "Capacidade superdimensionada",
+      "first_seen": "",
+      "gain_score": 92,
+      "how_to_apply": "Usar a configuração atual como baseline/rollback e testar, em ordem decrescente, 10, 8, 6 workers; executar três runs medidos por candidato com a mesma entrada e argumentos.",
+      "how_to_validate": "Comparar DPUSeconds, duração p95, memória, disco, spill, erros e equivalência da saída em cada candidato.",
+      "julius_version": "0.6.0",
+      "knowledge_version": "glue-knowledge-2026-07",
+      "last_seen": "",
+      "missing_evidence": [
+        "três runs por candidato com a mesma entrada e argumentos",
+        "equivalência da saída e SLA de duração"
+      ],
+      "next_action": "validar evidência antes de implementar",
+      "opportunity_id": "GLUE-OVERPROVISIONED-db25275f",
+      "origin": "rule",
+      "owner": "Squad AVI",
+      "owner_confidence": 1.0,
+      "owner_event_name": "",
+      "owner_event_time": "",
+      "owner_source": "tag oficial",
+      "process_cost_monthly": 543.16,
+      "process_cost_window": 535.35,
+      "process_criticality": 0.0,
+      "recommended_action": "Reduzir o número de workers após teste controlado",
+      "remediation_family": "capacity_sizing",
+      "risks": [
+        "gargalo de I/O",
+        "skew de partição"
+      ],
+      "rule_id": "GLUE-OVERPROVISIONED",
+      "rule_version": "1.0.0",
+      "scan_id": "baseline",
+      "source_process": null,
+      "status": "detected",
+      "strategic_priority": 28,
+      "urgency": 1.0,
+      "why": "Utilização média 22% com 20 workers; a redução exige memória, disco e spill observados.",
+      "window_end": "2026-07-23"
+    },
+    {
+      "account": "consumer-avi",
+      "actionable": false,
+      "actor": "Squad AVI",
+      "actor_confidence": 1.0,
+      "actor_source": "tag Owner do recurso",
+      "asset_name": "agrega_vendas",
+      "asset_type": "glue_job",
+      "blocked": true,
+      "bucket": "investigar_primeiro",
+      "calibrated_gain": null,
+      "calibration": null,
+      "calibration_factor": 1.0,
+      "category": "cost_optimization",
+      "classification": "modeled_opportunity",
+      "confidence": 0.5,
+      "confidence_label": "Baixa",
+      "data_sources": [
+        "Glue GetJobRuns",
+        "CloudWatch"
+      ],
+      "difficulty_score": 2,
+      "doc_links": [
+        "https://docs.aws.amazon.com/glue/latest/dg/monitor-spark-ui.html"
+      ],
+      "downstream_consumers": 1,
+      "estimated_gain": {
+        "annual_potential": 0.0,
+        "is_strategic": true,
+        "likely_implementation_date": null,
+        "monthly_expected": 0.0,
+        "monthly_high": 0.0,
+        "monthly_low": 0.0,
+        "realizable_year": 0.0,
+        "realization_factor": 0.8
+      },
+      "estimation": {
+        "assumptions": [
+          "mesmo volume processado",
+          "workers 20 → 8 (utilização 28%)",
+          "redução só é acionável com memória, disco e spill observados",
+          "ganho potencial até concluir três runs por candidato",
+          "custo alocado do Cost Explorer (0.4400 USD/DPU-h observado no mês, qualidade reconciled)",
+          "economia não quantificada: evidência de memória, disco e spill incompleta"
+        ],
+        "avoidable_bytes": null,
+        "baseline_bytes": null,
+        "baseline_cost": 183.35,
+        "baseline_quality": "allocated",
+        "break_even_months": null,
+        "currency": "USD",
+        "estimated_saving": 0.0,
+        "estimated_saving_high": 110.01,
+        "estimated_saving_low": 0.0,
+        "estimation_version": "2.0-usd",
+        "exposure_cost": null,
+        "first_month_net_saving": null,
+        "is_strategic": true,
+        "maximum_profitable_reads": null,
+        "method": "glue_worker_reduction_v1",
+        "monthly_recurring_saving": null,
+        "one_time_cost": null,
+        "pricing_dependencies": [
+          "glue"
+        ],
+        "pricing_region": "sa-east-1",
+        "projected_bytes": null,
+        "projected_cost": 183.35,
+        "saving_quality": "potential"
+      },
+      "evidence": [
+        "utilização média 28%",
+        "workers=20 (G.1X)",
+        "candidatos adaptativos 2–10=10, 9, 8",
+        "spill não coletado",
+        "benchmark controlado ainda não concluído",
+        "Grafo: cadeia atende 1 conta(s) Consumer"
+      ],
+      "evidence_coverage": 1.0,
+      "evidence_quality": "modeled_rule",
+      "evidence_refs": [
+        {
+          "actual_dpu_hours": 416.7,
+          "collected_at": "2026-07-23",
+          "data_through": "",
+          "estimated_dpu_hours": 0.0,
+          "resource_name": "agrega_vendas",
+          "resource_type": "glue_job",
+          "run_ids": [],
+          "source": "Glue GetJobRuns"
+        }
+      ],
+      "execution_priority": 23,
+      "finding": "Capacidade superdimensionada",
+      "first_seen": "",
+      "gain_score": 92,
+      "how_to_apply": "Usar a configuração atual como baseline/rollback e testar, em ordem decrescente, 10, 9, 8 workers; executar três runs medidos por candidato com a mesma entrada e argumentos.",
+      "how_to_validate": "Comparar DPUSeconds, duração p95, memória, disco, spill, erros e equivalência da saída em cada candidato.",
+      "julius_version": "0.6.0",
+      "knowledge_version": "glue-knowledge-2026-07",
+      "last_seen": "",
+      "missing_evidence": [
+        "três runs por candidato com a mesma entrada e argumentos",
+        "equivalência da saída e SLA de duração"
+      ],
+      "next_action": "validar evidência antes de implementar",
+      "opportunity_id": "GLUE-OVERPROVISIONED-6951574d",
+      "origin": "rule",
+      "owner": "Squad AVI",
+      "owner_confidence": 1.0,
+      "owner_event_name": "",
+      "owner_event_time": "",
+      "owner_source": "tag oficial",
+      "process_cost_monthly": 543.16,
+      "process_cost_window": 535.35,
+      "process_criticality": 0.4,
+      "recommended_action": "Reduzir o número de workers após teste controlado",
+      "remediation_family": "capacity_sizing",
+      "risks": [
+        "gargalo de I/O",
+        "skew de partição"
+      ],
+      "rule_id": "GLUE-OVERPROVISIONED",
+      "rule_version": "1.0.0",
+      "scan_id": "baseline",
+      "source_process": null,
+      "status": "detected",
+      "strategic_priority": 34,
+      "urgency": 1.0,
+      "why": "Utilização média 28% com 20 workers; a redução exige memória, disco e spill observados.",
+      "window_end": "2026-07-23"
+    },
+    {
+      "account": "consumer-avi",
+      "actionable": false,
+      "actor": "Squad AVI",
+      "actor_confidence": 1.0,
+      "actor_source": "tag Owner do recurso",
       "asset_name": "agrega_vendas",
       "asset_type": "glue_job",
       "blocked": true,
@@ -1658,10 +2635,7 @@
       "confidence": 0.68,
       "confidence_label": "Média",
       "data_sources": [
-        "CloudWatch",
-        "GetJobRuns",
-        "Glue GetJob",
-        "Glue GetJobRuns"
+        "Glue GetJob"
       ],
       "difficulty_score": 1,
       "doc_links": [
@@ -1717,8 +2691,7 @@
         "execution_class=STANDARD",
         "tolerância a início adiado não confirmada",
         "25.4 execuções/mês",
-        "Grafo: cadeia atende 1 conta(s) Consumer",
-        "Achados relacionados no mesmo ativo: Timeout muito acima da duração média (GLUE-TIMEOUT-EXCESSIVE); Capacidade superdimensionada (GLUE-OVERPROVISIONED)"
+        "Grafo: cadeia atende 1 conta(s) Consumer"
       ],
       "evidence_coverage": 1.0,
       "evidence_quality": "modeled",
@@ -1735,7 +2708,7 @@
         }
       ],
       "execution_priority": 20,
-      "finding": "Job batch elegível a ExecutionClass FLEX (+2 achados relacionados)",
+      "finding": "Job batch elegível a ExecutionClass FLEX",
       "first_seen": "",
       "gain_score": 29,
       "how_to_apply": "Definir --execution-class FLEX no job; validar que o SLA tolera variação de início.",
@@ -1758,11 +2731,10 @@
       "process_cost_window": 535.35,
       "process_criticality": 0.4,
       "recommended_action": "Mudar ExecutionClass para FLEX",
+      "remediation_family": "runtime_modality",
       "risks": [
         "tempo de início variável",
-        "capacidade não garantida",
-        "Ação relacionada GLUE-TIMEOUT-EXCESSIVE: Alinhar o timeout à duração real (com folga). Validar: Confirmar que execuções normais não são cortadas e que travadas param cedo.",
-        "Ação relacionada GLUE-OVERPROVISIONED: Reduzir o número de workers após teste controlado. Validar: Comparar DPUSeconds, duração p95, memória, disco, spill, erros e equivalência da saída em cada candidato."
+        "capacidade não garantida"
       ],
       "rule_id": "GLUE-FLEX-CANDIDATE",
       "rule_version": "1.0.0",
@@ -1849,13 +2821,13 @@
       "evidence": [
         "1843 GB escaneados por execução",
         "SELECT * detectado",
-        "Achados relacionados no mesmo ativo: Repetições exatas elegíveis sem query result reuse (ATHENA-RESULT-REUSE); Query sem filtro de partição varre a tabela inteira (ATHENA-NO-PARTITION-FILTER)"
+        "Achados relacionados no mesmo ativo: Query sem filtro de partição varre a tabela inteira (ATHENA-NO-PARTITION-FILTER)"
       ],
       "evidence_coverage": 1.0,
       "evidence_quality": "modeled_rule",
       "evidence_refs": [],
       "execution_priority": 15,
-      "finding": "Query com leitura excessiva (+2 achados relacionados)",
+      "finding": "Query com leitura excessiva (+1 achado relacionado)",
       "first_seen": "",
       "gain_score": 34,
       "how_to_apply": "Selecionar só as colunas necessárias e preservar o schema esperado pelos consumidores.",
@@ -1878,9 +2850,9 @@
       "process_cost_window": null,
       "process_criticality": 0.0,
       "recommended_action": "Projetar somente as colunas necessárias",
+      "remediation_family": "read_pruning",
       "risks": [
         "quebra de compatibilidade se colunas removidas forem usadas",
-        "Ação relacionada ATHENA-RESULT-REUSE: Configurar result reuse no cliente que submete a query. Validar: Comparar bytes faturáveis, custo líquido alocado e ReusedPreviousResult.",
         "Ação relacionada ATHENA-NO-PARTITION-FILTER: Adicionar filtro de partição (WHERE dt=…). Validar: Comparar DataScannedInBytes antes × depois na mesma janela."
       ],
       "rule_id": "ATHENA-EXCESSIVE-SCAN",
@@ -1891,6 +2863,119 @@
       "strategic_priority": 18,
       "urgency": 1.0,
       "why": "Varre 1843 GB/execução; SELECT * detectado.",
+      "window_end": null
+    },
+    {
+      "account": "consumer-avi",
+      "actionable": false,
+      "actor": "Squad AVI",
+      "actor_confidence": 1.0,
+      "actor_source": "tag Owner do recurso",
+      "asset_name": "relatorio_diario",
+      "asset_type": "athena_query",
+      "blocked": true,
+      "bucket": "investigar_primeiro",
+      "calibrated_gain": null,
+      "calibration": null,
+      "calibration_factor": 1.0,
+      "category": "cost_optimization",
+      "classification": "modeled_opportunity",
+      "confidence": 0.86,
+      "confidence_label": "Alta",
+      "data_sources": [
+        "Athena workgroup history"
+      ],
+      "difficulty_score": 1,
+      "doc_links": [
+        "https://docs.aws.amazon.com/athena/latest/ug/reusing-query-results.html"
+      ],
+      "downstream_consumers": 0,
+      "estimated_gain": {
+        "annual_potential": 302.4,
+        "is_strategic": false,
+        "likely_implementation_date": "2026-07",
+        "monthly_expected": 25.2,
+        "monthly_high": 37.8,
+        "monthly_low": 12.6,
+        "realizable_year": 100.8,
+        "realization_factor": 0.8
+      },
+      "estimation": {
+        "assumptions": [
+          "20 execuções/mês",
+          "faixa da regra legacy_result_reuse: 10%/20%/30%",
+          "preço de tabela aplicado aos bytes faturáveis",
+          "modelo athena-recovery-1.0; substituir por benchmark quando disponível",
+          "cifra bloqueada: preço ausente, não verificado ou vencido",
+          "economia esperada aplica fator conservador de realização de 70%"
+        ],
+        "avoidable_bytes": 7916483719576,
+        "baseline_bytes": 39582418597880,
+        "baseline_cost": 180.0,
+        "baseline_quality": "modeled",
+        "break_even_months": null,
+        "currency": "USD",
+        "estimated_saving": 25.2,
+        "estimated_saving_high": 37.8,
+        "estimated_saving_low": 12.6,
+        "estimation_version": "athena-recovery-1.0",
+        "exposure_cost": null,
+        "first_month_net_saving": null,
+        "is_strategic": false,
+        "maximum_profitable_reads": null,
+        "method": "athena_legacy_result_reuse_modeled_rule_v1",
+        "monthly_recurring_saving": null,
+        "one_time_cost": null,
+        "pricing_dependencies": [
+          "athena"
+        ],
+        "pricing_region": "sa-east-1",
+        "projected_bytes": 31665934878304,
+        "projected_cost": 154.8,
+        "saving_quality": "unavailable"
+      },
+      "evidence": [
+        "custo evitável indisponível sem reconciliação completa"
+      ],
+      "evidence_coverage": 1.0,
+      "evidence_quality": "modeled_rule",
+      "evidence_refs": [],
+      "execution_priority": 15,
+      "finding": "Repetições exatas elegíveis sem query result reuse",
+      "first_seen": "",
+      "gain_score": 17,
+      "how_to_apply": "Definir ResultReuseByAgeConfiguration com janela compatível com a atualização da origem.",
+      "how_to_validate": "Comparar bytes faturáveis, custo líquido alocado e ReusedPreviousResult.",
+      "julius_version": "0.6.0",
+      "knowledge_version": "athena-knowledge-2026-07",
+      "last_seen": "",
+      "missing_evidence": [
+        "contrafactual de bytes/custo ainda não medido"
+      ],
+      "next_action": "validar evidência antes de implementar",
+      "opportunity_id": "ATHENA-RESULT-REUSE-bc1cece3",
+      "origin": "rule",
+      "owner": "Squad AVI",
+      "owner_confidence": 1.0,
+      "owner_event_name": "",
+      "owner_event_time": "",
+      "owner_source": "tag oficial",
+      "process_cost_monthly": null,
+      "process_cost_window": null,
+      "process_criticality": 0.0,
+      "recommended_action": "Configurar result reuse no cliente que submete a query",
+      "remediation_family": "result_reuse",
+      "risks": [
+        "resultado defasado se a janela de reuso for longa demais"
+      ],
+      "rule_id": "ATHENA-RESULT-REUSE",
+      "rule_version": "1.0.0",
+      "scan_id": "baseline",
+      "source_process": null,
+      "status": "detected",
+      "strategic_priority": 8,
+      "urgency": 1.0,
+      "why": "Query roda 20×/mês sem reutilização confirmada.",
       "window_end": null
     },
     {
@@ -1911,10 +2996,7 @@
       "confidence": 0.68,
       "confidence_label": "Média",
       "data_sources": [
-        "CloudWatch",
-        "GetJobRuns",
-        "Glue GetJob",
-        "Glue GetJobRuns"
+        "Glue GetJob"
       ],
       "difficulty_score": 1,
       "doc_links": [
@@ -1969,8 +3051,7 @@
       "evidence": [
         "execution_class=STANDARD",
         "tolerância a início adiado não confirmada",
-        "20.3 execuções/mês",
-        "Achados relacionados no mesmo ativo: Timeout muito acima da duração média (GLUE-TIMEOUT-EXCESSIVE); Job com baixa utilização e capacidade fixa (sem Auto Scaling) (GLUE-AUTOSCALING); Worker type G.4X candidato a experimento (GLUE-WORKER-TYPE-OVERSIZED)"
+        "20.3 execuções/mês"
       ],
       "evidence_coverage": 1.0,
       "evidence_quality": "modeled",
@@ -1987,7 +3068,7 @@
         }
       ],
       "execution_priority": 7,
-      "finding": "Job batch elegível a ExecutionClass FLEX (+3 achados relacionados)",
+      "finding": "Job batch elegível a ExecutionClass FLEX",
       "first_seen": "",
       "gain_score": 11,
       "how_to_apply": "Definir --execution-class FLEX no job; validar que o SLA tolera variação de início.",
@@ -2010,12 +3091,10 @@
       "process_cost_window": 70.4,
       "process_criticality": 0.0,
       "recommended_action": "Mudar ExecutionClass para FLEX",
+      "remediation_family": "runtime_modality",
       "risks": [
         "tempo de início variável",
-        "capacidade não garantida",
-        "Ação relacionada GLUE-TIMEOUT-EXCESSIVE: Alinhar o timeout à duração real (com folga). Validar: Confirmar que execuções normais não são cortadas e que travadas param cedo.",
-        "Ação relacionada GLUE-AUTOSCALING: Habilitar Auto Scaling e revisar o teto de workers. Validar: Comparar DPU-h e duração média por execução após a mudança.",
-        "Ação relacionada GLUE-WORKER-TYPE-OVERSIZED: Testar worker type G.2X em experimento controlado. Validar: Validar saída equivalente, nenhuma falha nova e duração até 10% maior."
+        "capacidade não garantida"
       ],
       "rule_id": "GLUE-FLEX-CANDIDATE",
       "rule_version": "1.0.0",
@@ -2045,7 +3124,6 @@
       "confidence": 0.68,
       "confidence_label": "Média",
       "data_sources": [
-        "GetJobRuns",
         "Glue GetJob"
       ],
       "difficulty_score": 1,
@@ -2101,8 +3179,7 @@
       "evidence": [
         "execution_class=STANDARD",
         "tolerância a início adiado não confirmada",
-        "30.4 execuções/mês",
-        "Achados relacionados no mesmo ativo: Timeout muito acima da duração média (GLUE-TIMEOUT-EXCESSIVE)"
+        "30.4 execuções/mês"
       ],
       "evidence_coverage": 1.0,
       "evidence_quality": "modeled",
@@ -2119,7 +3196,7 @@
         }
       ],
       "execution_priority": 5,
-      "finding": "Job batch elegível a ExecutionClass FLEX (+1 achado relacionado)",
+      "finding": "Job batch elegível a ExecutionClass FLEX",
       "first_seen": "",
       "gain_score": 8,
       "how_to_apply": "Definir --execution-class FLEX no job; validar que o SLA tolera variação de início.",
@@ -2142,10 +3219,10 @@
       "process_cost_window": 52.8,
       "process_criticality": 0.0,
       "recommended_action": "Mudar ExecutionClass para FLEX",
+      "remediation_family": "runtime_modality",
       "risks": [
         "tempo de início variável",
-        "capacidade não garantida",
-        "Ação relacionada GLUE-TIMEOUT-EXCESSIVE: Alinhar o timeout à duração real (com folga). Validar: Confirmar que execuções normais não são cortadas e que travadas param cedo."
+        "capacidade não garantida"
       ],
       "rule_id": "GLUE-FLEX-CANDIDATE",
       "rule_version": "1.0.0",
@@ -2259,6 +3336,7 @@
       "process_cost_window": null,
       "process_criticality": 0.4,
       "recommended_action": "Trocar polling por integração .sync ou callback (Task Token)",
+      "remediation_family": "orchestration_waste",
       "risks": [
         "exige ajuste no fluxo"
       ],
@@ -2371,6 +3449,7 @@
       "process_cost_window": null,
       "process_criticality": 0.0,
       "recommended_action": "Configurar result reuse no cliente que submete a query",
+      "remediation_family": "result_reuse",
       "risks": [
         "resultado defasado se a janela de reuso for longa demais"
       ],
@@ -2486,6 +3565,7 @@
       "process_cost_window": null,
       "process_criticality": 0.0,
       "recommended_action": "Projetar somente as colunas necessárias",
+      "remediation_family": "read_pruning",
       "risks": [
         "quebra de compatibilidade se colunas removidas forem usadas"
       ],
@@ -2498,6 +3578,369 @@
       "urgency": 1.0,
       "why": "Varre 300 GB/execução; SELECT * detectado.",
       "window_end": null
+    },
+    {
+      "account": "consumer-avi",
+      "actionable": false,
+      "actor": "Squad AVI",
+      "actor_confidence": 1.0,
+      "actor_source": "tag Owner do recurso",
+      "asset_name": "processa_interacoes",
+      "asset_type": "glue_job",
+      "blocked": true,
+      "bucket": "investigar_primeiro",
+      "calibrated_gain": null,
+      "calibration": null,
+      "calibration_factor": 1.0,
+      "category": "cost_optimization",
+      "classification": "modeled_opportunity",
+      "confidence": 0.86,
+      "confidence_label": "Alta",
+      "data_sources": [
+        "Glue GetJob",
+        "GetJobRuns"
+      ],
+      "difficulty_score": 2,
+      "doc_links": [
+        "https://docs.aws.amazon.com/glue/latest/dg/release-notes.html"
+      ],
+      "downstream_consumers": 0,
+      "estimated_gain": {
+        "annual_potential": 0.0,
+        "is_strategic": false,
+        "likely_implementation_date": null,
+        "monthly_expected": 0.0,
+        "monthly_high": 0.0,
+        "monthly_low": 0.0,
+        "realizable_year": 0.0,
+        "realization_factor": 0.8
+      },
+      "estimation": {
+        "assumptions": [
+          "GlueVersion 1.0 fatura mín. 10 min; 2.0+ fatura mín. 1 min",
+          "duração média 60.0 min · 40.6 execuções/mês",
+          "mesma configuração de workers",
+          "custo alocado do Cost Explorer (0.4400 USD/DPU-h observado no mês, qualidade reconciled)"
+        ],
+        "avoidable_bytes": null,
+        "baseline_bytes": null,
+        "baseline_cost": 357.28,
+        "baseline_quality": "allocated",
+        "break_even_months": null,
+        "currency": "USD",
+        "estimated_saving": 0.0,
+        "estimated_saving_high": null,
+        "estimated_saving_low": null,
+        "estimation_version": "2.0-usd",
+        "exposure_cost": null,
+        "first_month_net_saving": null,
+        "is_strategic": false,
+        "maximum_profitable_reads": null,
+        "method": "glue_version_upgrade_v1",
+        "monthly_recurring_saving": null,
+        "one_time_cost": null,
+        "pricing_dependencies": [
+          "glue"
+        ],
+        "pricing_region": "sa-east-1",
+        "projected_bytes": null,
+        "projected_cost": 357.28,
+        "saving_quality": "modeled"
+      },
+      "evidence": [
+        "GlueVersion=1.0",
+        "duração média 60.0 min",
+        "billing mínimo 10 min",
+        "sem AQE"
+      ],
+      "evidence_coverage": 1.0,
+      "evidence_quality": "modeled",
+      "evidence_refs": [
+        {
+          "actual_dpu_hours": 800.0,
+          "collected_at": "2026-07-23",
+          "data_through": "",
+          "estimated_dpu_hours": 0.0,
+          "resource_name": "processa_interacoes",
+          "resource_type": "glue_job",
+          "run_ids": [],
+          "source": "Glue GetJobRuns"
+        }
+      ],
+      "execution_priority": 0,
+      "finding": "Glue 1.0 desatualizado (avaliar 5.1)",
+      "first_seen": "",
+      "gain_score": 0,
+      "how_to_apply": "Validar compatibilidade de runtime/bibliotecas e rodar a suíte de regressão antes da migração.",
+      "how_to_validate": "Comparar custo/execução e duração; validar saídas com testes.",
+      "julius_version": "0.6.0",
+      "knowledge_version": "glue-knowledge-2026-07",
+      "last_seen": "",
+      "missing_evidence": [],
+      "next_action": "validar evidência antes de implementar",
+      "opportunity_id": "GLUE-VERSION-OLD-db25275f",
+      "origin": "rule",
+      "owner": "Squad AVI",
+      "owner_confidence": 1.0,
+      "owner_event_name": "",
+      "owner_event_time": "",
+      "owner_source": "tag oficial",
+      "process_cost_monthly": 543.16,
+      "process_cost_window": 535.35,
+      "process_criticality": 0.0,
+      "recommended_action": "Avaliar migração para a versão preferencial configurada (5.1)",
+      "remediation_family": "runtime_modality",
+      "risks": [
+        "mudança de runtime pode exigir ajustes no script"
+      ],
+      "rule_id": "GLUE-VERSION-OLD",
+      "rule_version": "1.0.0",
+      "scan_id": "baseline",
+      "source_process": null,
+      "status": "detected",
+      "strategic_priority": 0,
+      "urgency": 1.0,
+      "why": "Job em Glue 1.0 fatura em blocos de 10 min; execuções de ~60 min pagam por 10.",
+      "window_end": "2026-07-23"
+    },
+    {
+      "account": "consumer-avi",
+      "actionable": false,
+      "actor": null,
+      "actor_confidence": 0.0,
+      "actor_source": null,
+      "asset_name": "dw-legado",
+      "asset_type": "redshift_cluster",
+      "blocked": true,
+      "bucket": "investigar_primeiro",
+      "calibrated_gain": null,
+      "calibration": null,
+      "calibration_factor": 1.0,
+      "category": "cost_optimization",
+      "classification": "modeled_opportunity",
+      "confidence": 0.68,
+      "confidence_label": "Média",
+      "data_sources": [
+        "Redshift DescribeClusters",
+        "CloudWatch"
+      ],
+      "difficulty_score": 3,
+      "doc_links": [
+        "https://docs.aws.amazon.com/redshift/latest/mgmt/managing-cluster-operations.html#elastic-resize"
+      ],
+      "downstream_consumers": 0,
+      "estimated_gain": {
+        "annual_potential": 0.0,
+        "is_strategic": false,
+        "likely_implementation_date": null,
+        "monthly_expected": 0.0,
+        "monthly_high": 0.0,
+        "monthly_low": 0.0,
+        "realizable_year": 0.0,
+        "realization_factor": 0.8
+      },
+      "estimation": {
+        "assumptions": [
+          "histórico de query não coletado: SVV_*/STL_* exigem acesso de banco",
+          "economia não quantificada até haver medição de uso"
+        ],
+        "avoidable_bytes": null,
+        "baseline_bytes": null,
+        "baseline_cost": 0.0,
+        "baseline_quality": "modeled",
+        "break_even_months": null,
+        "currency": "USD",
+        "estimated_saving": 0.0,
+        "estimated_saving_high": null,
+        "estimated_saving_low": null,
+        "estimation_version": "1.0",
+        "exposure_cost": null,
+        "first_month_net_saving": null,
+        "is_strategic": false,
+        "maximum_profitable_reads": null,
+        "method": "redshift_oversized_v1",
+        "monthly_recurring_saving": null,
+        "one_time_cost": null,
+        "pricing_dependencies": [],
+        "pricing_region": "sa-east-1",
+        "projected_bytes": null,
+        "projected_cost": 0.0,
+        "saving_quality": "unavailable"
+      },
+      "evidence": [
+        "4 nós ra3.xlplus",
+        "CPU máxima 6%",
+        "histórico de query não coletado: SVV_*/STL_* exigem acesso de banco"
+      ],
+      "evidence_coverage": 1.0,
+      "evidence_quality": "modeled_rule",
+      "evidence_refs": [],
+      "execution_priority": 0,
+      "finding": "Cluster com CPU baixa até no pico",
+      "first_seen": "",
+      "gain_score": 0,
+      "how_to_apply": "Comparar o perfil de carga com a capacidade atual e testar o resize numa janela controlada.",
+      "how_to_validate": "Comparar CPU, duração de query e fila antes e depois do resize.",
+      "julius_version": "0.6.0",
+      "knowledge_version": "redshift-knowledge-2026-07",
+      "last_seen": "",
+      "missing_evidence": [
+        "métricas operacionais parciais",
+        "contrafactual de bytes/custo ainda não medido"
+      ],
+      "next_action": "validar evidência antes de implementar",
+      "opportunity_id": "REDSHIFT-OVERSIZED-04191c90",
+      "origin": "rule",
+      "owner": "Squad AVI",
+      "owner_confidence": 1.0,
+      "owner_event_name": "",
+      "owner_event_time": "",
+      "owner_source": "tag oficial",
+      "process_cost_monthly": null,
+      "process_cost_window": null,
+      "process_criticality": 0.0,
+      "recommended_action": "Avaliar elastic resize para menos nós",
+      "remediation_family": "capacity_sizing",
+      "risks": [
+        "menos nós reduz memória e disco disponíveis por query",
+        "CPU baixa pode esconder gargalo de I/O ou de fila"
+      ],
+      "rule_id": "REDSHIFT-OVERSIZED",
+      "rule_version": "1.0.0",
+      "scan_id": "baseline",
+      "source_process": null,
+      "status": "detected",
+      "strategic_priority": 0,
+      "urgency": 1.0,
+      "why": "4 nós ra3.xlplus com CPU máxima 6% na janela.",
+      "window_end": null
+    },
+    {
+      "account": "consumer-avi",
+      "actionable": false,
+      "actor": "Squad AVI",
+      "actor_confidence": 1.0,
+      "actor_source": "tag Owner do recurso",
+      "asset_name": "processa_interacoes",
+      "asset_type": "glue_job",
+      "blocked": true,
+      "bucket": "investigar_primeiro",
+      "calibrated_gain": null,
+      "calibration": null,
+      "calibration_factor": 1.0,
+      "category": "cost_optimization",
+      "classification": "modeled_opportunity",
+      "confidence": 0.68,
+      "confidence_label": "Média",
+      "data_sources": [
+        "Glue GetJob",
+        "GetJobRuns"
+      ],
+      "difficulty_score": 3,
+      "doc_links": [
+        "https://docs.aws.amazon.com/glue/latest/dg/monitor-continuations.html"
+      ],
+      "downstream_consumers": 0,
+      "estimated_gain": {
+        "annual_potential": 0.0,
+        "is_strategic": false,
+        "likely_implementation_date": null,
+        "monthly_expected": 0.0,
+        "monthly_high": 0.0,
+        "monthly_low": 0.0,
+        "realizable_year": 0.0,
+        "realization_factor": 0.8
+      },
+      "estimation": {
+        "assumptions": [
+          "fonte incremental e bytes redundantes ainda não comprovados",
+          "nenhum percentual genérico de reprocessamento foi aplicado",
+          "custo alocado do Cost Explorer (0.4400 USD/DPU-h observado no mês, qualidade reconciled)"
+        ],
+        "avoidable_bytes": null,
+        "baseline_bytes": null,
+        "baseline_cost": 352.0,
+        "baseline_quality": "allocated",
+        "break_even_months": null,
+        "currency": "USD",
+        "estimated_saving": 0.0,
+        "estimated_saving_high": null,
+        "estimated_saving_low": null,
+        "estimation_version": "2.0-usd",
+        "exposure_cost": null,
+        "first_month_net_saving": null,
+        "is_strategic": false,
+        "maximum_profitable_reads": null,
+        "method": "glue_bookmark_measured_reprocessing_v2",
+        "monthly_recurring_saving": null,
+        "one_time_cost": null,
+        "pricing_dependencies": [
+          "glue"
+        ],
+        "pricing_region": "sa-east-1",
+        "projected_bytes": null,
+        "projected_cost": 352.0,
+        "saving_quality": "unavailable"
+      },
+      "evidence": [
+        "--job-bookmark-option desligado",
+        "40.6 execuções/mês",
+        "incrementalidade da fonte não comprovada",
+        "bytes redundantes não medidos"
+      ],
+      "evidence_coverage": 1.0,
+      "evidence_quality": "modeled_rule",
+      "evidence_refs": [
+        {
+          "actual_dpu_hours": 800.0,
+          "collected_at": "2026-07-23",
+          "data_through": "",
+          "estimated_dpu_hours": 0.0,
+          "resource_name": "processa_interacoes",
+          "resource_type": "glue_job",
+          "run_ids": [],
+          "source": "Glue GetJobRuns"
+        }
+      ],
+      "execution_priority": 0,
+      "finding": "Job recorrente sem job bookmarks (reprocessa dados)",
+      "first_seen": "",
+      "gain_score": 0,
+      "how_to_apply": "Ativar --job-bookmark-option job-bookmark-enable e ajustar o script para incremental; testar reprocessamento.",
+      "how_to_validate": "Comparar bytes lidos e DPU-h por execução após ativar bookmarks.",
+      "julius_version": "0.6.0",
+      "knowledge_version": "glue-knowledge-2026-07",
+      "last_seen": "",
+      "missing_evidence": [
+        "volume novo e volume já processado por execução",
+        "confirmação de que a fonte cresce de forma incremental"
+      ],
+      "next_action": "validar evidência antes de implementar",
+      "opportunity_id": "GLUE-BOOKMARK-OFF-db25275f",
+      "origin": "rule",
+      "owner": "Squad AVI",
+      "owner_confidence": 1.0,
+      "owner_event_name": "",
+      "owner_event_time": "",
+      "owner_source": "tag oficial",
+      "process_cost_monthly": 543.16,
+      "process_cost_window": 535.35,
+      "process_criticality": 0.0,
+      "recommended_action": "Habilitar job bookmarks (processamento incremental)",
+      "remediation_family": "incremental_state",
+      "risks": [
+        "exige ajuste no script",
+        "reprocessamento inicial"
+      ],
+      "rule_id": "GLUE-BOOKMARK-OFF",
+      "rule_version": "1.0.0",
+      "scan_id": "baseline",
+      "source_process": null,
+      "status": "detected",
+      "strategic_priority": 0,
+      "urgency": 1.0,
+      "why": "Job roda 40.6×/mês sem bookmarks — reprocessa dados já processados.",
+      "window_end": "2026-07-23"
     },
     {
       "account": "consumer-avi",
@@ -2600,6 +4043,7 @@
       "process_cost_window": null,
       "process_criticality": 0.0,
       "recommended_action": "Detalhar Cost Explorer/CUR por usage type, operação e tag de alocação",
+      "remediation_family": "inventory_integrity",
       "risks": [
         "diferença pode conter atraso ou modalidades ainda não modeladas"
       ],
@@ -2614,6 +4058,176 @@
       "window_end": null
     }
   ],
+  "pending_measurements": {
+    "by_owner": {
+      "coleta": 0.0,
+      "time": 0.0
+    },
+    "ceiling": 0.0,
+    "count_by_owner": {
+      "coleta": 3,
+      "time": 9
+    },
+    "items": [
+      {
+        "asset_name": "orquestra_ingestao",
+        "asset_type": "state_machine",
+        "blocked_source": "",
+        "effort": 1,
+        "expected": null,
+        "family": "failure_waste",
+        "family_label": "Parar de pagar por execução que falha",
+        "next_action": "Levantar: taxa de falha por Task e quantas execuções chegam ao último retry",
+        "rule_id": "SFN-RETRY-MASKING",
+        "source_next_action": "",
+        "unblocked_by": "coleta"
+      },
+      {
+        "asset_name": "consumer-avi-datalake",
+        "asset_type": "s3_bucket",
+        "blocked_source": "",
+        "effort": 1,
+        "expected": null,
+        "family": "lifecycle_cleanup",
+        "family_label": "Remover o que sobrou",
+        "next_action": "Levantar: política de retenção acordada para este bucket; volume ocupado por versões não-correntes",
+        "rule_id": "S3-NONCURRENT-VERSIONS",
+        "source_next_action": "",
+        "unblocked_by": "coleta"
+      },
+      {
+        "asset_name": "dw-legado",
+        "asset_type": "redshift_cluster",
+        "blocked_source": "",
+        "effort": 1,
+        "expected": null,
+        "family": "idle_capacity",
+        "family_label": "Desligar o que não é usado",
+        "next_action": "Levantar: propósito declarado do cluster pelo dono; janela de carga esperada, se houver",
+        "rule_id": "REDSHIFT-IDLE-JUSTIFICATION",
+        "source_next_action": "",
+        "unblocked_by": "coleta"
+      },
+      {
+        "asset_name": "jupyter-avi-ds",
+        "asset_type": "sagemaker_app",
+        "blocked_source": "",
+        "effort": 3,
+        "expected": null,
+        "family": "capacity_sizing",
+        "family_label": "Ajustar capacidade provisionada",
+        "next_action": "Levantar: notebooks em uso; picos de memória/GPU durante atividade",
+        "rule_id": "SM-APP-INSTANCE-FIT",
+        "source_next_action": "",
+        "unblocked_by": "time"
+      },
+      {
+        "asset_name": "dw-legado",
+        "asset_type": "redshift_cluster",
+        "blocked_source": "",
+        "effort": 3,
+        "expected": null,
+        "family": "capacity_sizing",
+        "family_label": "Ajustar capacidade provisionada",
+        "next_action": "Levantar: memória por query e derrame para disco; profundidade de fila e tempo de espera; distribuição das tabelas mais lidas",
+        "rule_id": "REDSHIFT-RESIZE-TARGET",
+        "source_next_action": "",
+        "unblocked_by": "time"
+      },
+      {
+        "asset_name": "modelo-churn-dev",
+        "asset_type": "sagemaker_endpoint",
+        "blocked_source": "",
+        "effort": 4,
+        "expected": null,
+        "family": "runtime_modality",
+        "family_label": "Trocar a modalidade de execução",
+        "next_action": "Levantar: SLA e tolerância a cold start; tamanho do payload e duração; restrições de GPU, VPC, data capture e multi-model; consumidores atuais",
+        "rule_id": "SM-ENDPOINT-MODE-FIT",
+        "source_next_action": "",
+        "unblocked_by": "time"
+      },
+      {
+        "asset_name": "orquestra_ingestao",
+        "asset_type": "state_machine",
+        "blocked_source": "",
+        "effort": 4,
+        "expected": null,
+        "family": "runtime_modality",
+        "family_label": "Trocar a modalidade de execução",
+        "next_action": "Levantar: benchmark externo de duração e memória do Express",
+        "rule_id": "SFN-STANDARD-TO-EXPRESS",
+        "source_next_action": "",
+        "unblocked_by": "time"
+      },
+      {
+        "asset_name": "treina_features",
+        "asset_type": "glue_job",
+        "blocked_source": "",
+        "effort": 4,
+        "expected": null,
+        "family": "runtime_modality",
+        "family_label": "Trocar a modalidade de execução",
+        "next_action": "Levantar: compatibilidade de bibliotecas e formatos usados pelo script; benchmark de duração e DPU-h na versão alvo",
+        "rule_id": "GLUE-VERSION-REVIEW",
+        "source_next_action": "",
+        "unblocked_by": "time"
+      },
+      {
+        "asset_name": "sync_parceiros",
+        "asset_type": "glue_job",
+        "blocked_source": "",
+        "effort": 4,
+        "expected": null,
+        "family": "runtime_modality",
+        "family_label": "Trocar a modalidade de execução",
+        "next_action": "Levantar: compatibilidade de bibliotecas e formatos usados pelo script; benchmark de duração e DPU-h na versão alvo",
+        "rule_id": "GLUE-VERSION-REVIEW",
+        "source_next_action": "",
+        "unblocked_by": "time"
+      },
+      {
+        "asset_name": "gera_base_legado",
+        "asset_type": "glue_job",
+        "blocked_source": "",
+        "effort": 4,
+        "expected": null,
+        "family": "runtime_modality",
+        "family_label": "Trocar a modalidade de execução",
+        "next_action": "Levantar: compatibilidade de bibliotecas e formatos usados pelo script; benchmark de duração e DPU-h na versão alvo",
+        "rule_id": "GLUE-VERSION-REVIEW",
+        "source_next_action": "",
+        "unblocked_by": "time"
+      },
+      {
+        "asset_name": "agrega_vendas",
+        "asset_type": "glue_job",
+        "blocked_source": "",
+        "effort": 4,
+        "expected": null,
+        "family": "runtime_modality",
+        "family_label": "Trocar a modalidade de execução",
+        "next_action": "Levantar: compatibilidade de bibliotecas e formatos usados pelo script; benchmark de duração e DPU-h na versão alvo",
+        "rule_id": "GLUE-VERSION-REVIEW",
+        "source_next_action": "",
+        "unblocked_by": "time"
+      },
+      {
+        "asset_name": "gera_base_legado",
+        "asset_type": "glue_job",
+        "blocked_source": "",
+        "effort": 4,
+        "expected": null,
+        "family": "runtime_modality",
+        "family_label": "Trocar a modalidade de execução",
+        "next_action": "Levantar: prazo de entrega acordado com quem consome a saída; dependência a jusante que trava esperando este job",
+        "rule_id": "GLUE-FLEX-TOLERANCE",
+        "source_next_action": "",
+        "unblocked_by": "time"
+      }
+    ],
+    "sentence": "12 medição(ões) pendente(s) — 3 com coleta, 9 com time. Até 0.00/mês ainda não medido, e parte disso pode já estar na economia identificada."
+  },
   "period": "jul/2026",
   "process_costs": [
     {
@@ -2816,130 +4430,23 @@
   "signals": [
     {
       "artifact_sha256": "",
-      "asset_name": "gera_base_legado",
-      "asset_type": "glue_job",
+      "asset_name": "orquestra_ingestao",
+      "asset_type": "state_machine",
       "doc_links": [
-        "https://docs.aws.amazon.com/glue/latest/dg/aws-glue-api-jobs-runs.html"
+        "https://docs.aws.amazon.com/step-functions/latest/dg/concepts-error-handling.html"
       ],
       "kind": "config",
       "lines": [],
+      "measurement_effort": 1,
       "missing_evidence": [
-        "prazo de entrega acordado com quem consome a saída",
-        "dependência a jusante que trava esperando este job"
+        "taxa de falha por Task e quantas execuções chegam ao último retry"
       ],
-      "observation": "'gera_base_legado' é batch Spark em STANDARD com 30 execuções/mês; FLEX custa menos por DPU-hora.",
+      "next_action": "Levantar: taxa de falha por Task e quantas execuções chegam ao último retry",
+      "observation": "Retry declara até 3 tentativas em 'orquestra_ingestao'.",
       "potential_range": null,
-      "question": "O SLA deste job tolera início adiado e capacidade não garantida? Quem espera a saída, e até quando?",
-      "rule_id": "GLUE-FLEX-TOLERANCE"
-    },
-    {
-      "artifact_sha256": "",
-      "asset_name": "agrega_vendas",
-      "asset_type": "glue_job",
-      "doc_links": [
-        "https://docs.aws.amazon.com/glue/latest/dg/release-notes.html"
-      ],
-      "kind": "config",
-      "lines": [],
-      "missing_evidence": [
-        "compatibilidade de bibliotecas e formatos usados pelo script",
-        "benchmark de duração e DPU-h na versão alvo"
-      ],
-      "observation": "Job em Glue 3.0, abaixo da versão preferencial 5.1.",
-      "potential_range": null,
-      "question": "O script usa bibliotecas, formatos ou APIs que impedem a migração para Glue 5.1? Se não impedem, o que a migração muda em duração e DPU-h neste job?",
-      "rule_id": "GLUE-VERSION-REVIEW"
-    },
-    {
-      "artifact_sha256": "",
-      "asset_name": "gera_base_legado",
-      "asset_type": "glue_job",
-      "doc_links": [
-        "https://docs.aws.amazon.com/glue/latest/dg/release-notes.html"
-      ],
-      "kind": "config",
-      "lines": [],
-      "missing_evidence": [
-        "compatibilidade de bibliotecas e formatos usados pelo script",
-        "benchmark de duração e DPU-h na versão alvo"
-      ],
-      "observation": "Job em Glue 3.0, abaixo da versão preferencial 5.1.",
-      "potential_range": null,
-      "question": "O script usa bibliotecas, formatos ou APIs que impedem a migração para Glue 5.1? Se não impedem, o que a migração muda em duração e DPU-h neste job?",
-      "rule_id": "GLUE-VERSION-REVIEW"
-    },
-    {
-      "artifact_sha256": "",
-      "asset_name": "sync_parceiros",
-      "asset_type": "glue_job",
-      "doc_links": [
-        "https://docs.aws.amazon.com/glue/latest/dg/release-notes.html"
-      ],
-      "kind": "config",
-      "lines": [],
-      "missing_evidence": [
-        "compatibilidade de bibliotecas e formatos usados pelo script",
-        "benchmark de duração e DPU-h na versão alvo"
-      ],
-      "observation": "Job em Glue 3.0, abaixo da versão preferencial 5.1.",
-      "potential_range": null,
-      "question": "O script usa bibliotecas, formatos ou APIs que impedem a migração para Glue 5.1? Se não impedem, o que a migração muda em duração e DPU-h neste job?",
-      "rule_id": "GLUE-VERSION-REVIEW"
-    },
-    {
-      "artifact_sha256": "",
-      "asset_name": "treina_features",
-      "asset_type": "glue_job",
-      "doc_links": [
-        "https://docs.aws.amazon.com/glue/latest/dg/release-notes.html"
-      ],
-      "kind": "config",
-      "lines": [],
-      "missing_evidence": [
-        "compatibilidade de bibliotecas e formatos usados pelo script",
-        "benchmark de duração e DPU-h na versão alvo"
-      ],
-      "observation": "Job em Glue 3.0, abaixo da versão preferencial 5.1.",
-      "potential_range": null,
-      "question": "O script usa bibliotecas, formatos ou APIs que impedem a migração para Glue 5.1? Se não impedem, o que a migração muda em duração e DPU-h neste job?",
-      "rule_id": "GLUE-VERSION-REVIEW"
-    },
-    {
-      "artifact_sha256": "",
-      "asset_name": "dw-legado",
-      "asset_type": "redshift_cluster",
-      "doc_links": [
-        "https://docs.aws.amazon.com/redshift/latest/mgmt/managing-cluster-operations.html"
-      ],
-      "kind": "config",
-      "lines": [],
-      "missing_evidence": [
-        "propósito declarado do cluster pelo dono",
-        "janela de carga esperada, se houver"
-      ],
-      "observation": "'dw-legado' passou 30 dias sem conexão observada e com CPU no chão.",
-      "potential_range": null,
-      "question": "Este cluster existe para uma carga sazonal, para recuperação de desastre, ou deixou de ser usado? Quem depende dele hoje?",
-      "rule_id": "REDSHIFT-IDLE-JUSTIFICATION"
-    },
-    {
-      "artifact_sha256": "",
-      "asset_name": "dw-legado",
-      "asset_type": "redshift_cluster",
-      "doc_links": [
-        "https://docs.aws.amazon.com/redshift/latest/mgmt/managing-cluster-operations.html#elastic-resize"
-      ],
-      "kind": "config",
-      "lines": [],
-      "missing_evidence": [
-        "memória por query e derrame para disco",
-        "profundidade de fila e tempo de espera",
-        "distribuição das tabelas mais lidas"
-      ],
-      "observation": "4 nós ra3.xlplus com CPU máxima 6% na janela.",
-      "potential_range": null,
-      "question": "Para quantos nós dá para reduzir sem estourar memória por query ou fila? CPU baixa esconde gargalo de I/O ou de concorrência neste caso?",
-      "rule_id": "REDSHIFT-RESIZE-TARGET"
+      "question": "O retry cobre falha transitória de verdade, ou mascara erro recorrente e repaga o trabalho já cobrado a cada tentativa?",
+      "remediation_family": "failure_waste",
+      "rule_id": "SFN-RETRY-MASKING"
     },
     {
       "artifact_sha256": "",
@@ -2950,48 +4457,38 @@
       ],
       "kind": "config",
       "lines": [],
+      "measurement_effort": 1,
       "missing_evidence": [
         "política de retenção acordada para este bucket",
         "volume ocupado por versões não-correntes"
       ],
+      "next_action": "Levantar: política de retenção acordada para este bucket; volume ocupado por versões não-correntes",
       "observation": "'consumer-avi-datalake' tem versionamento ativo e 2560.0 GB armazenados.",
       "potential_range": null,
       "question": "As versões não-correntes existem por exigência de retenção ou por inércia? Há prazo regulatório que impeça apagá-las?",
+      "remediation_family": "lifecycle_cleanup",
       "rule_id": "S3-NONCURRENT-VERSIONS"
     },
     {
       "artifact_sha256": "",
-      "asset_name": "orquestra_ingestao",
-      "asset_type": "state_machine",
+      "asset_name": "dw-legado",
+      "asset_type": "redshift_cluster",
       "doc_links": [
-        "https://docs.aws.amazon.com/step-functions/latest/dg/concepts-error-handling.html"
+        "https://docs.aws.amazon.com/redshift/latest/mgmt/managing-cluster-operations.html"
       ],
       "kind": "config",
       "lines": [],
+      "measurement_effort": 1,
       "missing_evidence": [
-        "taxa de falha por Task e quantas execuções chegam ao último retry"
+        "propósito declarado do cluster pelo dono",
+        "janela de carga esperada, se houver"
       ],
-      "observation": "Retry declara até 3 tentativas em 'orquestra_ingestao'.",
+      "next_action": "Levantar: propósito declarado do cluster pelo dono; janela de carga esperada, se houver",
+      "observation": "'dw-legado' passou 30 dias sem conexão observada e com CPU no chão.",
       "potential_range": null,
-      "question": "O retry cobre falha transitória de verdade, ou mascara erro recorrente e repaga o trabalho já cobrado a cada tentativa?",
-      "rule_id": "SFN-RETRY-MASKING"
-    },
-    {
-      "artifact_sha256": "",
-      "asset_name": "orquestra_ingestao",
-      "asset_type": "state_machine",
-      "doc_links": [
-        "https://docs.aws.amazon.com/step-functions/latest/dg/concepts-standard-vs-express.html"
-      ],
-      "kind": "config",
-      "lines": [],
-      "missing_evidence": [
-        "benchmark externo de duração e memória do Express"
-      ],
-      "observation": "'orquestra_ingestao' é STANDARD com 45000 execuções/mês de ~90s — perfil de Express, cuja semântica é at-least-once.",
-      "potential_range": null,
-      "question": "A ASL tolera execução repetida? Há Task com efeito colateral não idempotente — escrita sem chave de deduplicação, envio de notificação, cobrança — que a reexecução do Express duplicaria?",
-      "rule_id": "SFN-STANDARD-TO-EXPRESS"
+      "question": "Este cluster existe para uma carga sazonal, para recuperação de desastre, ou deixou de ser usado? Quem depende dele hoje?",
+      "remediation_family": "idle_capacity",
+      "rule_id": "REDSHIFT-IDLE-JUSTIFICATION"
     },
     {
       "artifact_sha256": "",
@@ -3002,14 +4499,39 @@
       ],
       "kind": "config",
       "lines": [],
+      "measurement_effort": 3,
       "missing_evidence": [
         "notebooks em uso",
         "picos de memória/GPU durante atividade"
       ],
+      "next_action": "Levantar: notebooks em uso; picos de memória/GPU durante atividade",
       "observation": "JupyterLab em ml.g4dn.xlarge com ~14.0h/dia de baixa atividade.",
       "potential_range": null,
       "question": "O trabalho exige essa instância e Studio ativo, ou cabe em instância menor/job sob demanda?",
+      "remediation_family": "capacity_sizing",
       "rule_id": "SM-APP-INSTANCE-FIT"
+    },
+    {
+      "artifact_sha256": "",
+      "asset_name": "dw-legado",
+      "asset_type": "redshift_cluster",
+      "doc_links": [
+        "https://docs.aws.amazon.com/redshift/latest/mgmt/managing-cluster-operations.html#elastic-resize"
+      ],
+      "kind": "config",
+      "lines": [],
+      "measurement_effort": 3,
+      "missing_evidence": [
+        "memória por query e derrame para disco",
+        "profundidade de fila e tempo de espera",
+        "distribuição das tabelas mais lidas"
+      ],
+      "next_action": "Levantar: memória por query e derrame para disco; profundidade de fila e tempo de espera; distribuição das tabelas mais lidas",
+      "observation": "4 nós ra3.xlplus com CPU máxima 6% na janela.",
+      "potential_range": null,
+      "question": "Para quantos nós dá para reduzir sem estourar memória por query ou fila? CPU baixa esconde gargalo de I/O ou de concorrência neste caso?",
+      "remediation_family": "capacity_sizing",
+      "rule_id": "REDSHIFT-RESIZE-TARGET"
     },
     {
       "artifact_sha256": "",
@@ -3022,16 +4544,144 @@
       ],
       "kind": "config",
       "lines": [],
+      "measurement_effort": 4,
       "missing_evidence": [
         "SLA e tolerância a cold start",
         "tamanho do payload e duração",
         "restrições de GPU, VPC, data capture e multi-model",
         "consumidores atuais"
       ],
+      "next_action": "Levantar: SLA e tolerância a cold start; tamanho do payload e duração; restrições de GPU, VPC, data capture e multi-model; consumidores atuais",
       "observation": "modalidade=real_time, 8 invocações/mês.",
       "potential_range": null,
       "question": "O SLA/payload favorece manter real-time, Serverless, Async, Batch ou scale-to-zero?",
+      "remediation_family": "runtime_modality",
       "rule_id": "SM-ENDPOINT-MODE-FIT"
+    },
+    {
+      "artifact_sha256": "",
+      "asset_name": "orquestra_ingestao",
+      "asset_type": "state_machine",
+      "doc_links": [
+        "https://docs.aws.amazon.com/step-functions/latest/dg/concepts-standard-vs-express.html"
+      ],
+      "kind": "config",
+      "lines": [],
+      "measurement_effort": 4,
+      "missing_evidence": [
+        "benchmark externo de duração e memória do Express"
+      ],
+      "next_action": "Levantar: benchmark externo de duração e memória do Express",
+      "observation": "'orquestra_ingestao' é STANDARD com 45000 execuções/mês de ~90s — perfil de Express, cuja semântica é at-least-once.",
+      "potential_range": null,
+      "question": "A ASL tolera execução repetida? Há Task com efeito colateral não idempotente — escrita sem chave de deduplicação, envio de notificação, cobrança — que a reexecução do Express duplicaria?",
+      "remediation_family": "runtime_modality",
+      "rule_id": "SFN-STANDARD-TO-EXPRESS"
+    },
+    {
+      "artifact_sha256": "",
+      "asset_name": "treina_features",
+      "asset_type": "glue_job",
+      "doc_links": [
+        "https://docs.aws.amazon.com/glue/latest/dg/release-notes.html"
+      ],
+      "kind": "config",
+      "lines": [],
+      "measurement_effort": 4,
+      "missing_evidence": [
+        "compatibilidade de bibliotecas e formatos usados pelo script",
+        "benchmark de duração e DPU-h na versão alvo"
+      ],
+      "next_action": "Levantar: compatibilidade de bibliotecas e formatos usados pelo script; benchmark de duração e DPU-h na versão alvo",
+      "observation": "Job em Glue 3.0, abaixo da versão preferencial 5.1.",
+      "potential_range": null,
+      "question": "O script usa bibliotecas, formatos ou APIs que impedem a migração para Glue 5.1? Se não impedem, o que a migração muda em duração e DPU-h neste job?",
+      "remediation_family": "runtime_modality",
+      "rule_id": "GLUE-VERSION-REVIEW"
+    },
+    {
+      "artifact_sha256": "",
+      "asset_name": "sync_parceiros",
+      "asset_type": "glue_job",
+      "doc_links": [
+        "https://docs.aws.amazon.com/glue/latest/dg/release-notes.html"
+      ],
+      "kind": "config",
+      "lines": [],
+      "measurement_effort": 4,
+      "missing_evidence": [
+        "compatibilidade de bibliotecas e formatos usados pelo script",
+        "benchmark de duração e DPU-h na versão alvo"
+      ],
+      "next_action": "Levantar: compatibilidade de bibliotecas e formatos usados pelo script; benchmark de duração e DPU-h na versão alvo",
+      "observation": "Job em Glue 3.0, abaixo da versão preferencial 5.1.",
+      "potential_range": null,
+      "question": "O script usa bibliotecas, formatos ou APIs que impedem a migração para Glue 5.1? Se não impedem, o que a migração muda em duração e DPU-h neste job?",
+      "remediation_family": "runtime_modality",
+      "rule_id": "GLUE-VERSION-REVIEW"
+    },
+    {
+      "artifact_sha256": "",
+      "asset_name": "gera_base_legado",
+      "asset_type": "glue_job",
+      "doc_links": [
+        "https://docs.aws.amazon.com/glue/latest/dg/release-notes.html"
+      ],
+      "kind": "config",
+      "lines": [],
+      "measurement_effort": 4,
+      "missing_evidence": [
+        "compatibilidade de bibliotecas e formatos usados pelo script",
+        "benchmark de duração e DPU-h na versão alvo"
+      ],
+      "next_action": "Levantar: compatibilidade de bibliotecas e formatos usados pelo script; benchmark de duração e DPU-h na versão alvo",
+      "observation": "Job em Glue 3.0, abaixo da versão preferencial 5.1.",
+      "potential_range": null,
+      "question": "O script usa bibliotecas, formatos ou APIs que impedem a migração para Glue 5.1? Se não impedem, o que a migração muda em duração e DPU-h neste job?",
+      "remediation_family": "runtime_modality",
+      "rule_id": "GLUE-VERSION-REVIEW"
+    },
+    {
+      "artifact_sha256": "",
+      "asset_name": "agrega_vendas",
+      "asset_type": "glue_job",
+      "doc_links": [
+        "https://docs.aws.amazon.com/glue/latest/dg/release-notes.html"
+      ],
+      "kind": "config",
+      "lines": [],
+      "measurement_effort": 4,
+      "missing_evidence": [
+        "compatibilidade de bibliotecas e formatos usados pelo script",
+        "benchmark de duração e DPU-h na versão alvo"
+      ],
+      "next_action": "Levantar: compatibilidade de bibliotecas e formatos usados pelo script; benchmark de duração e DPU-h na versão alvo",
+      "observation": "Job em Glue 3.0, abaixo da versão preferencial 5.1.",
+      "potential_range": null,
+      "question": "O script usa bibliotecas, formatos ou APIs que impedem a migração para Glue 5.1? Se não impedem, o que a migração muda em duração e DPU-h neste job?",
+      "remediation_family": "runtime_modality",
+      "rule_id": "GLUE-VERSION-REVIEW"
+    },
+    {
+      "artifact_sha256": "",
+      "asset_name": "gera_base_legado",
+      "asset_type": "glue_job",
+      "doc_links": [
+        "https://docs.aws.amazon.com/glue/latest/dg/aws-glue-api-jobs-runs.html"
+      ],
+      "kind": "config",
+      "lines": [],
+      "measurement_effort": 4,
+      "missing_evidence": [
+        "prazo de entrega acordado com quem consome a saída",
+        "dependência a jusante que trava esperando este job"
+      ],
+      "next_action": "Levantar: prazo de entrega acordado com quem consome a saída; dependência a jusante que trava esperando este job",
+      "observation": "'gera_base_legado' é batch Spark em STANDARD com 30 execuções/mês; FLEX custa menos por DPU-hora.",
+      "potential_range": null,
+      "question": "O SLA deste job tolera início adiado e capacidade não garantida? Quem espera a saída, e até quando?",
+      "remediation_family": "runtime_modality",
+      "rule_id": "GLUE-FLEX-TOLERANCE"
     }
   ],
   "summary": {
@@ -3045,6 +4695,6 @@
     "realization_rate": "—",
     "realized_monthly": "US$ 0",
     "recommendation": "Ainda não há ação de baixo risco pronta — o próximo passo é coletar evidência nas oportunidades de maior potencial.",
-    "technical_identified_monthly": "US$ 1.473,44"
+    "technical_identified_monthly": "US$ 1.561,64"
   }
 }

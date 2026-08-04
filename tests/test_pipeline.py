@@ -80,11 +80,67 @@ def test_failing_job_wastes_dpu(analysis):
 
 
 def test_root_cause_grouping(analysis):
-    # processa_interacoes aciona várias regras → um único item com relacionados.
+    """Causa raiz é a ação de remediação, não o ativo.
+
+    Antes, toda regra sobre um job virava um item só. `processa_interacoes` aciona
+    quatro regras — reduzir workers, subir a versão do Glue, ligar bookmark e
+    corrigir o timeout —, e são quatro mudanças diferentes, com quatro validações
+    diferentes e possivelmente quatro momentos diferentes. Fundidas, três delas
+    viravam texto dentro dos riscos da quarta e a economia delas sumia do portfólio.
+
+    O agrupamento continua existindo, e é o que `test_same_family_still_merges`
+    cobre: o que se funde é o que descreve a **mesma** correção.
+    """
     procs = [o for o in analysis.opportunities if o.asset_name == "processa_interacoes"]
-    assert len(procs) == 1
-    assert "achados relacionados" in procs[0].finding
-    assert any("Achados relacionados no mesmo ativo" in e for e in procs[0].evidence)
+    familias = {o.remediation_family for o in procs}
+    assert len(procs) == len(familias) == 4, (
+        "cada família de remediação é uma ação própria: "
+        f"{sorted((o.rule_id, o.remediation_family) for o in procs)}"
+    )
+    assert all(o.remediation_family for o in procs), "achado sem família classificada"
+
+
+def test_same_family_still_merges(analysis):
+    """A metade que não mudou: duas regras da mesma correção continuam uma ação.
+
+    `sync_parceiros` aciona `GLUE-FAILING-JOB` e `GLUE-TIMEOUT-EXCESSIVE`, que são
+    a mesma família — parar de pagar por execução que falha. Elas se fundem, e a
+    cifra do item é a do primário, nunca a soma.
+    """
+    itens = [
+        o
+        for o in analysis.opportunities
+        if o.asset_name == "sync_parceiros"
+        and o.remediation_family == "failure_waste"
+    ]
+    assert len(itens) == 1
+    principal = itens[0]
+    assert "achado relacionado" in principal.finding
+    assert any(
+        "Achados relacionados no mesmo ativo" in item for item in principal.evidence
+    )
+
+
+def test_an_asset_never_claims_more_than_it_costs(analysis):
+    """Famílias diferentes somam — mas nunca além do que o ativo custa.
+
+    É o que separa "duas ações reais" de "o mesmo dinheiro contado duas vezes". Sem
+    este teto, dois achados sobre a mesma query Athena reivindicariam cada um o
+    custo inteiro dela, porque `athena_query` não tem linha em `process_costs` e o
+    único limite era o baseline individual.
+    """
+    from collections import defaultdict
+
+    somado: dict[tuple[str, str], float] = defaultdict(float)
+    custo: dict[tuple[str, str], float] = {}
+    for o in analysis.opportunities:
+        if not (o.include_in_portfolio and o.estimation):
+            continue
+        chave = (o.asset_type, o.asset_name)
+        somado[chave] += o.portfolio_gain.monthly_expected
+        custo[chave] = max(custo.get(chave, 0.0), o.estimation.baseline_cost)
+    estouros = {k: (v, custo[k]) for k, v in somado.items() if v > custo[k] + 0.01}
+    assert not estouros, f"economia acima do custo do ativo: {estouros}"
 
 
 def test_savings_are_positive(analysis):

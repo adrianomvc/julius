@@ -79,4 +79,5 @@ def potential(
         high=round(teto, 2),
         basis=basis,
         caveat=caveat,
+        baseline=round(float(baseline), 2),
     )

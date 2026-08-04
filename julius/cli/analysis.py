@@ -411,7 +411,7 @@ def _record_verdicts(context_path: str, analysis, ledger_path: str) -> int:
     if not ledger_path:
         return 0
     context = load_agent_context(context_path)
-    signals = [Signal(**payload) for payload in context.signals]
+    signals = [Signal.from_dict(payload) for payload in context.signals]
     return SignalLedger(ledger_path).record_verdicts(
         analysis.signal_verdicts,
         signals,

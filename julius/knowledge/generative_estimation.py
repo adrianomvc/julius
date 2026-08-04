@@ -86,6 +86,67 @@ _ELEGIVEIS: dict[str, GenerativeCandidate] = {
             "que o script não declara e a telemetria de treino não expõe"
         ),
     ),
+    # As seis abaixo entraram pelo levantamento de `knowledge/coverage.py`: mesma
+    # família de remediação, mesmo serviço, mesmo mecanismo de cobrança e mesma
+    # fonte de baseline que uma das três acima. Nenhuma fórmula nova foi escrita —
+    # o que faltava era declarar que o caminho já existente serve para elas.
+    "GLUE-CODE-CACHE-LIFECYCLE": GenerativeCandidate(
+        rule_id="GLUE-CODE-CACHE-LIFECYCLE",
+        mechanism="glue_dpu_hour",
+        baseline_source="glue_job",
+        why_no_formula=(
+            "quanto custa recomputar o que poderia estar em cache depende de quantas "
+            "vezes o plano é reavaliado e do tamanho do que seria guardado; o Spark "
+            "não separa esse tempo do resto da execução"
+        ),
+    ),
+    "GLUE-CODE-REPEATED-ACTIONS": GenerativeCandidate(
+        rule_id="GLUE-CODE-REPEATED-ACTIONS",
+        mechanism="glue_dpu_hour",
+        baseline_source="glue_job",
+        why_no_formula=(
+            "cada ação repetida reexecuta o plano inteiro a montante, e o custo "
+            "disso depende de quanto desse plano é caro — que só a execução revela"
+        ),
+    ),
+    "GLUE-CODE-ITERATIVE-PLAN": GenerativeCandidate(
+        rule_id="GLUE-CODE-ITERATIVE-PLAN",
+        mechanism="glue_dpu_hour",
+        baseline_source="glue_job",
+        why_no_formula=(
+            "o plano cresce a cada iteração do laço, e quantas iterações existem "
+            "em produção depende do dado de entrada, não do script"
+        ),
+    ),
+    "GLUE-CODE-ROW-EXTERNAL-IO": GenerativeCandidate(
+        rule_id="GLUE-CODE-ROW-EXTERNAL-IO",
+        mechanism="glue_dpu_hour",
+        baseline_source="glue_job",
+        why_no_formula=(
+            "o custo da chamada externa por linha é a latência dela vezes a "
+            "cardinalidade, e nenhuma métrica do Glue separa espera de I/O externo "
+            "do tempo de processamento"
+        ),
+    ),
+    "SM-CODE-FULL-DATASET-LOAD": GenerativeCandidate(
+        rule_id="SM-CODE-FULL-DATASET-LOAD",
+        mechanism="sagemaker_instance_second",
+        baseline_source="sagemaker_job",
+        why_no_formula=(
+            "carregar o dataset inteiro em memória força uma instância maior que o "
+            "treino precisa, e quanto maior depende do volume — que o script não "
+            "declara e o inventário não mede por job"
+        ),
+    ),
+    "SM-CODE-ROW-EXTERNAL-IO": GenerativeCandidate(
+        rule_id="SM-CODE-ROW-EXTERNAL-IO",
+        mechanism="sagemaker_instance_second",
+        baseline_source="sagemaker_job",
+        why_no_formula=(
+            "a instância fica cobrando enquanto espera I/O externo por linha, e a "
+            "fração do tempo gasta em espera não aparece na telemetria de treino"
+        ),
+    ),
 }
 
 

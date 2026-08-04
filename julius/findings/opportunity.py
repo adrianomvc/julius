@@ -94,6 +94,14 @@ class Opportunity:
     why: str = ""
     # `rule` ou `ai_confirmed`; ver `Finding.origin`.
     origin: str = "rule"
+    # A que ação de remediação este achado pertence. Vem do catálogo em
+    # `knowledge/remediation.py` e chega preenchido por `classify_opportunities` —
+    # `findings` não enxerga `knowledge`, então o resultado viaja no campo.
+    #
+    # É a chave do agrupamento: dois achados do mesmo ativo em famílias diferentes
+    # são duas ações de verdade (redimensionar e ligar bookmark), e fundi-los
+    # transformava a segunda numa linha dentro dos riscos da primeira.
+    remediation_family: str = ""
     evidence: list[str] = field(default_factory=list)
     risks: list[str] = field(default_factory=list)
     doc_links: list[str] = field(default_factory=list)

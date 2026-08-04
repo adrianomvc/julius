@@ -229,10 +229,21 @@ def test_two_scans_the_second_one_asks_less_and_carries_more(tmp_path):
     assert (confirmed.rule_id, confirmed.asset_name) not in asked_again
     assert len(second.signals) == len(first.signals) - 2
 
+    # O confirmado vira achado rastreável — com ID, fingerprint e ciclo de vida.
+    # É o que faltava: sem isto o julgamento morria numa linha de relatório.
     promoted = [o for o in second.opportunities if o.origin == "ai_confirmed"]
-    assert promoted == []
-    assert len(second.investigations) == 1
-    assert second.investigations[0].asset_name == confirmed.asset_name
+    assert len(promoted) == 1
+    assert promoted[0].asset_name == confirmed.asset_name
+    assert promoted[0].rule_id == confirmed.rule_id
+
+    # Sem piloto, a promoção não vale dinheiro: bloqueada e com economia zero.
+    assert promoted[0].blocked is True
+    assert promoted[0].estimated_gain.monthly_expected == 0.0
+    assert promoted[0].include_in_portfolio is False
+
+    # E some da fila de investigação, porque a partir daqui quem carrega o assunto
+    # é o achado no backlog. Listar os dois mostraria a mesma coisa em duas seções.
+    assert second.investigations == []
 
     # A promoção não pode mexer no dinheiro do portfólio.
     def total(analysis):
@@ -242,7 +253,7 @@ def test_two_scans_the_second_one_asks_less_and_carries_more(tmp_path):
 
     assert total(second) == total(first)
 
-    # E não se repete no terceiro scan.
+    # E não se repete no terceiro scan: `mark_promoted` é o que impede.
     third = analyze(sample, ledger=ledger)
-    assert len([o for o in third.opportunities if o.origin == "ai_confirmed"]) == 0
-    assert len(third.investigations) == 1
+    assert [o for o in third.opportunities if o.origin == "ai_confirmed"] == []
+    assert third.investigations == []

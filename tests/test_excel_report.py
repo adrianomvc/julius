@@ -28,9 +28,11 @@ def analysis():
 
 
 def test_there_is_a_sheet_per_bucket_plus_health_and_assumptions(workbook):
-    # "Sinais" só existe quando há hipótese em aberto: uma aba vazia num
-    # relatório entregue se lê como "procuramos e não achamos nada".
-    assert [nome for nome in workbook.sheetnames if nome != "Sinais"] == [
+    # "Medições pendentes" só existe quando há hipótese em aberto: uma aba vazia
+    # num relatório entregue se lê como "procuramos e não achamos nada".
+    assert [
+        nome for nome in workbook.sheetnames if nome != "Medições pendentes"
+    ] == [
         "Resumo",
         "Fazer agora",
         "Planejar",

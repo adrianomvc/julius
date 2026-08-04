@@ -23,8 +23,16 @@ from julius.analysis.skill_registry import contract_digest
 
 #: Sobe junto com `PROMPT_VERSION`, nunca sozinho. Se este teste falhar, o
 #: conteúdo do contrato mudou: suba `PROMPT_VERSION` e cole o dígito novo aqui.
-VERSAO_CONGELADA = "2.0.0"
-DIGEST_CONGELADO = "e539e9cdf2a7d2c4"
+#: 2.1.0 — expansão aditiva dos métodos de estimativa: `glue_shuffle_reduction_v1`
+#: passou a responder `GLUE-CODE-SHUFFLE-PARTITIONS` e `GLUE-CODE-SINGLE-PARTITION`,
+#: e seis regras entraram na faixa contextual.
+#:
+#: 2.2.0 — `remediation_family` entrou no veredito, opcional e validada contra o
+#: catálogo, e a lista de famílias entrou nos campos do motor. Duas expansões
+#: aditivas seguidas: nada saiu do contrato, nenhuma proibição mudou, e um veredito
+#: dado em 2.0.0 continua legível em 2.2.0.
+VERSAO_CONGELADA = "2.2.0"
+DIGEST_CONGELADO = "f2ddf6120aaf479e"
 
 
 def test_the_contract_did_not_change_without_a_version_bump():

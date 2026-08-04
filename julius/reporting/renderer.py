@@ -97,6 +97,10 @@ def render_json(vm: ReportViewModel, opportunities: list[Opportunity]) -> str:
         # Fora de `ai_analysis` porque o sinal existe com ou sem provedor: o
         # scanner o produz no scan, e o veredito é o que pode não vir.
         "signals": vm.signals,
+        # A mesma lista pela pergunta que o usuário faz: quanto ainda não sei, e
+        # quem descobre. O teto **não** soma com `identified_monthly` — as duas
+        # cifras saem do mesmo custo de ativo.
+        "pending_measurements": vm.pending,
         "ai_analysis": {
             "source": "Devin" if vm.ai_summary else None,
             "executive_summary": vm.ai_summary,

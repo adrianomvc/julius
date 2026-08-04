@@ -11,6 +11,7 @@ from julius.findings.investigation import (
     AIRecommendation,
 )
 from julius.knowledge.generative_estimation import eligible, eligible_rule_ids
+from julius.knowledge.remediation import CATALOG, FAMILIES
 
 #: Toda conclusão sobre um artefato precisa dizer qual artefato e onde. Sem
 #: isso não há como distinguir leitura do script de suposição sobre ele.
@@ -62,6 +63,11 @@ ANALYSIS_OUTPUT_SCHEMA: dict = {
                     },
                     "rationale": {"type": "string"},
                     "evidence_ref": _EVIDENCE_REF_SCHEMA,
+                    # Opcional, e validada contra o catálogo do motor. Existe para
+                    # a análise poder dizer que dois sinais são a mesma correção —
+                    # e para discordar do catálogo quando a leitura do artefato
+                    # inteiro mostrar que a correção é outra.
+                    "remediation_family": {"type": "string"},
                     "recommendation": {
                         "type": ["object", "null"],
                         "additionalProperties": False,
@@ -319,6 +325,21 @@ class SignalVerdict:
     recommendation: AIRecommendation | None = None
     estimation_proposal: AIEstimationProposal | None = None
     contextual_estimate: AIContextualEstimate | None = None
+    #: A que ação de remediação a análise entende que este sinal pertence.
+    #:
+    #: O motor já sabe a resposta — está no catálogo — e **não a substitui por
+    #: esta**: família é campo determinístico e agrupa dinheiro. O valor de pedi-la
+    #: é a discordância: quando a análise lê o artefato inteiro e conclui que a
+    #: correção é outra, isso é erro de catálogo aparecendo, e erro de catálogo
+    #: funde ações que não são a mesma. Vazio quando a análise não opinou.
+    remediation_family: str = ""
+
+    @property
+    def family_matches_catalog(self) -> bool | None:
+        """`None` quando a análise não opinou; caso contrário, se ela concorda."""
+        if not self.remediation_family:
+            return None
+        return CATALOG.get(self.rule_id, "") == self.remediation_family
 
 
 @dataclass(frozen=True)
@@ -592,16 +613,30 @@ def _parse_signal_verdicts(
         raise AgentOutputError("signal_verdicts inválida")
     parsed: list[SignalVerdict] = []
     seen: set[tuple[str, str]] = set()
-    legacy_keys = {"rule_id", "asset_name", "verdict", "rationale", "evidence_ref"}
-    extended_keys = legacy_keys | {"recommendation", "estimation_proposal"}
-    generative_keys = extended_keys | {"contextual_estimate"}
+    # Obrigatórias presentes, nenhuma desconhecida. Antes eram três conjuntos
+    # exatos enumerados — `legacy`, `extended`, `generative` —, e cada campo
+    # opcional novo dobrava a lista. As duas propriedades que a enumeração dava
+    # continuam: campo faltando falha, campo inventado falha, e agora um campo
+    # opcional a mais é uma entrada em `opcionais`, não uma combinação nova.
+    obrigatorias = {"rule_id", "asset_name", "verdict", "rationale", "evidence_ref"}
+    opcionais = {
+        "recommendation",
+        "estimation_proposal",
+        "contextual_estimate",
+        "remediation_family",
+    }
     for raw in raw_verdicts:
-        if not isinstance(raw, dict) or frozenset(raw) not in {
-            frozenset(legacy_keys),
-            frozenset(extended_keys),
-            frozenset(generative_keys),
-        }:
-            raise AgentOutputError("campos do veredito ausentes ou não permitidos")
+        if not isinstance(raw, dict):
+            raise AgentOutputError("veredito precisa ser um objeto")
+        chaves = set(raw)
+        if not obrigatorias <= chaves or not chaves <= (obrigatorias | opcionais):
+            faltando = sorted(obrigatorias - chaves)
+            sobrando = sorted(chaves - obrigatorias - opcionais)
+            raise AgentOutputError(
+                "campos do veredito ausentes ou não permitidos"
+                + (f"; faltando: {faltando}" if faltando else "")
+                + (f"; não permitidos: {sobrando}" if sobrando else "")
+            )
         rule_id = raw.get("rule_id")
         asset_name = raw.get("asset_name")
         verdict = raw.get("verdict")
@@ -640,6 +675,12 @@ def _parse_signal_verdicts(
                 f"{rule_id} não aceita faixa contextual; elegíveis: "
                 f"{', '.join(eligible_rule_ids()) or 'nenhum'}"
             )
+        familia = raw.get("remediation_family", "")
+        if familia and (not isinstance(familia, str) or familia not in FAMILIES):
+            raise AgentOutputError(
+                f"remediation_family desconhecida em {rule_id}: {familia!r}; "
+                f"conhecidas: {', '.join(sorted(FAMILIES))}"
+            )
         seen.add(key)
         parsed.append(
             SignalVerdict(
@@ -647,6 +688,7 @@ def _parse_signal_verdicts(
                 asset_name=asset_name,
                 verdict=str(verdict),
                 rationale=rationale,
+                remediation_family=str(familia or ""),
                 evidence_ref=_parse_evidence_ref(
                     raw.get("evidence_ref"),
                     known_hashes,
