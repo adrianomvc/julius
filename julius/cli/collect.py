@@ -211,6 +211,7 @@ def collect(
     from julius.collection.snapshot import CollectionSnapshotStore
     from julius.collection.targets import (
         resolve_account_name,
+        resolve_account_name_source,
         resolve_athena_workgroup_roles,
         resolve_athena_workgroups,
         resolve_scope_profile,
@@ -250,6 +251,8 @@ def collect(
         raise typer.BadParameter(str(exc)) from exc
 
     session = make_session(sso_profile or None, "sa-east-1")
+    # A origem viaja junto do nome: `profile` é o apelido do perfil SSO, e é o
+    # único que a coleta pode substituir pelo nome que a própria conta informa.
     resolved_account_name = resolve_account_name(
         explicit_name=account_name,
         sso_profile=sso_profile,
@@ -257,6 +260,11 @@ def collect(
     )
     scope = CatalogScope(
         account_name=resolved_account_name,
+        name_source=resolve_account_name_source(
+            explicit_name=account_name,
+            sso_profile=sso_profile,
+            config_path=accounts_config,
+        ),
         databases=tuple(
             part.strip() for part in glue_databases.split(",") if part.strip()
         ),
