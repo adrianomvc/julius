@@ -49,9 +49,11 @@ class _CloudWatch:
         return resposta
 
 
-def _consultas(quantidade: int) -> list[MetricQuery]:
+def _consultas(quantidade: int, *, offset: int = 0) -> list[MetricQuery]:
     return [
-        MetricQuery(namespace="AWS/Teste", metric_name=f"M{i}", stat="Sum")
+        MetricQuery(
+            namespace="AWS/Teste", metric_name=f"M{i + offset}", stat="Sum"
+        )
         for i in range(quantidade)
     ]
 
@@ -147,7 +149,7 @@ def test_coordinator_combines_compatible_concurrent_collectors():
     client._metric_batch_coordinator = coordinator
     barrier = Barrier(2)
     first = _consultas(120)
-    second = _consultas(80)
+    second = _consultas(80, offset=120)
 
     def run(queries):
         barrier.wait()
@@ -211,14 +213,41 @@ def test_coordinator_records_logical_requests_and_physical_batches():
     client._metric_batch_coordinator = coordinator
     barrier = Barrier(2)
 
-    def run(amount):
+    def run(spec):
+        amount, offset = spec
         barrier.wait()
-        return metrics.collect(client, _consultas(amount), start=INICIO, end=FIM)
+        return metrics.collect(
+            client, _consultas(amount, offset=offset), start=INICIO, end=FIM
+        )
 
     with ThreadPoolExecutor(max_workers=2) as pool:
-        list(pool.map(run, (300, 300)))
+        list(pool.map(run, ((300, 0), (300, 300))))
 
     assert telemetry.cloudwatch_metric_requests == 2
     assert telemetry.cloudwatch_metric_queries == 600
     assert telemetry.cloudwatch_metric_batches == 2
     assert telemetry.cloudwatch_coalesced_requests == 2
+
+
+def test_coordinator_deduplicates_identical_queries_and_copies_results():
+    client = _CloudWatch()
+    telemetry = RunTelemetry()
+    coordinator = metrics.MetricBatchCoordinator(
+        client, telemetry=telemetry, coalesce_seconds=0.02
+    )
+    client._metric_batch_coordinator = coordinator
+    barrier = Barrier(2)
+    groups = (_consultas(300), _consultas(300))
+
+    def run(queries):
+        barrier.wait()
+        return metrics.collect(client, queries, start=INICIO, end=FIM)
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = list(pool.map(run, groups))
+
+    assert results == [[], []]
+    assert client.tamanhos == [300]
+    assert all(query.values == [1.0] for group in groups for query in group)
+    assert telemetry.cloudwatch_deduplicated_queries == 300
+    assert telemetry.cloudwatch_avoided_calls == 1

@@ -38,7 +38,7 @@ from collections.abc import Iterator
 from dataclasses import dataclass, field
 from datetime import datetime
 from threading import Event, Lock
-from time import sleep
+from time import perf_counter, sleep
 from typing import Any, TypeVar
 
 #: Teto da API para consultas numa única chamada `GetMetricData`.
@@ -81,6 +81,12 @@ class _MetricRequest:
     queries: list[MetricQuery]
     done: Event = field(default_factory=Event)
     problems: list[Exception] = field(default_factory=list)
+
+
+@dataclass
+class _MetricPlan:
+    query: MetricQuery
+    consumers: list[tuple[_MetricRequest, MetricQuery]] = field(default_factory=list)
 
 
 class MetricBatchCoordinator:
@@ -157,27 +163,76 @@ class MetricBatchCoordinator:
             for request in requests
             for query in request.queries
         ]
+        by_signature: dict[tuple, _MetricPlan] = {}
+        plans: list[_MetricPlan] = []
+        for request, query in indexed:
+            signature = (
+                query.namespace,
+                query.metric_name,
+                query.stat,
+                tuple(sorted(query.dimensions)),
+                query.period,
+            )
+            plan = by_signature.get(signature)
+            if plan is None:
+                plan = _MetricPlan(query)
+                by_signature[signature] = plan
+                plans.append(plan)
+            plan.consumers.append((request, query))
+        deduplicated = len(indexed) - len(plans)
+        naive_batches = sum(
+            (len(request.queries) + MAX_QUERIES_PER_CALL - 1)
+            // MAX_QUERIES_PER_CALL
+            for request in requests
+            if request.queries
+        )
         if self._telemetry is not None:
             self._telemetry.record_cloudwatch_batch(
                 requests=len(requests),
                 queries=len(indexed),
                 coalesced=len(requests) if len(requests) > 1 else 0,
+                deduplicated=deduplicated,
             )
-        for block in _blocks(indexed, MAX_QUERIES_PER_CALL):
-            if self._telemetry is not None:
-                self._telemetry.record_cloudwatch_batch(batches=1)
+        started = perf_counter()
+        actual_batches = 0
+        for block in _blocks(plans, MAX_QUERIES_PER_CALL):
+            actual_batches += 1
             try:
                 _fetch(
                     self._client,
-                    [query for _, query in block],
+                    [plan.query for plan in block],
                     start,
                     end,
                     scan_by,
                 )
             except Exception as exc:  # noqa: BLE001 - isolado por lote
-                affected = {id(request): request for request, _ in block}
+                affected = {
+                    id(request): request
+                    for plan in block
+                    for request, _ in plan.consumers
+                }
                 for request in affected.values():
                     request.problems.append(exc)
+                continue
+            for plan in block:
+                for _, query in plan.consumers:
+                    if query is plan.query:
+                        continue
+                    query.values[:] = plan.query.values
+                    query.timestamps[:] = plan.query.timestamps
+        if self._telemetry is not None:
+            elapsed_ms = max(0, round((perf_counter() - started) * 1000))
+            avoided = max(0, naive_batches - actual_batches)
+            estimated_saved = (
+                round(elapsed_ms / actual_batches * avoided)
+                if actual_batches and avoided
+                else 0
+            )
+            self._telemetry.record_cloudwatch_batch(
+                batches=actual_batches,
+                avoided_calls=avoided,
+                estimated_saved_ms=estimated_saved,
+            )
         for request in requests:
             request.done.set()
 

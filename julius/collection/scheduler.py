@@ -7,6 +7,7 @@ terminaram. Fontes ainda não provadas como seguras continuam seriais.
 
 from __future__ import annotations
 
+import tracemalloc
 from collections.abc import Callable
 from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
 from dataclasses import dataclass, field
@@ -77,25 +78,40 @@ def run_sources(
         else "parallel"
     )
     started = perf_counter()
-    if actual_mode == "serial":
-        for source in sources:
-            if source.name in completed_sources:
-                continue
-            before = len(recorder.entries)
-            run(source, ctx, recorder)
-            if on_source_applied is not None:
-                on_source_applied(source, recorder.entries[before:])
-        peak = 1
-        limits: dict[str, int] = {}
-    else:
-        peak, limits = _run_parallel(
-            sources,
-            ctx,
-            recorder,
-            workers=workers,
-            on_source_applied=on_source_applied,
-            completed_sources=completed_sources,
-        )
+    tracing_owned = not tracemalloc.is_tracing()
+    if tracing_owned:
+        tracemalloc.start()
+    ctx.telemetry.configure_pressure(
+        page_limit=ctx.max_parallel_pages,
+        memory_limit_mb=ctx.max_memory_mb,
+    )
+    ctx.telemetry.resumed_sources = len(completed_sources)
+    try:
+        if actual_mode == "serial":
+            for source in sources:
+                if source.name in completed_sources:
+                    continue
+                before = len(recorder.entries)
+                run(source, ctx, recorder)
+                if on_source_applied is not None:
+                    on_source_applied(source, recorder.entries[before:])
+            peak = 1
+            limits: dict[str, int] = {}
+        else:
+            peak, limits = _run_parallel(
+                sources,
+                ctx,
+                recorder,
+                workers=workers,
+                on_source_applied=on_source_applied,
+                completed_sources=completed_sources,
+            )
+    finally:
+        if tracemalloc.is_tracing():
+            _, memory_peak = tracemalloc.get_traced_memory()
+            ctx.telemetry.record_memory_peak(memory_peak)
+        if tracing_owned:
+            tracemalloc.stop()
 
     names = {source.name for source in sources}
     ctx.telemetry.execution_mode = actual_mode
@@ -107,6 +123,9 @@ def run_sources(
     )
     ctx.telemetry.max_parallel_sources = peak
     ctx.telemetry.service_concurrency_limits = limits
+    critical_ms, critical_sources = _critical_path(sources, recorder.entries)
+    ctx.telemetry.critical_path_ms = critical_ms
+    ctx.telemetry.critical_path_sources = critical_sources
 
 
 def _run_parallel(
@@ -119,6 +138,7 @@ def _run_parallel(
     completed_sources: frozenset[str],
 ) -> tuple[int, dict[str, int]]:
     positions = {source.name: index for index, source in enumerate(sources)}
+    priorities = _downstream_counts(sources)
     pending = {
         source.name: source
         for source in sources
@@ -127,6 +147,7 @@ def _run_parallel(
     completed: set[str] = set(completed_sources)
     entries: dict[str, list] = {}
     tracker = _PeakTracker()
+    ctx.telemetry.max_pending_sources = len(pending)
     limiters = {
         service: _AdaptiveLimiter(
             _SERVICE_LIMITS.get(service, _DEFAULT_SERVICE_LIMIT)
@@ -143,6 +164,7 @@ def _run_parallel(
                 for source in sources
                 if source.name in pending and source.depends_on <= completed
             ]
+            ready.sort(key=lambda source: (-priorities[source.name], positions[source.name]))
             scheduled = False
             for source in ready:
                 if len(running) >= workers:
@@ -212,7 +234,8 @@ def _execute_limited(
     acquired: list[str] = []
     try:
         for service in sorted(source.services):
-            limiters[service].acquire()
+            waited = limiters[service].acquire()
+            ctx.telemetry.record_scheduler_wait(waited)
             acquired.append(service)
         tracker.enter()
         try:
@@ -221,9 +244,11 @@ def _execute_limited(
             tracker.leave()
     finally:
         for service in reversed(acquired):
-            limiters[service].release(
+            reduced = limiters[service].release(
                 throttled=ctx.telemetry.throttles(service) > before[service]
             )
+            if reduced:
+                ctx.telemetry.record_limiter_reduction(service)
 
 
 class _AdaptiveLimiter:
@@ -241,14 +266,17 @@ class _AdaptiveLimiter:
         with self._condition:
             return self._limit
 
-    def acquire(self) -> None:
+    def acquire(self) -> int:
+        started = perf_counter()
         with self._condition:
             self._condition.wait_for(lambda: self._active < self._limit)
             self._active += 1
+        return max(0, round((perf_counter() - started) * 1000))
 
-    def release(self, *, throttled: bool) -> None:
+    def release(self, *, throttled: bool) -> bool:
         with self._condition:
             self._active -= 1
+            previous = self._limit
             if throttled:
                 self._limit = max(1, self._limit // 2)
                 self._healthy = 0
@@ -258,6 +286,56 @@ class _AdaptiveLimiter:
                     self._limit += 1
                     self._healthy = 0
             self._condition.notify_all()
+            return self._limit < previous
+
+
+def _downstream_counts(sources: tuple[Source, ...]) -> dict[str, int]:
+    """Quantidade de descendentes únicos; maior valor libera o DAG primeiro."""
+    children: dict[str, set[str]] = {source.name: set() for source in sources}
+    for source in sources:
+        for dependency in source.depends_on:
+            children[dependency].add(source.name)
+    memo: dict[str, set[str]] = {}
+
+    def descendants(name: str) -> set[str]:
+        if name not in memo:
+            memo[name] = set(children[name])
+            for child in children[name]:
+                memo[name].update(descendants(child))
+        return memo[name]
+
+    return {source.name: len(descendants(source.name)) for source in sources}
+
+
+def _critical_path(
+    sources: tuple[Source, ...], entries: list[CollectionHealth]
+) -> tuple[int, list[str]]:
+    durations = {
+        source.name: sum(
+            entry.duration_ms for entry in entries if entry.source == source.name
+        )
+        for source in sources
+    }
+    by_name = {source.name: source for source in sources}
+    memo: dict[str, tuple[int, list[str]]] = {}
+
+    def visit(name: str) -> tuple[int, list[str]]:
+        if name in memo:
+            return memo[name]
+        dependencies = by_name[name].depends_on
+        previous = max(
+            (visit(dependency) for dependency in dependencies),
+            key=lambda item: item[0],
+            default=(0, []),
+        )
+        memo[name] = (previous[0] + durations[name], [*previous[1], name])
+        return memo[name]
+
+    return max(
+        (visit(source.name) for source in sources),
+        key=lambda item: item[0],
+        default=(0, []),
+    )
 
 
 def _validate(sources: tuple[Source, ...]) -> None:

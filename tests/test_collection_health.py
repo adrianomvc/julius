@@ -221,7 +221,18 @@ def test_parallel_and_serial_collection_are_semantically_equivalent(monkeypatch)
             "collection_wall_ms",
             "source_duration_ms",
             "max_parallel_sources",
+            "max_pending_sources",
+            "critical_path_ms",
+            "critical_path_sources",
+            "scheduler_wait_ms",
             "service_concurrency_limits",
+            "service_limit_reductions",
+            "page_concurrency_limit",
+            "max_parallel_pages",
+            "page_backpressure_wait_ms",
+            "peak_memory_bytes",
+            "memory_limit_bytes",
+            "memory_pressure_events",
         ):
             telemetry.pop(key, None)
         for entry in payload["collection_health"]:

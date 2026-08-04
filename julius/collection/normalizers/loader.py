@@ -198,12 +198,38 @@ def account_from_dataset(raw: dict) -> Account:
         collection_wall_ms=int(telemetry.get("collection_wall_ms") or 0),
         source_duration_ms=int(telemetry.get("source_duration_ms") or 0),
         max_parallel_sources=int(telemetry.get("max_parallel_sources") or 1),
+        max_pending_sources=int(telemetry.get("max_pending_sources") or 0),
+        critical_path_ms=int(telemetry.get("critical_path_ms") or 0),
+        critical_path_sources=list(telemetry.get("critical_path_sources") or []),
+        scheduler_wait_ms=int(telemetry.get("scheduler_wait_ms") or 0),
         service_concurrency_limits={
             str(key): int(value)
             for key, value in (
                 telemetry.get("service_concurrency_limits") or {}
             ).items()
         },
+        service_limit_reductions={
+            str(key): int(value)
+            for key, value in (
+                telemetry.get("service_limit_reductions") or {}
+            ).items()
+        },
+        page_concurrency_limit=int(telemetry.get("page_concurrency_limit") or 1),
+        max_parallel_pages=int(telemetry.get("max_parallel_pages") or 0),
+        page_backpressure_wait_ms=int(
+            telemetry.get("page_backpressure_wait_ms") or 0
+        ),
+        peak_memory_bytes=int(telemetry.get("peak_memory_bytes") or 0),
+        memory_limit_bytes=int(telemetry.get("memory_limit_bytes") or 0),
+        memory_pressure_events=int(telemetry.get("memory_pressure_events") or 0),
+        resumed_sources=int(telemetry.get("resumed_sources") or 0),
+        superseded_runs=int(telemetry.get("superseded_runs") or 0),
+        superseded_ai_jobs=int(telemetry.get("superseded_ai_jobs") or 0),
+        ai_queue_depth=int(telemetry.get("ai_queue_depth") or 0),
+        ai_queue_oldest_wait_ms=int(
+            telemetry.get("ai_queue_oldest_wait_ms") or 0
+        ),
+        ai_queue_rejected=int(telemetry.get("ai_queue_rejected") or 0),
         snapshot_hits=int(telemetry.get("snapshot_hits") or 0),
         snapshot_misses=int(telemetry.get("snapshot_misses") or 0),
         cloudwatch_metric_requests=int(
@@ -213,6 +239,15 @@ def account_from_dataset(raw: dict) -> Account:
         cloudwatch_metric_batches=int(telemetry.get("cloudwatch_metric_batches") or 0),
         cloudwatch_coalesced_requests=int(
             telemetry.get("cloudwatch_coalesced_requests") or 0
+        ),
+        cloudwatch_deduplicated_queries=int(
+            telemetry.get("cloudwatch_deduplicated_queries") or 0
+        ),
+        cloudwatch_avoided_calls=int(
+            telemetry.get("cloudwatch_avoided_calls") or 0
+        ),
+        cloudwatch_estimated_saved_ms=int(
+            telemetry.get("cloudwatch_estimated_saved_ms") or 0
         ),
         iam_short_circuits=int(telemetry.get("iam_short_circuits") or 0),
     )

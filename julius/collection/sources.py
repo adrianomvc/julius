@@ -59,6 +59,7 @@ from julius.collection.models import (
     GlueTrigger,
     IamGap,
     S3BucketConfig,
+    Schedule,
 )
 from julius.collection.policy import ScopePolicy, policy_for_profile
 from julius.collection.scope import CatalogScope
@@ -84,6 +85,11 @@ class CollectionContext:
     scope_policy: ScopePolicy = field(default_factory=lambda: policy_for_profile(None))
     telemetry: RunTelemetry = field(default_factory=RunTelemetry)
     max_scan_cost_usd: float | None = None
+    # Backpressure entre paginadores concorrentes. O limite controla páginas
+    # entregues aos coletores, sem materializar filas de resposta em memória.
+    max_parallel_pages: int = 8
+    # Limite cooperativo e opt-in. Zero/None apenas mede o pico sem interromper.
+    max_memory_mb: int | None = None
     glue_usage_markers: Sequence[tuple[str, str]] = ()
     allocatable_glue_buckets: frozenset[str] = frozenset()
     glue_cost_version: str = ""
@@ -556,6 +562,17 @@ def _glue_triggers_snapshot_policy() -> SnapshotPolicy:
         collector_version="glue-triggers-v1",
         serialize=lambda values: [asdict(value) for value in values],
         deserialize=lambda values: [GlueTrigger(**value) for value in values],
+        scope=lambda ctx: {"scope_profile": ctx.scope_policy.profile},
+    )
+
+
+def _eventbridge_schedules_snapshot_policy() -> SnapshotPolicy:
+    """Regras e targets são configuração; não carregam histórico de execução."""
+    return SnapshotPolicy(
+        ttl_seconds=5 * 60,
+        collector_version="eventbridge-schedules-v1",
+        serialize=lambda values: [asdict(value) for value in values],
+        deserialize=lambda values: [Schedule(**value) for value in values],
         scope=lambda ctx: {"scope_profile": ctx.scope_policy.profile},
     )
 
@@ -1478,6 +1495,7 @@ SOURCES: tuple[Source, ...] = (
         count=len,
         impact="frequência esperada dos processos pode ficar incompleta",
         next_action="validar events:ListRules e events:ListTargetsByRule",
+        snapshot_policy=_eventbridge_schedules_snapshot_policy(),
     ),
     Source(
         name="Table Touches",

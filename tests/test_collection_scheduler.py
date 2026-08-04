@@ -10,7 +10,11 @@ import pytest
 
 from julius.collection.health import CollectionRecorder
 from julius.collection.models import Account
-from julius.collection.scheduler import _AdaptiveLimiter, run_sources
+from julius.collection.scheduler import (
+    _AdaptiveLimiter,
+    _downstream_counts,
+    run_sources,
+)
 from julius.collection.sources import (
     CollectionContext,
     Source,
@@ -241,6 +245,10 @@ def test_scheduler_telemetry_survives_dataset_roundtrip(tmp_path):
     account.run_telemetry.collection_wall_ms = 1200
     account.run_telemetry.source_duration_ms = 3100
     account.run_telemetry.max_parallel_sources = 4
+    account.run_telemetry.critical_path_ms = 900
+    account.run_telemetry.critical_path_sources = ["A", "B"]
+    account.run_telemetry.peak_memory_bytes = 4_194_304
+    account.run_telemetry.resumed_sources = 3
     account.run_telemetry.service_concurrency_limits = {"s3": 1, "glue": 2}
     path = tmp_path / "account.json"
     path.write_text(json.dumps(account_to_dataset(account)), encoding="utf-8")
@@ -251,6 +259,10 @@ def test_scheduler_telemetry_survives_dataset_roundtrip(tmp_path):
     assert loaded.run_telemetry.collection_wall_ms == 1200
     assert loaded.run_telemetry.source_duration_ms == 3100
     assert loaded.run_telemetry.max_parallel_sources == 4
+    assert loaded.run_telemetry.critical_path_ms == 900
+    assert loaded.run_telemetry.critical_path_sources == ["A", "B"]
+    assert loaded.run_telemetry.peak_memory_bytes == 4_194_304
+    assert loaded.run_telemetry.resumed_sources == 3
     assert loaded.run_telemetry.service_concurrency_limits == {"s3": 1, "glue": 2}
 
 
@@ -276,3 +288,52 @@ def test_throttling_one_service_does_not_reduce_another():
 
     assert s3.limit == 2
     assert glue.limit == 4
+
+
+def test_priority_counts_all_downstream_dependencies():
+    sources = (
+        _source("root", lambda _ctx: [], into="state_machines"),
+        _source(
+            "middle",
+            lambda _ctx: [],
+            into="schedules",
+            depends_on=frozenset({"root"}),
+        ),
+        _source(
+            "leaf",
+            lambda _ctx: [],
+            into="actor_events",
+            depends_on=frozenset({"middle"}),
+        ),
+        _source("independent", lambda _ctx: [], into="tables"),
+    )
+
+    assert _downstream_counts(sources) == {
+        "root": 2,
+        "middle": 1,
+        "leaf": 0,
+        "independent": 0,
+    }
+
+
+def test_critical_path_and_memory_are_recorded():
+    sources = (
+        _source(
+            "root",
+            lambda _ctx: sleep(0.01) or ["machine"],
+            into="state_machines",
+        ),
+        _source(
+            "leaf",
+            lambda _ctx: sleep(0.01) or ["schedule"],
+            into="schedules",
+            depends_on=frozenset({"root"}),
+        ),
+    )
+    context = _context()
+
+    run_sources(sources, context, CollectionRecorder(), workers=2)
+
+    assert context.telemetry.critical_path_sources == ["root", "leaf"]
+    assert context.telemetry.critical_path_ms >= 10
+    assert context.telemetry.peak_memory_bytes > 0

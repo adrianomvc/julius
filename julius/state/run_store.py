@@ -68,15 +68,29 @@ class ContextualResult:
     result_hash: str
 
 
+@dataclass(frozen=True)
+class AiQueueStats:
+    pending: int = 0
+    running: int = 0
+    failed: int = 0
+    completed: int = 0
+    superseded: int = 0
+    rejected: int = 0
+    oldest_pending_ms: int = 0
+
+
 class RunStore:
     """Ledger DuckDB local; nenhum worker de IA toca a coleta boto3."""
 
-    def __init__(self, path: str | Path) -> None:
+    def __init__(
+        self, path: str | Path, *, max_pending_ai_jobs: int = 1_000
+    ) -> None:
         try:
             import duckdb
         except ImportError as exc:  # pragma: no cover
             raise RuntimeError("DuckDB não está instalado") from exc
         self.path = Path(path)
+        self.max_pending_ai_jobs = max(1, max_pending_ai_jobs)
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self._db = duckdb.connect(str(self.path))
         self._lock = Lock()
@@ -138,6 +152,14 @@ class RunStore:
                 status VARCHAR NOT NULL,
                 result_path VARCHAR NOT NULL,
                 result_hash VARCHAR NOT NULL,
+                created_at TIMESTAMP NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS ai_queue_events (
+                task_id VARCHAR NOT NULL,
+                account_id VARCHAR NOT NULL,
+                scan_id VARCHAR NOT NULL,
+                domain VARCHAR NOT NULL,
+                event VARCHAR NOT NULL,
                 created_at TIMESTAMP NOT NULL
             );
             """
@@ -308,6 +330,21 @@ class RunStore:
         ).hexdigest()[:24]
         now = _now()
         with self._lock:
+            existing = self._db.execute(
+                "SELECT task_id FROM ai_jobs WHERE task_id=?", [task_id]
+            ).fetchone()
+            if existing is not None:
+                return str(existing[0])
+            queued = self._db.execute(
+                """SELECT count(*) FROM ai_jobs
+                   WHERE status IN ('pending', 'running')"""
+            ).fetchone()
+            if queued is not None and int(queued[0]) >= self.max_pending_ai_jobs:
+                self._db.execute(
+                    "INSERT INTO ai_queue_events VALUES (?, ?, ?, ?, 'queue_full', ?)",
+                    [task_id, account_id, scan_id, domain, now],
+                )
+                return ""
             self._db.execute(
                 """
                 INSERT INTO ai_jobs VALUES (?, ?, ?, ?, 'pending', ?, ?, 0, '', ?, ?)
@@ -327,6 +364,35 @@ class RunStore:
         if self.run_status(account_id, scan_id) == "deterministic_published":
             self.transition(account_id, scan_id, "ai_pending")
         return task_id
+
+    def queue_stats(self) -> AiQueueStats:
+        """Snapshot operacional da fila persistente, sem reservar trabalho."""
+        with self._lock:
+            rows = self._db.execute(
+                "SELECT status, count(*) FROM ai_jobs GROUP BY status"
+            ).fetchall()
+            oldest = self._db.execute(
+                "SELECT min(created_at) FROM ai_jobs WHERE status='pending'"
+            ).fetchone()
+            rejected = self._db.execute(
+                "SELECT count(*) FROM ai_queue_events WHERE event='queue_full'"
+            ).fetchone()
+        counts = {str(status): int(count) for status, count in rows}
+        oldest_at = oldest[0] if oldest is not None else None
+        wait_ms = (
+            max(0, round((_now() - oldest_at).total_seconds() * 1000))
+            if isinstance(oldest_at, datetime)
+            else 0
+        )
+        return AiQueueStats(
+            pending=counts.get("pending", 0),
+            running=counts.get("running", 0),
+            failed=counts.get("failed", 0),
+            completed=counts.get("completed", 0),
+            superseded=counts.get("superseded", 0),
+            rejected=int(rejected[0]) if rejected is not None else 0,
+            oldest_pending_ms=wait_ms,
+        )
 
     def tasks(self, *, status: str = "pending") -> list[RunTask]:
         with self._lock:

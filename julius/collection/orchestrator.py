@@ -54,6 +54,8 @@ def collect_account(
     sagemaker_full_metrics: bool = False,
     scope_policy: ScopePolicy | None = None,
     max_scan_cost_usd: float | None = None,
+    max_parallel_pages: int = 8,
+    max_memory_mb: int | None = None,
     now: datetime | None = None,
     window: AnalysisWindow | None = None,
     cadence: str = "weekly",
@@ -108,6 +110,8 @@ def collect_account(
         scope_policy=policy,
         telemetry=account.run_telemetry,
         max_scan_cost_usd=max_scan_cost_usd,
+        max_parallel_pages=max_parallel_pages,
+        max_memory_mb=max_memory_mb,
         touches_table=touches_table,
         athena_workgroup=athena_workgroup,
         athena_history_workgroups=athena_history_workgroups,
@@ -142,7 +146,9 @@ def collect_account(
         run_store.create_run(ident, scan_id)
         supersede = getattr(run_store, "supersede_older_context", None)
         if not resume_checkpoints and callable(supersede):
-            supersede(ident, scan_id)
+            superseded_runs, superseded_jobs = supersede(ident, scan_id)
+            account.run_telemetry.superseded_runs = superseded_runs
+            account.run_telemetry.superseded_ai_jobs = superseded_jobs
         if run_store.run_status(ident, scan_id) == "created":
             run_store.transition(ident, scan_id, "collecting")
         fingerprint = _collection_fingerprint(
@@ -191,6 +197,15 @@ def collect_account(
         raise
     if checkpoint_writer is not None:
         checkpoint_writer.wait()
+    if run_store is not None:
+        queue_stats = getattr(run_store, "queue_stats", None)
+        if callable(queue_stats):
+            queue = queue_stats()
+            account.run_telemetry.ai_queue_depth = int(queue.pending + queue.running)
+            account.run_telemetry.ai_queue_oldest_wait_ms = int(
+                queue.oldest_pending_ms
+            )
+            account.run_telemetry.ai_queue_rejected = int(queue.rejected)
 
     # Derivação pura, depois de tudo coletado: a última leitura de uma tabela
     # sai do histórico de queries do Athena, e é o que liga um prefixo S3 a uma
@@ -238,6 +253,8 @@ def _collection_fingerprint(
         "s3_full_listing": context.s3_full_listing,
         "s3_inventory": context.s3_inventory,
         "sagemaker_full_metrics": context.sagemaker_full_metrics,
+        "max_parallel_pages": context.max_parallel_pages,
+        "max_memory_mb": context.max_memory_mb,
         "collection_execution": collection_execution,
         "denied_iam_actions": context.denied_iam_actions,
     }

@@ -123,6 +123,22 @@ def collect(
             "conservador de equivalência e rollback."
         ),
     ),
+    max_parallel_pages: int = typer.Option(
+        8,
+        "--max-parallel-pages",
+        min=1,
+        max=128,
+        help="Máximo de páginas AWS processadas simultaneamente entre fontes.",
+    ),
+    max_collection_memory_mb: int | None = typer.Option(
+        None,
+        "--max-collection-memory-mb",
+        min=64,
+        help=(
+            "Limite cooperativo de memória Python; ao exceder, interrompe a "
+            "fonte opcional na próxima página. Vazio apenas mede o pico."
+        ),
+    ),
     snapshot_dir: str = typer.Option(
         "",
         "--snapshot-dir",
@@ -156,6 +172,16 @@ def collect(
         True,
         "--enqueue-domain-ai/--no-enqueue-domain-ai",
         help="Enfileira cada checkpoint fechado para processamento contextual.",
+    ),
+    max_ai_queue: int = typer.Option(
+        1_000,
+        "--max-ai-queue",
+        min=1,
+        max=100_000,
+        help=(
+            "Máximo global de jobs contextuais pending/running no RunStore; "
+            "excesso é auditado sem bloquear a coleta determinística."
+        ),
     ),
     denied_iam_actions: str = typer.Option(
         "",
@@ -254,7 +280,9 @@ def collect(
         )
     except ValueError as exc:
         raise typer.BadParameter(str(exc)) from exc
-    pipeline_store = RunStore(run_store) if run_store else None
+    pipeline_store = (
+        RunStore(run_store, max_pending_ai_jobs=max_ai_queue) if run_store else None
+    )
     scan_id = ""
     if pipeline_store is not None:
         scan_id = resume_scan_id or new_scan_id()
@@ -287,6 +315,8 @@ def collect(
             cadence=cadence,
             bootstrap=usar_bootstrap,
             collection_execution=collection_execution,
+            max_parallel_pages=max_parallel_pages,
+            max_memory_mb=max_collection_memory_mb,
             snapshot_store=(
                 CollectionSnapshotStore(snapshot_dir) if snapshot_dir else None
             ),
@@ -326,9 +356,15 @@ def collect(
         if pipeline_store is not None:
             pipeline_store.publish_deterministic(account.account_id, scan_id, str(out))
             checkpoints = pipeline_store.checkpoints(account.account_id, scan_id)
+            queue = pipeline_store.queue_stats()
             typer.echo(
                 f"Checkpoints: scan {scan_id} · {len(checkpoints)} domínio(s) · "
                 f"ledger {run_store}"
+            )
+            typer.echo(
+                "Fila IA: "
+                f"{queue.pending} pending · {queue.running} running · "
+                f"{queue.failed} failed · {queue.rejected} rejeitado(s)"
             )
     finally:
         if pipeline_store is not None:
@@ -360,6 +396,21 @@ def collect(
             f"{account.run_telemetry.cloudwatch_coalesced_requests} "
             "requisição(ões) agrupada(s)"
         )
+        if account.run_telemetry.cloudwatch_deduplicated_queries:
+            typer.echo(
+                "CloudWatch evitado: "
+                f"{account.run_telemetry.cloudwatch_deduplicated_queries} "
+                "consulta(s) duplicada(s) · "
+                f"{account.run_telemetry.cloudwatch_avoided_calls} chamada(s) · "
+                f"~{account.run_telemetry.cloudwatch_estimated_saved_ms} ms"
+            )
+    typer.echo(
+        "Scheduler: "
+        f"caminho crítico {account.run_telemetry.critical_path_ms / 1000:.1f}s · "
+        f"pico Python {account.run_telemetry.peak_memory_bytes / 1024**2:.1f} MiB · "
+        f"páginas {account.run_telemetry.max_parallel_pages}/"
+        f"{account.run_telemetry.page_concurrency_limit}"
+    )
     if account.run_telemetry.iam_short_circuits:
         typer.echo(
             f"IAM: {account.run_telemetry.iam_short_circuits} chamada(s) "
