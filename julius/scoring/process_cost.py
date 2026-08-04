@@ -118,6 +118,25 @@ def apply_conservative_caps(
     remaining_by_process = {
         row.process_id: max(0.0, row.monthly_cost) for row in account.process_costs
     }
+    # Teto por ativo, ao lado do teto por processo, porque nem todo ativo é raiz de
+    # um processo: uma `athena_query` não tem linha em `process_costs`, e sem este
+    # saldo cada achado sobre ela era limitado só pelo próprio baseline — que é o
+    # custo da **mesma** query. Duas famílias sobre o mesmo padrão (filtrar partição
+    # e converter a tabela para colunar comprimido) reduzem os mesmos bytes
+    # varridos, e somadas afirmariam o dobro do que a query custa.
+    #
+    # O saldo é o maior baseline observado entre os achados do ativo: eles medem o
+    # mesmo ativo, então divergência entre eles é diferença de cobertura, e a maior
+    # é a que enxergou mais.
+    remaining_by_asset: dict[tuple[str, str], float] = {}
+    for item in opportunities:
+        if item.estimation is None:
+            continue
+        chave = (item.asset_type, item.asset_name)
+        remaining_by_asset[chave] = max(
+            remaining_by_asset.get(chave, 0.0),
+            max(0.0, item.estimation.baseline_cost),
+        )
     ordered = sorted(
         opportunities,
         key=lambda item: (
@@ -139,9 +158,11 @@ def apply_conservative_caps(
             if process_rows
             else None
         )
+        asset_key = (opportunity.asset_type, opportunity.asset_name)
         hard_cap = max(0.0, estimation.baseline_cost)
         if process_cap is not None:
             hard_cap = min(hard_cap, process_cap)
+        hard_cap = min(hard_cap, remaining_by_asset.get(asset_key, hard_cap))
         old_risk = _inferred_risk(opportunity)
         original_expected = max(0.0, estimation.estimated_saving)
         expected = min(
@@ -192,6 +213,10 @@ def apply_conservative_caps(
         # financeiro que deve permanecer disponível às ações já confirmadas.
         if not opportunity.blocked:
             _consume_process_cap(remaining_by_process, process_rows, expected)
+            if asset_key in remaining_by_asset:
+                remaining_by_asset[asset_key] = max(
+                    0.0, remaining_by_asset[asset_key] - expected
+                )
         opportunity.estimated_gain = build_gain(
             expected,
             opportunity.difficulty_score,

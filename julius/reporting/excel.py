@@ -74,7 +74,7 @@ def write_workbook(vm: ReportViewModel, path: str | Path) -> Path:
         rows = getattr(vm, attribute, [])
         _opportunities_sheet(workbook.create_sheet(title), rows)
     if vm.signals:
-        _signals_sheet(workbook.create_sheet("Sinais"), vm)
+        _signals_sheet(workbook.create_sheet("Medições pendentes"), vm)
     _health_sheet(workbook.create_sheet("Saúde da coleta"), vm)
     _assumptions_sheet(workbook.create_sheet("Premissas"), vm)
 
@@ -221,7 +221,14 @@ def _as_number(value: Any) -> Any:
 
 
 def _signals_sheet(sheet: Worksheet, vm: ReportViewModel) -> None:
-    """Hipóteses em aberto, ordenadas pela faixa e sem coluna de economia.
+    """Medições pendentes: o que falta saber, quem descobre e quanto custa.
+
+    A aba respondia "o que foi observado" e o leitor tinha de deduzir o que fazer.
+    Agora a primeira coluna útil é a ação de remediação, a segunda é o próximo
+    passo e a terceira diz quem o dá — porque três das quatro linhas costumam
+    destravar com uma permissão IAM, não com meio dia de benchmark de alguém.
+
+    A ordenação é a de `investigation_ranking_key`: retorno ÷ esforço de medir.
 
     A aba fica separada das oportunidades de propósito. Uma coluna "Economia"
     ao lado de uma faixa de ordem de grandeza convida a somar as duas, e somar
@@ -232,31 +239,44 @@ def _signals_sheet(sheet: Worksheet, vm: ReportViewModel) -> None:
         sheet,
         [
             "Ativo",
+            "Ação de remediação",
+            "Próximo passo",
+            "Quem destrava",
+            "Esforço de medir",
+            "Fonte com lacuna",
+            "Como destravar a fonte",
             "Regra",
             "Observação",
-            "Pergunta a responder",
             "Potencial mínimo",
             "Potencial provável",
             "Potencial máximo",
-            "Base do potencial",
             "O que a faixa assume",
-            "Evidência ausente",
         ],
     )
+    por_regra = {
+        (item["rule_id"], item["asset_name"]): item
+        for item in vm.pending.get("items", [])
+    }
     for signal in vm.signals:
         faixa = signal.get("potential_range") or {}
+        pendente = por_regra.get(
+            (signal.get("rule_id", ""), signal.get("asset_name", "")), {}
+        )
         sheet.append(
             [
                 signal.get("asset_name", ""),
+                pendente.get("family_label", ""),
+                signal.get("next_action", ""),
+                pendente.get("unblocked_by", ""),
+                signal.get("measurement_effort"),
+                pendente.get("blocked_source", ""),
+                pendente.get("source_next_action", ""),
                 signal.get("rule_id", ""),
                 signal.get("observation", ""),
-                signal.get("question", ""),
                 faixa.get("low"),
                 faixa.get("expected"),
                 faixa.get("high"),
-                faixa.get("basis", ""),
                 faixa.get("caveat", ""),
-                "; ".join(signal.get("missing_evidence") or []),
             ]
         )
     sheet.freeze_panes = "A2"

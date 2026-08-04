@@ -19,8 +19,9 @@ from __future__ import annotations
 from julius.analysis.context_builder import AgentContext
 from julius.analysis.playbook import asset_types_in_context
 from julius.analysis.playbook import render as render_playbooks
+from julius.knowledge.remediation import CATALOG, FAMILIES
 
-PROMPT_VERSION = "2.0.0"
+PROMPT_VERSION = "2.2.0"
 
 #: As regras em si, separadas do texto que as apresenta — o validador de
 #: resposta verifica o resultado das mesmas restrições.
@@ -140,7 +141,55 @@ def _generative_eligibility() -> str:
     return "\n".join(linhas)
 
 
-def _division_of_labour(asset_types: set[str] | None = None) -> str:
+def _families_in_context(context: AgentContext) -> set[str]:
+    """As ações de remediação que o pacote realmente contém.
+
+    Lê do `rule_id`, e não de um campo do pacote, porque o `rule_id` é o que existe
+    em oportunidade e sinal — e é a chave do catálogo. Um pacote sem nenhuma família
+    conhecida devolve conjunto vazio, e o bloco some do briefing em vez de listar
+    vinte e duas ações que não estão ali.
+    """
+    regras = {str(item.get("rule_id") or "") for item in context.opportunities}
+    regras |= {str(item.get("rule_id") or "") for item in context.signals}
+    return {CATALOG[regra] for regra in regras if regra in CATALOG}
+
+
+def _remediation_block(families: set[str] | None) -> str:
+    """As ações de remediação presentes no pacote, e como se fecha cada uma.
+
+    Vem do catálogo em `knowledge/remediation.py` em vez de virar seção nova nos
+    playbooks, e a razão é a de sempre neste projeto: duas cópias da mesma decisão
+    divergem em silêncio. `measurement` já é a pergunta que o sinal precisa
+    responder, e `resolved_by` já diz quem a responde.
+
+    O bloco existe para uma coisa que o playbook por ativo não alcança: dizer que
+    dois sinais diferentes são a **mesma** correção. É isso que permite à análise
+    responder "estes três se resolvem juntos" em vez de o motor adivinhar.
+    """
+    presentes = sorted(
+        (item for item in FAMILIES.values() if families is None or item.id in families),
+        key=lambda item: (item.effort, item.id),
+    )
+    if not presentes:
+        return ""
+    linhas = "\n".join(
+        f"- `{item.id}` — {item.label}. Fecha com: {item.measurement} "
+        f"(quem responde: {item.resolved_by})"
+        for item in presentes
+    )
+    return f"""Ações de remediação neste pacote. Dois sinais da mesma ação são a
+mesma correção, e dizer isso é mais útil que julgá-los em separado — declare
+`remediation_family` em cada veredito quando tiver opinião. O motor já tem a sua e
+não a substitui pela sua; discordância registrada é erro de catálogo aparecendo,
+e catálogo errado funde ações que não são a mesma.
+
+{linhas}"""
+
+
+def _division_of_labour(
+    asset_types: set[str] | None = None,
+    families: set[str] | None = None,
+) -> str:
     """O texto que separa o que já está resolvido do que falta responder.
 
     `asset_types` é o recorte: só entram as perguntas dos ativos que o pacote
@@ -180,7 +229,9 @@ Suas quatro tarefas, nesta ordem:
    cobre.
 
 O que procurar, por tipo de ativo:
-{questions}"""
+{questions}
+
+{_remediation_block(families)}"""
 
 
 #: Onde cada host encontra a Skill instalada. É a única coisa que muda no
@@ -201,6 +252,7 @@ def build_agent_prompt(
     host: str = "devin",
 ) -> str:
     ativos = asset_types_in_context(context.opportunities, context.signals)
+    familias = _families_in_context(context)
     skill_path = SKILL_PATH_BY_HOST.get(host, SKILL_PATH_BY_HOST["manual"])
     return f"""Você está executando a Skill Julius AWS Analysis, prompt v{PROMPT_VERSION}.
 
@@ -209,7 +261,7 @@ Skill deste host: {skill_path}
 Objetivo: enriquecer contextualmente as oportunidades determinísticas do Julius
 e julgar os sinais que ele não consegue fechar sozinho.
 
-{_division_of_labour(ativos)}
+{_division_of_labour(ativos, familias)}
 
 Regras obrigatórias:
 {_numbered_rules()}
@@ -245,6 +297,7 @@ def build_manual_instructions(
 ) -> str:
     """Mesmo escopo e mesmas regras, sem a mecânica de sessão de um agente."""
     ativos = asset_types_in_context(context.opportunities, context.signals)
+    familias = _families_in_context(context)
     return f"""Análise contextual do Julius — preenchimento manual.
 
 Conta: {context.account["id"]}
@@ -253,7 +306,7 @@ Oportunidades no pacote: {len(context.opportunities)} de \
 {context.portfolio.get("total_opportunities", len(context.opportunities))} no portfólio
 Sinais a julgar: {len(context.signals)}
 
-{_division_of_labour(ativos)}
+{_division_of_labour(ativos, familias)}
 
 Escreva `{result_file}` seguindo `{schema_file}`. As mesmas regras valem:
 

@@ -62,10 +62,14 @@
   {% if r.signals %}
   <tr><td style="padding:14px 28px 0;">
     <div style="border:1px solid #dfe3ea;background:#f7f9fc;border-radius:8px;padding:11px 14px;font-size:12px;color:#4b5159;">
-      <b>{{ r.signals|length }} hipótese(s) a investigar</b><br>
-      Padrões observados em código e definição que nenhuma medição fecha sozinha.
-      A planilha traz a faixa de potencial de cada um — é ordem de grandeza para
-      priorizar, não economia estimada, e por isso não entra no total acima.
+      <b>{{ r.pending.sentence if r.pending else (r.signals|length ~ ' hipótese(s) a investigar') }}</b><br>
+      {% if r.pending and r.pending.count_by_owner.get('coleta') %}
+      {{ r.pending.count_by_owner['coleta'] }} destas destravam com a própria coleta —
+      permissão, flag ou mais uma janela — e o scan seguinte as responde sozinho.
+      {% endif %}
+      A planilha traz o próximo passo de cada uma, quem o dá e a faixa de potencial.
+      A faixa é ordem de grandeza para priorizar, não economia estimada, e por isso
+      não entra no total acima.
     </div>
   </td></tr>
   {% endif %}

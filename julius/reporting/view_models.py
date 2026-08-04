@@ -422,6 +422,9 @@ class ReportViewModel:
     #: é a faixa, e o que decide o portfólio é a economia — não são a mesma
     #: coisa e não podem somar na mesma linha.
     signals: list[dict] = field(default_factory=list)
+    #: A terceira pergunta do relatório — quanto ainda não sei e quem responde.
+    #: Ver `reporting/pending.py`; o teto **não** soma com a economia identificada.
+    pending: dict = field(default_factory=dict)
     ai_signal_verdicts: list[dict] = field(default_factory=list)
     ai_uncovered_findings: list[dict] = field(default_factory=list)
     #: Instrução dirigida ao agente encontrada dentro de um artefato analisado.

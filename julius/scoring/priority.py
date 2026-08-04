@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from julius.findings.opportunity import Opportunity
+from julius.findings.signal import Signal
+from julius.scoring import impact
 
 # Campos mínimos para uma oportunidade ser acionável (gate do Top 10).
 _REQUIRED = (
@@ -25,6 +27,48 @@ def execution_priority(o: Opportunity) -> int:
 def strategic_priority(o: Opportunity, risk: float) -> int:
     """Ganho × Confiança × Risco de não agir (0–1.2)."""
     return _clamp(o.gain_score * o.confidence * risk)
+
+
+def investigation_priority(signal: Signal, config) -> int:
+    """Ordem de investigar: faixa esperada ÷ esforço de medir.
+
+    Mesma forma de `execution_priority` — retorno sobre esforço — porque a pergunta
+    é a mesma: o que rende mais pelo que custa. O que muda é o custo medido. Ali é
+    o de aplicar a mudança; aqui é o de **descobrir se ela vale**, e os dois se
+    invertem com frequência: um endpoint ocioso é caro de desligar e barato de
+    medir, porque o CloudWatch já respondeu.
+
+    Sinal sem faixa devolve zero e não some da lista — `investigation_ranking_key`
+    o ordena pelo esforço, que é a única informação que ele tem. Zero aqui significa
+    "não sei quanto vale", nunca "não vale nada".
+    """
+    if signal.potential_range is None:
+        return 0
+    retorno = impact.gain_score(signal.potential_range.expected, config)
+    return _clamp(retorno / max(1, signal.measurement_effort))
+
+
+def investigation_ranking_key(signal: Signal, config) -> tuple:
+    """Ordem da lista de medições pendentes, com desempate determinístico.
+
+    Quatro níveis, todos "maior é melhor", para usar com `reverse=True`:
+
+    1. **tem faixa** — hipótese com ordem de grandeza vem antes da que não tem
+       nenhuma, porque a segunda não dá para dimensionar;
+    2. **retorno ÷ esforço**;
+    3. **esforço invertido** — entre duas sem faixa, a mais barata de medir
+       primeiro; é o único critério que sobra e é o certo, porque medir barato é o
+       que produz a faixa que falta;
+    4. **regra e ativo**, para a lista não mudar de ordem entre dois scans com a
+       mesma entrada.
+    """
+    return (
+        signal.potential_range is not None,
+        investigation_priority(signal, config),
+        -signal.measurement_effort,
+        signal.rule_id,
+        signal.asset_name,
+    )
 
 
 def check_actionable(o: Opportunity) -> tuple[bool, str | None]:

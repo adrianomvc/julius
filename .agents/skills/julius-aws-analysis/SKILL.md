@@ -10,7 +10,7 @@ metadata:
     - rules
     - evidence requirements
     - output contract
-  prompt_version: 2.0.0
+  prompt_version: 2.2.0
   allowed_estimation_methods:
     - glue_interactive_capacity_reduction_v1
     - glue_shuffle_reduction_v1
@@ -19,6 +19,8 @@ metadata:
     - sfn_standard_to_express_v1
   estimation_methods_by_rule:
     GLUE-CODE-SHUFFLE: glue_shuffle_reduction_v1
+    GLUE-CODE-SHUFFLE-PARTITIONS: glue_shuffle_reduction_v1
+    GLUE-CODE-SINGLE-PARTITION: glue_shuffle_reduction_v1
     GLUE-IS-CAPACITY-REVIEW: glue_interactive_capacity_reduction_v1
     SFN-STANDARD-TO-EXPRESS: sfn_standard_to_express_v1
     SM-CODE-CPU-ONLY-ON-GPU: sagemaker_gpu_to_cpu_instance_v1
@@ -34,6 +36,29 @@ metadata:
     - confirmed
     - rejected
     - needs_evidence
+  remediation_families:
+    - advisor_backlog
+    - capacity_sizing
+    - commitment_purchase
+    - data_demand
+    - driver_memory_cache
+    - failure_waste
+    - idle_capacity
+    - incremental_state
+    - inventory_integrity
+    - lifecycle_cleanup
+    - observability_gap
+    - orchestration_waste
+    - output_layout
+    - read_pruning
+    - result_reuse
+    - row_level_processing
+    - runtime_modality
+    - schedule_frequency
+    - shuffle_partitioning
+    - silent_failure
+    - storage_class
+    - training_convergence
   documentation_domain: docs.aws.amazon.com
 ---
 

@@ -2,13 +2,25 @@
 
 Um mesmo ativo (ex.: um Glue Job) pode acionar várias regras. Sem agrupar, o
 relatório/e-mail mostraria N ações redundantes. `group_by_asset` consolida os
-achados do mesmo ativo num único item com **uma ação principal**, anexando os
-demais como achados relacionados.
+achados da mesma **ação de remediação** num único item com uma ação principal,
+anexando os demais como achados relacionados.
 
 Conservador por design: o ganho do item agrupado é o do achado **primário**
 (maior economia) — não somamos as economias dos achados relacionados, para não
 superestimar (elas podem se sobrepor). Os relacionados ficam registrados como
 evidência e podem ser detalhados depois.
+
+**Por que a família entra na chave.** Agrupar só por ativo tratava toda regra sobre
+um job como a mesma coisa, e ela não é: em `sync_parceiros`, migrar para Flex
+(US$ 90/mês) e consertar o job que falha (US$ 44,66/mês) são duas ações, com dois
+donos possíveis e dois dinheiros. Fundidas, a segunda virava uma linha de texto
+dentro dos riscos da primeira e a economia dela desaparecia do portfólio.
+
+A regra conservadora acima continua valendo — e agora ela sabe **quando** se
+aplica. Sobreposição é dentro da família, porque é lá que duas regras descrevem a
+mesma correção; entre famílias os mecanismos de cobrança são diferentes, e somar é
+correto. O teto por processo em `scoring/process_cost.py::apply_conservative_caps`
+é o que impede a soma entre famílias de ultrapassar o custo do próprio ativo.
 """
 
 from __future__ import annotations
@@ -18,23 +30,32 @@ from collections import defaultdict
 from julius.findings.opportunity import Opportunity
 
 
-def _key(o: Opportunity) -> tuple[str, str, str]:
-    return (o.account, o.asset_type, o.asset_name)
+def _key(o: Opportunity) -> tuple[str, str, str, str, str]:
+    # Achado sem família cai no próprio `rule_id`: ele não se funde com ninguém,
+    # que é o comportamento seguro para uma regra que o catálogo ainda não
+    # classificou. Usar `""` faria todas as não classificadas de um ativo virarem
+    # uma ação só, misturando correções que ninguém declarou serem a mesma.
+    #
+    # A origem entra na chave para separar duas coisas que não podem se fundir: um
+    # achado promovido de sinal tem ID, ciclo de vida e procedência próprios, e
+    # absorvê-lo num achado determinístico o transformaria em texto dentro dos
+    # riscos de outro — perdendo exatamente o que a promoção existe para dar. Entre
+    # si eles se fundem normalmente: dois sinais confirmados da mesma correção sobre
+    # o mesmo ativo são uma ação, e o piloto de um não vale pelo outro.
+    return (
+        o.account,
+        o.asset_type,
+        o.asset_name,
+        o.remediation_family or f"?{o.rule_id}",
+        o.origin,
+    )
 
 
 def group_by_asset(opportunities: list[Opportunity]) -> list[Opportunity]:
     buckets: dict[tuple, list[Opportunity]] = defaultdict(list)
-    # Um achado promovido de sinal não é ação concorrente sobre o ativo: é uma
-    # pergunta que a análise contextual sustentou, sem economia e bloqueada.
-    # Agrupá-lo com uma ação determinística o transformaria em texto dentro da
-    # lista de riscos de outro achado — perdendo o ID, a origem e o ciclo de
-    # vida que a promoção existe para dar.
-    grouped: list[Opportunity] = [
-        o for o in opportunities if o.origin == "ai_confirmed"
-    ]
+    grouped: list[Opportunity] = []
     for o in opportunities:
-        if o.origin != "ai_confirmed":
-            buckets[_key(o)].append(o)
+        buckets[_key(o)].append(o)
 
     for members in buckets.values():
         if len(members) == 1:

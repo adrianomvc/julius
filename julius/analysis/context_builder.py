@@ -139,6 +139,24 @@ def build_agent_context(
     )
 
 
+#: Que tipo de artefato responde a pergunta de cada tipo de ativo. Sem isto o
+#: casamento era só pelo nome, e nome não é único entre tipos: uma máquina de
+#: estados e um job Glue podem se chamar igual, e o `dict` guardava o último a
+#: entrar. O sinal receberia o hash do artefato errado, o validador exigiria esse
+#: hash de volta, e a análise concluiria sobre um arquivo que não é o dela.
+_ARTIFACT_KIND_BY_ASSET = {
+    "glue_job": "glue_script",
+    "athena_query": "athena_sql",
+    "state_machine": "stepfunctions_asl",
+}
+
+
+def _artifact_kind(asset_type: str) -> str:
+    if asset_type.startswith("sagemaker_"):
+        return "sagemaker_script"
+    return _ARTIFACT_KIND_BY_ASSET.get(asset_type, "")
+
+
 def _signals_context(analysis: Analysis, technical_artifacts: list[dict]) -> list[dict]:
     """Ancora cada sinal no artefato que o responde, quando existe um.
 
@@ -149,8 +167,10 @@ def _signals_context(analysis: Analysis, technical_artifacts: list[dict]) -> lis
     onde o bundle de artefatos é conhecido. É esse hash que o validador vai
     exigir de volta no veredito.
     """
-    by_asset = {
-        str(item.get("asset_name") or ""): str(item.get("sha256") or "")
+    by_kind_asset = {
+        (str(item.get("kind") or ""), str(item.get("asset_name") or "")): str(
+            item.get("sha256") or ""
+        )
         for item in technical_artifacts
         if item.get("sha256")
     }
@@ -160,7 +180,9 @@ def _signals_context(analysis: Analysis, technical_artifacts: list[dict]) -> lis
         payload["observation"] = redact_secrets(signal.observation)
         payload["question"] = redact_secrets(signal.question)
         if not payload.get("artifact_sha256"):
-            payload["artifact_sha256"] = by_asset.get(signal.asset_name, "")
+            payload["artifact_sha256"] = by_kind_asset.get(
+                (_artifact_kind(signal.asset_type), signal.asset_name), ""
+            )
         out.append(payload)
     return out
 

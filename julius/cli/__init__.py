@@ -13,6 +13,7 @@ from julius.cli import (  # noqa: F401 - o import é o registro
     notify,
     pricing,
     report,
+    signals,
 )
 from julius.cli._shared import app
 

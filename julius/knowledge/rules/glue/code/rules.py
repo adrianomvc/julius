@@ -279,6 +279,15 @@ def detect(
     found: list[Opportunity] = []
     signals: list[Signal] = []
     for artifact in artifacts:
+        # O bundle carrega quatro tipos — script Glue, script SageMaker, SQL do
+        # Athena e definição ASL — e só o primeiro é Python para varrer. Confiar em
+        # `job_by_name` devolver `None` funcionava por acidente: bastava um
+        # `query_id` do Athena coincidir com o nome de um job para SQL entrar no
+        # scanner de AST. `sagemaker/code.py` já filtrava; esta metade não.
+        #
+        # O `kind` vazio passa: artefato montado à mão em teste anterior ao campo.
+        if artifact.kind and artifact.kind != "glue_script":
+            continue
         job = account.job_by_name(artifact.asset_name)
         if job is None:
             continue

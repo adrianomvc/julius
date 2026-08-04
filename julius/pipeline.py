@@ -19,10 +19,12 @@ from julius.collection.collectors.glue import cost as glue_cost
 from julius.collection.models import Account, CollectionHealth, PreviousResult
 from julius.collection.normalizers import load_account
 from julius.config import DEFAULT_CONFIG, Config
+from julius.findings.consolidation import deduplicate
 from julius.findings.grouping import group_by_asset
 from julius.findings.investigation import ContextualEstimate, Investigation
 from julius.findings.lifecycle import transition
 from julius.findings.opportunity import Opportunity
+from julius.findings.promotion import promote
 from julius.findings.signal import Signal
 from julius.governance import compute_candidates
 from julius.graph import ProcessGraph, build_process_graph, enrich_opportunities
@@ -35,16 +37,18 @@ from julius.knowledge.recurrence import (
     is_recurrent,
     runs_per_month,
 )
+from julius.knowledge.remediation import classify, classify_opportunities
 from julius.knowledge.rules import collect_signals, run_all
 from julius.knowledge.rules.glue.code import rules as glue_code
 from julius.knowledge.rules.sagemaker import code as sagemaker_code
 from julius.knowledge.verdict_facts import apply_verdicts
 from julius.reporting import ProductKPIs, compute_kpis
 from julius.reporting.formatters import money
+from julius.reporting.pending import build as build_pending
 from julius.reporting.view_models import ReportViewModel
 from julius.reporting.view_models import build as build_vm
 from julius.scoring.calibration import apply_calibrations
-from julius.scoring.priority import ranking_key
+from julius.scoring.priority import investigation_ranking_key, ranking_key
 from julius.scoring.process_cost import (
     apply_conservative_caps,
     build_process_costs,
@@ -98,11 +102,24 @@ def analyze(
         account.cadence = cadence
         if cadence == "monthly" and not account.financial_period:
             account.financial_period = account.window_start[:7]
+    # Os quatro tipos que `collect-artifacts` coleta. Os dois últimos não têm
+    # scanner determinístico — SQL é analisado por sqlglot a partir do inventário e
+    # ASL pela travessia em `collection/asl.py` —, mas carregá-los aqui é o que
+    # permite dizer quantos vieram de quantos esperados. Sem a linha de saúde, um
+    # bundle sem nenhuma SQL e um bundle completo produzem o mesmo silêncio.
+    #
+    # Cada detector filtra o próprio `kind`, então artefato que não lhe pertence
+    # não entra no scanner errado.
     code_artifacts = (
         load_code_artifacts(
             artifacts_manifest,
             account.account_id,
-            kinds=("glue_script", "sagemaker_script"),
+            kinds=(
+                "glue_script",
+                "sagemaker_script",
+                "athena_sql",
+                "stepfunctions_asl",
+            ),
         )
         if artifacts_manifest
         else None
@@ -121,7 +138,13 @@ def analyze(
         account.collection_health = [
             item
             for item in account.collection_health
-            if item.source not in {"Glue Scripts", "SageMaker Scripts"}
+            if item.source
+            not in {
+                "Glue Scripts",
+                "SageMaker Scripts",
+                "Athena SQL",
+                "Step Functions ASL",
+            }
         ]
         account.collection_health.append(
             summarize_glue_artifact_health(
@@ -147,6 +170,44 @@ def analyze(
                 )
                 or "análise de código não cobre todos os jobs com script próprio",
                 next_action="revisar erros do manifesto e permissões s3:GetObject",
+            )
+        )
+        # SQL e ASL não alimentam scanner determinístico — eles vão para a análise
+        # contextual, que é quem lê intenção. A cobertura importa na mesma medida:
+        # um veredito sobre uma consulta que não veio no pacote é o que o validador
+        # recusa, e sem esta linha ninguém sabe que ela faltou.
+        account.collection_health.append(
+            summarize_artifact_health(
+                artifacts_manifest,
+                code_artifacts or [],
+                kind="athena_sql",
+                source="Athena SQL",
+                expected_assets={
+                    query.query_id
+                    for query in account.athena_queries
+                    if query.statement
+                },
+                impact=(
+                    "a análise contextual não pode concluir sobre consulta cujo "
+                    "texto não veio no pacote"
+                ),
+                next_action="revisar erros do manifesto e permissões athena:GetQueryExecution",
+            )
+        )
+        account.collection_health.append(
+            summarize_artifact_health(
+                artifacts_manifest,
+                code_artifacts or [],
+                kind="stepfunctions_asl",
+                source="Step Functions ASL",
+                expected_assets={
+                    machine.name for machine in account.state_machines
+                },
+                impact=(
+                    "sem a definição, a pergunta sobre idempotência da máquina fica "
+                    "sem quem a responda — e é ela que destrava a migração Express"
+                ),
+                next_action="revisar erros do manifesto e permissões states:DescribeStateMachine",
             )
         )
     return analyze_account(
@@ -224,6 +285,14 @@ def analyze_account(
     # O que a análise contextual já julgou passa para uma fila de investigação
     # separada. Confirmação contextual não cria dinheiro nem backlog.
     if ledger is not None:
+        # A promoção vem **antes** da supressão, e tem de vir: um sinal confirmado
+        # é suprimido do pacote, e depois disso não existe mais objeto de onde
+        # montar o achado. Sem esta ordem, `julius validate-pilot` gravava o piloto
+        # no livro e nada chegava ao portfólio — a peça existia e não tinha chamador.
+        opportunities += _promote_confirmed(ledger, signals, account, config, scan_id)
+        # E vem antes das investigações, que passam a excluir o que foi promovido:
+        # a partir da promoção quem carrega o assunto é o achado no backlog, com ID
+        # e ciclo de vida. Listar os dois mostraria a mesma coisa em duas seções.
         investigations = _build_investigations(
             ledger, signals, account, config
         )
@@ -250,7 +319,9 @@ def analyze_account(
         if not _is_managed_finding(item.asset_name, gerenciados)
     ]
     enrich_opportunities(account, graph, opportunities)
-    # Consolida achados do mesmo ativo numa ação principal (causa raiz).
+    # A família precisa estar preenchida antes do agrupamento: ela é a chave.
+    classify_opportunities(opportunities)
+    # Consolida achados da mesma ação de remediação numa ação principal.
     opportunities = group_by_asset(opportunities)
     _link_athena_opportunities(account, opportunities)
     # Aplica realização e caps depois do agrupamento para não reservar custo
@@ -363,21 +434,40 @@ def analyze_account(
         opportunity_count=len(opportunities),
     )
     vm = build_vm(account, opportunities, manifest)
+    # A classificação roda uma vez e no fim, porque sinal entra nesta lista por
+    # quatro portas — regra, código, processo não recorrente e regressão de
+    # eficiência — e classificar em cada uma faria a próxima porta nascer sem
+    # família, que é o que o catálogo existe para impedir.
+    signals = classify(signals)
+    # A hipótese cede lugar à ação, e o que sobra cabe no que sobrou do ativo.
+    # Depois do agrupamento e dos caps, porque é o portfólio final que decide o que
+    # já foi respondido — um achado suprimido na reconciliação não responde nada.
+    signals = deduplicate(opportunities, signals)
     # A faixa é o que permite ordenar hipótese contra hipótese. Sem ela, quinze
     # sinais sem número se ordenam por nada, e o que vale dez mil por mês fica
     # ao lado do que vale dez. A ordenação é aqui e não no consumidor porque o
     # JSON, o Excel e o e-mail leem a mesma lista.
-    vm.signals = [
-        signal.to_dict()
-        for signal in sorted(
-            signals,
-            key=lambda item: (
-                -(item.potential_range.expected if item.potential_range else 0.0),
-                item.rule_id,
-                item.asset_name,
-            ),
-        )
-    ]
+    #
+    # A chave é retorno ÷ esforço de medir, e não a faixa pura: entre duas
+    # hipóteses de mesmo tamanho, a que se responde concedendo uma permissão IAM
+    # vem antes da que exige meio dia de benchmark.
+    ordenados = sorted(
+        signals,
+        key=lambda item: investigation_ranking_key(item, config),
+        reverse=True,
+    )
+    vm.signals = [signal.to_dict() for signal in ordenados]
+    # A mesma lista, respondendo "quem destrava" em vez de só "o que falta". O
+    # dicionário é montado aqui porque é onde a conta e os sinais coexistem — e é a
+    # saúde da conta que diz qual fonte veio com lacuna.
+    resumo = build_pending(account, ordenados)
+    vm.pending = {
+        "sentence": resumo.sentence,
+        "ceiling": resumo.ceiling,
+        "by_owner": resumo.by_owner,
+        "count_by_owner": resumo.count_by_owner,
+        "items": [asdict(item) for item in resumo.items],
+    }
     vm.diff_events = [
         {
             "type": event.event_type,
@@ -593,6 +683,11 @@ def _build_investigations(
         signal = by_fingerprint.get(decision.fingerprint)
         if signal is None or decision.verdict == "rejected":
             continue
+        if decision.promoted:
+            # Já virou achado no backlog, com ID e ciclo de vida. Continuar na fila
+            # de investigação seria mostrar o mesmo assunto em duas seções, e a
+            # segunda sem o ID que a primeira ganhou.
+            continue
         estimate = None
         status = decision.status
         if decision.contextual_estimate is not None:
@@ -649,6 +744,53 @@ def _build_investigations(
             )
         )
     return out
+
+
+def _promote_confirmed(
+    ledger: SignalLedger,
+    signals: list[Signal],
+    account: Account,
+    config: Config,
+    scan_id: str,
+) -> list[Opportunity]:
+    """Sinal sustentado pela análise vira achado rastreável; com piloto, vira cifra.
+
+    O que muda na promoção sem piloto não é o dinheiro — é o estado epistêmico.
+    Antes o padrão era hipótese que ninguém tinha lido; depois é hipótese que
+    alguém leu contra o artefato inteiro e sustentou. Isso não vale um número, e o
+    achado nasce bloqueado e com economia zero. O que ele ganha é o que faltava para
+    existir no produto: ID estável, fingerprint e acesso a `lifecycle`, `review` e
+    `validate`.
+
+    Com piloto é outra coisa: é o único caminho pelo qual economia nascida de
+    interpretação encosta no total oficial, e ele exige as duas metades — alguém
+    mediu, e alguém assinou.
+
+    Sinal que a regra deixou de emitir não é promovido, e isso é a resposta certa:
+    o padrão que sustentava o julgamento não está mais lá.
+    """
+    por_fingerprint = {
+        signal.fingerprint(account.account_id): signal for signal in signals
+    }
+    promovidos: list[Opportunity] = []
+    marcados: list[str] = []
+    for decision in ledger.pending_promotions(account.account_id):
+        signal = por_fingerprint.get(decision.fingerprint)
+        if signal is None:
+            continue
+        promovidos.append(
+            promote(
+                signal,
+                decision.rationale,
+                account=account.account_id,
+                config=config,
+                scan_id=scan_id,
+                pilot=decision.pilot,
+            )
+        )
+        marcados.append(decision.fingerprint)
+    ledger.mark_promoted(marcados)
+    return promovidos
 
 
 def _merge_validations(account: Account, rows: list[dict]) -> None:

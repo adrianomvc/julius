@@ -260,6 +260,7 @@
       "process_cost_window": 0.0,
       "process_criticality": 0.0,
       "recommended_action": "Reduzir somente o idle_timeout da sessão",
+      "remediation_family": "idle_capacity",
       "risks": [
         "perder estado da sessão em uso ativo"
       ],
@@ -372,6 +373,7 @@
       "process_cost_window": null,
       "process_criticality": 0.0,
       "recommended_action": "Configurar result reuse no cliente que submete a query",
+      "remediation_family": "result_reuse",
       "risks": [
         "resultado defasado se a janela de reuso for longa demais"
       ],
@@ -485,6 +487,7 @@
       "process_cost_window": null,
       "process_criticality": 0.0,
       "recommended_action": "Detalhar Cost Explorer/CUR por usage type, operação e tag de alocação",
+      "remediation_family": "inventory_integrity",
       "risks": [
         "diferença pode conter atraso ou modalidades ainda não modeladas"
       ],
@@ -499,6 +502,13 @@
       "window_end": null
     }
   ],
+  "pending_measurements": {
+    "by_owner": {},
+    "ceiling": 0,
+    "count_by_owner": {},
+    "items": [],
+    "sentence": "Nenhuma medição pendente: toda hipótese foi respondida."
+  },
   "period": "jul/2026",
   "process_costs": [
     {
