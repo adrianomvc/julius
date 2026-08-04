@@ -212,6 +212,7 @@ REGISTRY: tuple[RuleFamily, ...] = (
         service="cross_service",
         name="data_products",
         detect=data_rules.detect,
+        signals=data_rules.signals,
         requires=("tables",),
         measures=("tables.touches_90d",),
         required_capabilities=frozenset({"glue_catalog"}),

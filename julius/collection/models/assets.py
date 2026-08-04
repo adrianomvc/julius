@@ -469,7 +469,15 @@ class Table:
     storage_bytes: int = 0
     coverage_days: int = 0
     owner_tag: str | None = None
-    temporary: bool = False              # tabela temporária/staging não conta como órfã
+    temporary: bool = False
+    #: Formato de tabela aberta declarado no catálogo — `ICEBERG`, `DELTA`,
+    #: `HUDI` — ou vazio quando a tabela é Hive comum.
+    #:
+    #: É eixo **ortogonal** ao formato de arquivo: uma tabela Iceberg é feita de
+    #: arquivos Parquet, e `storage_format` responde essa outra pergunta. Sem este
+    #: campo não há como saber se a tabela já migrou, e recomendar migração a quem
+    #: já migrou é o erro óbvio.
+    open_table_format: str = ""              # tabela temporária/staging não conta como órfã
     datawarm_published: bool = False     # publicada ao ecossistema via DataWarm
     used_by_accounts: list[str] = field(default_factory=list)
     corporate_owner: str | None = None

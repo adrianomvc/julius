@@ -241,6 +241,18 @@ _FAMILIES: tuple[RemediationFamily, ...] = (
         ),
     ),
     RemediationFamily(
+        id="table_format",
+        label="Migrar o formato da tabela",
+        measurement="piloto de reescrita com os consumidores revalidados",
+        effort=4,
+        resolved_by="time",
+        why=(
+            "trocar o formato da tabela reescreve o dado e muda como todo "
+            "consumidor a lê; é decisão de arquitetura do produto de dados, e não "
+            "cabe com compactar arquivo pequeno, que mexe só em quem escreve"
+        ),
+    ),
+    RemediationFamily(
         id="storage_class",
         label="Mover objeto de classe de armazenamento",
         measurement="evidência de leitura do prefixo e composição por classe",
@@ -399,6 +411,9 @@ CATALOG: dict[str, str] = {
     "GLUE-CODE-BOOKMARK-COMMIT": "incremental_state",
     # runtime_modality
     "GLUE-SPARK-TO-PYTHON-SHELL": "runtime_modality",
+    # Sessão que roda como job: a mudança é onde o trabalho executa, e o piloto
+    # precisa revalidar a saída — mesma alavanca de trocar runtime ou modalidade.
+    "GLUE-IS-TO-JOB": "runtime_modality",
     "GLUE-VERSION-OLD": "runtime_modality",
     "GLUE-VERSION-REVIEW": "runtime_modality",
     "GLUE-FLEX-CANDIDATE": "runtime_modality",
@@ -466,6 +481,8 @@ CATALOG: dict[str, str] = {
     "SFN-ASL-CATCH-SWALLOW": "silent_failure",
     # training_convergence
     "SM-CODE-FIXED-EPOCHS": "training_convergence",
+    # table_format
+    "GLUE-TABLE-FORMAT-REVIEW": "table_format",
     # storage_class
     "S3-STORAGE-CLASS-TRANSITION": "storage_class",
     "S3-COLD-DATA-REWRITE": "storage_class",

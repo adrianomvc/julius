@@ -22,6 +22,7 @@ from julius.collection.models import (
     GlueCrawler,
     GlueJob,
     GlueTrigger,
+    GlueUsageProfile,
     IamGap,
     InteractiveSession,
     PreviousResult,
@@ -171,6 +172,9 @@ def account_from_dataset(raw: dict) -> Account:
     ]
     account.glue_crawlers = [
         _pick(c, GlueCrawler) for c in raw.get("glue_crawlers", [])
+    ]
+    account.glue_usage_profiles = [
+        _pick(p, GlueUsageProfile) for p in raw.get("glue_usage_profiles", [])
     ]
     account.glue_triggers = [
         _pick(t, GlueTrigger) for t in raw.get("glue_triggers", [])

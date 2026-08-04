@@ -468,9 +468,35 @@ def collect_tables(
                     corporate_owner=params.get("corporate_owner"),
                     datawarm_owner=params.get("datawarm_owner"),
                     datawarm_published=_truthy(params.get("datawarm_published")),
+                    open_table_format=_open_table_format(params, descriptor),
                 )
             )
     return tables
+
+
+#: Como cada formato de tabela aberta se declara no catálogo. Iceberg e Delta
+#: usam `table_type` nos parâmetros; Hudi costuma aparecer só no SerDe, e por
+#: isso o segundo lugar de busca existe.
+_OPEN_TABLE_FORMATS = ("ICEBERG", "DELTA", "HUDI")
+
+
+def _open_table_format(params: dict, descriptor: dict) -> str:
+    """Iceberg, Delta, Hudi — ou vazio para tabela Hive comum.
+
+    Eixo ortogonal ao formato de arquivo: uma tabela Iceberg é feita de arquivos
+    Parquet, e confundir os dois faria "já é Parquet" passar por "já migrou".
+
+    Vazio significa Hive comum **ou** catálogo que não declarou — as duas coisas.
+    A regra que lê este campo trata as duas igual de propósito: nos dois casos a
+    pergunta sobre migrar continua aberta.
+    """
+    declarado = str(params.get("table_type") or "").upper()
+    if declarado in _OPEN_TABLE_FORMATS:
+        return declarado
+    serde = str(
+        (descriptor.get("SerdeInfo") or {}).get("SerializationLibrary") or ""
+    ).upper()
+    return next((fmt for fmt in _OPEN_TABLE_FORMATS if fmt in serde), "")
 
 
 def _table_args(args: dict, *keys: str) -> list[str]:

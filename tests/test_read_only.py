@@ -69,6 +69,11 @@ OPERACOES_PERMITIDAS = {
     "get_tables",
     "get_table",
     "get_databases",
+    # Usage Profiles: o guardrail que restringe o que um job pode pedir. O Julius
+    # só reporta quais existem e o que declaram — criar ou alterar perfil é
+    # `CreateUsageProfile`/`UpdateUsageProfile`, que não estão aqui.
+    "list_usage_profiles",
+    "get_usage_profile",
     # DataBrew.
     "list_jobs",
     "list_job_runs",

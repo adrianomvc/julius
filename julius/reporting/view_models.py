@@ -393,6 +393,10 @@ class ReportViewModel:
     # que ali não houve o que analisar, senão o silêncio se lê como "tudo ok".
     rule_families_without_evidence: list[dict]
     inventory_integrity: list[dict]
+    #: Guardrails que a conta declara — hoje, os Usage Profiles do Glue. Não é
+    #: oportunidade e não tem economia: prevenção não desperdiçou nada ainda. É
+    #: estado, e o relatório mostra estado porque a ausência dele também informa.
+    guardrails: list[dict]
 
     focus: list[OpportunityVM]
     table: list[OpportunityVM]
@@ -926,6 +930,42 @@ def build(
     integrity = [o for o in opportunities if o.category == "inventory_integrity"]
     opportunities = [o for o in opportunities if o.category != "inventory_integrity"]
 
+    # Guardrail declarado pela conta. Lista vazia é resposta — "esta conta não
+    # tem perfil de uso" — e não lacuna de coleta; por isso a seção existe mesmo
+    # sem nenhum perfil.
+    # Quantas sessões rodam sob cada perfil. É o que torna a lista acionável:
+    # perfil que existe e ninguém usa não restringe nada, e a contagem separa as
+    # duas coisas sem precisar de regra.
+    sob_perfil: dict[str, int] = {}
+    sem_perfil = 0
+    for sessao in account.interactive_sessions:
+        if sessao.profile_name:
+            sob_perfil[sessao.profile_name] = sob_perfil.get(sessao.profile_name, 0) + 1
+        else:
+            sem_perfil += 1
+    guardrails = [
+        {
+            "kind": "glue_usage_profile",
+            "name": profile.name,
+            "description": profile.description,
+            "limits": dict(profile.limits),
+            "sessions_using": sob_perfil.get(profile.name, 0),
+        }
+        for profile in account.glue_usage_profiles
+    ]
+    if account.interactive_sessions:
+        guardrails.append(
+            {
+                "kind": "sessions_without_profile",
+                "name": "sessões sem perfil de uso",
+                "description": (
+                    "sessões que rodaram sem nenhum guardrail de capacidade"
+                ),
+                "limits": {},
+                "sessions_using": sem_perfil,
+            }
+        )
+
     pareto: Pareto = compute_pareto(opportunities)
 
     technical_identified = sum(
@@ -1055,6 +1095,7 @@ def build(
             }
             for o in integrity
         ],
+        guardrails=guardrails,
         focus=[_opp_vm(o, account_currency) for o in pareto.financial_focus],
         focus_ids=[o.opportunity_id for o in pareto.financial_focus],
         table=[_opp_vm(o, account_currency) for o in table_sorted],

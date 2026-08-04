@@ -48,6 +48,7 @@ from julius.collection.collectors.glue import (
     sessions,
     spark_logs,
     triggers,
+    usage_profiles,
 )
 from julius.collection.collectors.metrics import MetricBatchCoordinator
 from julius.collection.collectors.s3_evidence import MAX_LIST_PAGES, parse_location
@@ -393,6 +394,7 @@ _SOURCE_CAPABILITIES: dict[str, frozenset[str]] = {
     "Glue Catalog": frozenset({"glue_catalog"}),
     "Glue Crawlers": frozenset({"glue_crawlers"}),
     "Glue Triggers": frozenset({"glue_jobs"}),
+    "Glue Usage Profiles": frozenset({"glue_jobs"}),
     "Glue DataBrew": frozenset({"glue_databrew"}),
     "CloudWatch Glue CPU": frozenset({"glue_jobs"}),
     "CloudWatch Glue Observability": frozenset({"glue_jobs"}),
@@ -443,6 +445,7 @@ _SOURCE_FAMILIES: dict[str, str] = {
     "Glue Catalog": "glue",
     "Glue Crawlers": "glue",
     "Glue Triggers": "glue",
+    "Glue Usage Profiles": "glue",
     "Glue DataBrew": "glue",
     "CloudWatch Glue CPU": "glue",
     "CloudWatch Glue Observability": "glue",
@@ -986,6 +989,17 @@ SOURCES: tuple[Source, ...] = (
         impact="frequência e grafo de processos podem ficar incompletos",
         next_action="validar glue:GetTriggers",
         snapshot_policy=_glue_triggers_snapshot_policy(),
+    ),
+    Source(
+        name="Glue Usage Profiles",
+        collect=lambda ctx: usage_profiles.collect_usage_profiles(ctx.client("glue")),
+        into="glue_usage_profiles",
+        count=len,
+        # Sem `expected`: conta sem perfil devolve zero, e zero aqui é resposta,
+        # não lacuna. Guardrail que não existe é exatamente o que o relatório
+        # precisa dizer.
+        impact="não é possível dizer se a conta tem guardrail de capacidade",
+        next_action="validar glue:ListUsageProfiles e glue:GetUsageProfile",
     ),
     Source(
         name="Glue DataBrew",
@@ -1559,6 +1573,7 @@ _SOURCE_DEPENDENCIES: dict[str, frozenset[str]] = {
     "Glue Catalog": frozenset(),
     "Glue Crawlers": frozenset(),
     "Glue Triggers": frozenset(),
+    "Glue Usage Profiles": frozenset(),
     "Glue DataBrew": frozenset(),
     "CloudWatch Glue CPU": frozenset({"Glue Jobs"}),
     "CloudWatch Glue Observability": frozenset({"Glue Jobs"}),
@@ -1621,6 +1636,7 @@ _SOURCE_SERVICES: dict[str, frozenset[str]] = {
     "Glue Catalog": frozenset({"glue"}),
     "Glue Crawlers": frozenset({"glue"}),
     "Glue Triggers": frozenset({"glue"}),
+    "Glue Usage Profiles": frozenset({"glue"}),
     "Glue DataBrew": frozenset({"databrew"}),
     "CloudWatch Glue CPU": frozenset({"cloudwatch"}),
     "CloudWatch Glue Observability": frozenset({"cloudwatch"}),

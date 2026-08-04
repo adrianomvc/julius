@@ -202,6 +202,10 @@ class InteractiveSession:
     max_capacity: float | None = None
     glue_version: str = ""
     idle_timeout_min: int = 2880
+    #: Usage Profile sob o qual a sessão roda, quando há um. Vazio significa
+    #: sessão sem guardrail — e é o que torna a lista de perfis acionável:
+    #: perfil que existe e ninguém usa não restringe nada.
+    profile_name: str = ""
     status: str = "READY"
     idle_hours_per_day: float = 0.0
     active_days_per_month: int = 22
@@ -303,6 +307,26 @@ class GlueTrigger:
     crawler_names: list[str] = field(default_factory=list)
     owner_tag: str | None = None
     expected_runs_monthly: float | None = None
+
+
+@dataclass
+class GlueUsageProfile:
+    """Um Usage Profile do Glue, e os limites que ele declara.
+
+    Perfil de uso é guardrail: ele restringe o que um job ou sessão pode pedir —
+    worker type, número de workers, timeout. Existir um perfil não prova que ele
+    está sendo usado, e é por isso que este modelo guarda o que o perfil **diz**
+    e nada sobre economia. Quem decide implantar guardrail é o time de
+    plataforma; o Julius só reporta o que encontrou.
+
+    `limits` chega como texto por chave porque a API devolve valores de tipos
+    diferentes por parâmetro, e o que o relatório precisa mostrar é o limite tal
+    como declarado — não uma interpretação dele.
+    """
+
+    name: str
+    description: str = ""
+    limits: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass

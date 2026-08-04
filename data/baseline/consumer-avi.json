@@ -140,6 +140,15 @@
     "unknown_usage_types": [],
     "window": " → 2026-07-23"
   },
+  "guardrails": [
+    {
+      "description": "sessões que rodaram sem nenhum guardrail de capacidade",
+      "kind": "sessions_without_profile",
+      "limits": {},
+      "name": "sessões sem perfil de uso",
+      "sessions_using": 1
+    }
+  ],
   "integrity": {
     "inventory": [
       {
