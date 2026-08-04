@@ -31,8 +31,15 @@ from julius.analysis.skill_registry import contract_digest
 #: catálogo, e a lista de famílias entrou nos campos do motor. Duas expansões
 #: aditivas seguidas: nada saiu do contrato, nenhuma proibição mudou, e um veredito
 #: dado em 2.0.0 continua legível em 2.2.0.
-VERSAO_CONGELADA = "2.2.0"
-DIGEST_CONGELADO = "f2ddf6120aaf479e"
+#:
+#: 3.0.0 — `julius-signal-economic-analysis` deixou de existir; o corpo dela virou
+#: a seção `## contextual range` de `julius-aws-analysis`. Major porque um artefato
+#: nomeado sumiu, e não porque o conteúdo mudou — ele foi preservado inteiro. Que
+#: a Skill removida nunca tenha sido instalada (`install/install.sh` publica só a
+#: que fica) é o motivo da fusão, não licença para tratá-la como aditiva: esta
+#: versão é o rastro que liga cada veredito ao contrato que o produziu.
+VERSAO_CONGELADA = "3.0.0"
+DIGEST_CONGELADO = "76ad13bfe304ba91"
 
 
 def test_the_contract_did_not_change_without_a_version_bump():

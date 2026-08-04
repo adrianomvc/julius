@@ -1,5 +1,5 @@
 ---
-skill: julius-signal-economic-analysis
+skill: julius-aws-analysis
 case: needs_evidence
 rule_id: GLUE-CODE-PYTHON-UDF
 enforced_by: tests/test_estimate_contract.py::test_a_changed_artifact_changes_the_signature_that_invalidates_it

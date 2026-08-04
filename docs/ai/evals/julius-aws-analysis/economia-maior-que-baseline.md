@@ -1,5 +1,5 @@
 ---
-skill: julius-signal-economic-analysis
+skill: julius-aws-analysis
 case: confirmed
 rule_id: GLUE-CODE-PYTHON-UDF
 enforced_by: tests/test_generative_estimate.py::test_a_range_above_the_baseline_is_cut_to_it

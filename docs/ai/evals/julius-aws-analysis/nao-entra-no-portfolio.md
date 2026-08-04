@@ -1,5 +1,5 @@
 ---
-skill: julius-signal-economic-analysis
+skill: julius-aws-analysis
 case: confirmed
 rule_id: GLUE-CODE-PYTHON-UDF
 enforced_by: tests/test_generative_estimate.py::test_a_generative_estimate_never_enters_the_portfolio

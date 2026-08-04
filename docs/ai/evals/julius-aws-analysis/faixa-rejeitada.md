@@ -1,5 +1,5 @@
 ---
-skill: julius-signal-economic-analysis
+skill: julius-aws-analysis
 case: rejected
 rule_id: GLUE-CODE-SHUFFLE
 enforced_by: tests/test_generative_estimate.py::test_a_rule_outside_the_allowlist_is_refused

@@ -1,5 +1,5 @@
 ---
-skill: julius-signal-economic-analysis
+skill: julius-aws-analysis
 case: needs_evidence
 rule_id: GLUE-CODE-PYTHON-UDF
 enforced_by: tests/test_estimate_contract.py::test_a_currency_that_differs_from_the_baseline_is_refused
