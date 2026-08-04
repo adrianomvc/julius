@@ -139,10 +139,11 @@ def test_the_economic_evals_cover_the_expensive_mistakes():
 
     São os que ninguém detecta depois, porque o resultado não diz de onde veio.
     """
-    casos = {
-        item.path.stem
-        for item in load_evals("julius-signal-economic-analysis")
-    }
+    # A Skill era separada e nunca foi instalada: `install/install.sh` publica só
+    # `julius-aws-analysis`, e o briefing só nomeava essa. Os casos econômicos
+    # passaram para a Skill fundida, e continuam sendo cobrados aqui pelo nome do
+    # arquivo — renomear um deles quebra este teste, que é o objetivo.
+    casos = {item.path.stem for item in load_evals("julius-aws-analysis")}
 
     for esperado in (
         "moeda-incompativel",

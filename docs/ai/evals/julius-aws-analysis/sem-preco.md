@@ -1,5 +1,5 @@
 ---
-skill: julius-signal-economic-analysis
+skill: julius-aws-analysis
 case: needs_evidence
 rule_id: GLUE-CODE-PYTHON-UDF
 enforced_by: tests/test_estimate_contract.py::test_a_missing_region_is_refused

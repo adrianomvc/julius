@@ -21,7 +21,7 @@ from julius.analysis.playbook import asset_types_in_context
 from julius.analysis.playbook import render as render_playbooks
 from julius.knowledge.remediation import CATALOG, FAMILIES
 
-PROMPT_VERSION = "2.2.0"
+PROMPT_VERSION = "3.0.0"
 
 #: As regras em si, separadas do texto que as apresenta — o validador de
 #: resposta verifica o resultado das mesmas restrições.
