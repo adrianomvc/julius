@@ -60,11 +60,15 @@ def run_sources(
     execution: str = "parallel",
     workers: int = SOURCE_WORKERS,
     on_source_applied: Callable[[Source, list[CollectionHealth]], None] | None = None,
+    completed_sources: frozenset[str] = frozenset(),
 ) -> None:
     """Executa o DAG em paralelo ou no caminho serial de rollback."""
     if execution not in {"parallel", "serial"}:
         raise ValueError("collection_execution deve ser parallel ou serial")
     _validate(sources)
+    unknown_completed = set(completed_sources) - {source.name for source in sources}
+    if unknown_completed:
+        raise ValueError(f"fontes retomadas desconhecidas: {sorted(unknown_completed)}")
     # O orçamento é verificado entre fontes. Enquanto não houver reserva de
     # custo por tarefa, iniciar várias ao mesmo tempo poderia ultrapassá-lo.
     actual_mode = (
@@ -75,6 +79,8 @@ def run_sources(
     started = perf_counter()
     if actual_mode == "serial":
         for source in sources:
+            if source.name in completed_sources:
+                continue
             before = len(recorder.entries)
             run(source, ctx, recorder)
             if on_source_applied is not None:
@@ -88,6 +94,7 @@ def run_sources(
             recorder,
             workers=workers,
             on_source_applied=on_source_applied,
+            completed_sources=completed_sources,
         )
 
     names = {source.name for source in sources}
@@ -109,10 +116,15 @@ def _run_parallel(
     *,
     workers: int,
     on_source_applied: Callable[[Source, list[CollectionHealth]], None] | None,
+    completed_sources: frozenset[str],
 ) -> tuple[int, dict[str, int]]:
     positions = {source.name: index for index, source in enumerate(sources)}
-    pending = {source.name: source for source in sources}
-    completed: set[str] = set()
+    pending = {
+        source.name: source
+        for source in sources
+        if source.name not in completed_sources
+    }
+    completed: set[str] = set(completed_sources)
     entries: dict[str, list] = {}
     tracker = _PeakTracker()
     limiters = {

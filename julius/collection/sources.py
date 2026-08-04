@@ -30,6 +30,7 @@ from julius.collection.collectors import (
     s3_access,
     s3_config,
     s3_cost,
+    s3_inventory,
     sagemaker,
     sagemaker_cost,
     sagemaker_extended,
@@ -49,9 +50,16 @@ from julius.collection.collectors.glue import (
     triggers,
 )
 from julius.collection.collectors.metrics import MetricBatchCoordinator
-from julius.collection.collectors.s3_evidence import MAX_LIST_PAGES
+from julius.collection.collectors.s3_evidence import MAX_LIST_PAGES, parse_location
 from julius.collection.health import CollectionRecorder, RequiredCollectionError
-from julius.collection.models import Account, CollectionHealth, IamGap, S3BucketConfig
+from julius.collection.iam import gaps_from_text
+from julius.collection.models import (
+    Account,
+    CollectionHealth,
+    GlueTrigger,
+    IamGap,
+    S3BucketConfig,
+)
 from julius.collection.policy import ScopePolicy, policy_for_profile
 from julius.collection.scope import CatalogScope
 from julius.collection.session import S3_LISTING_WORKERS, make_client
@@ -100,6 +108,9 @@ class CollectionContext:
     # responde "pelo menos X GB", e é o operador que decide pagar pela resposta
     # exata. Ver `S3 Prefixes` em `SOURCES`.
     s3_full_listing: bool = False
+    # Consome somente S3 Inventory já configurado; incompatibilidade mantém o
+    # fallback atual por ListObjectsV2.
+    s3_inventory: bool = False
     # Inventário de jobs é sempre completo; esta opção remove o limite de 100
     # jobs com métricas CloudWatch detalhadas.
     sagemaker_full_metrics: bool = False
@@ -120,6 +131,9 @@ class CollectionContext:
     _response_cache_lock: Any = field(default_factory=Lock, repr=False)
     _state_lock: Any = field(default_factory=Lock, repr=False)
     snapshot_store: CollectionSnapshotStore | None = None
+    # Manifesto explícito do operador. Ausente/vazio sempre testa a AWS; nunca
+    # é preenchido automaticamente a partir do primeiro AccessDenied.
+    denied_iam_actions: frozenset[str] = frozenset()
 
     def client(self, service: str) -> Any:
         """Um cliente por serviço, criado uma vez.
@@ -139,6 +153,7 @@ class CollectionContext:
                     self.telemetry,
                     self._response_cache,
                     cache_lock=self._response_cache_lock,
+                    denied_iam_actions=self.denied_iam_actions,
                 )
                 if service == "cloudwatch":
                     client._metric_batch_coordinator = MetricBatchCoordinator(
@@ -486,9 +501,22 @@ def _record_gaps(ctx: CollectionContext, entry: CollectionHealth) -> None:
         )
     faltou = "não lido: " + "; ".join(anotados)
     entry.impact = f"{entry.impact} — {faltou}" if entry.impact else faltou
-    if ctx.iam_gaps:
+    structured = list(ctx.iam_gaps.values())
+    structured.extend(gaps_from_text(anotados, declared_actions=entry.next_action))
+    if structured:
+        merged: dict[tuple[str, str], IamGap] = {}
+        for gap in structured:
+            key = (gap.service, gap.operation)
+            current = merged.get(key)
+            if current is None:
+                merged[key] = gap
+                continue
+            current.affected_resources += gap.affected_resources
+            for example in gap.examples:
+                if example not in current.examples and len(current.examples) < 3:
+                    current.examples.append(example)
         entry.iam_gaps = sorted(
-            ctx.iam_gaps.values(), key=lambda gap: (gap.service, gap.operation)
+            merged.values(), key=lambda gap: (gap.service, gap.operation)
         )
         actions = sorted({gap.iam_action for gap in entry.iam_gaps})
         entry.next_action = "validar permissões read-only: " + ", ".join(actions)
@@ -518,6 +546,17 @@ def _s3_config_snapshot_policy() -> SnapshotPolicy:
             "buckets": sorted(s3.bucket_names(_s3_scope(ctx))),
             "scope_profile": ctx.scope_policy.profile,
         },
+    )
+
+
+def _glue_triggers_snapshot_policy() -> SnapshotPolicy:
+    """Definição de trigger muda pouco e não contém histórico ou métrica."""
+    return SnapshotPolicy(
+        ttl_seconds=5 * 60,
+        collector_version="glue-triggers-v1",
+        serialize=lambda values: [asdict(value) for value in values],
+        deserialize=lambda values: [GlueTrigger(**value) for value in values],
+        scope=lambda ctx: {"scope_profile": ctx.scope_policy.profile},
     )
 
 
@@ -662,19 +701,40 @@ def _collect_s3_prefixes(ctx: CollectionContext) -> list:
         conhecidos = [item for item in _s3_scope(ctx) if item[1] == kind]
         if not conhecidos:
             continue
-        out.extend(
-            s3.collect_prefixes(
+        ordem = list(conhecidos)
+        coletados: list = []
+        if ctx.s3_inventory:
+            inventory, conhecidos = s3_inventory.collect_prefixes(
                 client,
                 known=conhecidos,
                 window=ctx.window,
                 stale_after_days=stale_after,
-                max_pages=None if ctx.s3_full_listing else MAX_LIST_PAGES,
-                # O teto de páginas limita custo e cobertura; concorrência só
-                # sobrepõe a latência de prefixos independentes e não cria uma
-                # chamada adicional. Por isso vale também no modo limitado.
-                workers=S3_LISTING_WORKERS,
+                gaps=ctx.gaps,
             )
-        )
+            coletados.extend(inventory)
+        if conhecidos:
+            coletados.extend(
+                s3.collect_prefixes(
+                    client,
+                    known=conhecidos,
+                    window=ctx.window,
+                    stale_after_days=stale_after,
+                    max_pages=None if ctx.s3_full_listing else MAX_LIST_PAGES,
+                    # O teto limita custo e cobertura; concorrência apenas
+                    # sobrepõe latência de prefixos independentes.
+                    workers=S3_LISTING_WORKERS,
+                )
+            )
+        por_alvo = {
+            (item.bucket, item.prefix, item.kind, item.source_asset): item
+            for item in coletados
+        }
+        for location, target_kind, source in ordem:
+            parsed = parse_location(location)
+            if parsed is not None:
+                item = por_alvo.get((parsed[0], parsed[1], target_kind, source))
+                if item is not None:
+                    out.append(item)
     return out
 
 
@@ -908,6 +968,7 @@ SOURCES: tuple[Source, ...] = (
         count=len,
         impact="frequência e grafo de processos podem ficar incompletos",
         next_action="validar glue:GetTriggers",
+        snapshot_policy=_glue_triggers_snapshot_policy(),
     ),
     Source(
         name="Glue DataBrew",

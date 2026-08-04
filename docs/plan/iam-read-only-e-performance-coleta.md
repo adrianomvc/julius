@@ -216,9 +216,11 @@ Quando `ListWorkGroups` funcionar, o Julius une descoberta e configuração:
 
 ## 5. Onda IAM-1 — diagnóstico estruturado
 
-**Estado:** parcialmente implementada para `S3 Config`: ação IAM correta,
-operação, serviço, contador de recursos e até três exemplos chegam ao dataset,
-contexto da IA, relatório e Excel. A generalização para outras fontes permanece.
+**Estado:** implementada. Além do `S3 Config`, o cliente instrumentado anota
+serviço/operação em negações de qualquer fonte e os gaps internos conhecidos são
+convertidos por um registro explícito de ações IAM. A saúde agrega quantidade e
+até três exemplos sem persistir a mensagem AWS; JSON, contexto da IA, relatório
+e Excel usam o mesmo contrato.
 
 ### Entrega
 
@@ -241,11 +243,12 @@ contexto da IA, relatório e Excel. A generalização para outras fontes permane
 
 ## 6. Onda IAM-2 — evitar repetição inútil de negações
 
-**Estado:** a latência por bucket foi paralelizada com workers limitados,
-resultados locais e agregação determinística; isso reduz tempo de parede sem
-reduzir cobertura. O circuit breaker automático permanece pendente porque o
-primeiro `AccessDenied` não prova negação global quando bucket policies, SCPs e
-condições podem variar por recurso.
+**Estado:** implementado de forma explícita e conservadora. A latência por bucket
+continua paralelizada; `collect --denied-iam-actions` aceita somente ações que o
+operador comprovou como indisponíveis naquele scan e evita a chamada de rede,
+registrando quantos short-circuits ocorreram. Sem o manifesto, todo novo scan
+volta a testar. Não existe inferência automática pelo primeiro `AccessDenied`,
+pois bucket policies, SCPs e condições podem variar por recurso.
 
 Não é seguro parar após o primeiro `AccessDenied`: bucket policies podem permitir
 uma ação em um bucket e negar em outro. O controlador será conservador.
@@ -271,9 +274,11 @@ uma ação em um bucket e negar em outro. O controlador será conservador.
 
 ## 7. Onda IAM-3 — Athena completo e fallback honesto
 
-**Estado:** fallback por CLI/cadastro e união com descoberta implementados. A
-descoberta negada permanece parcial e bloqueia reconciliação. Persistir papéis
-operacionais e detalhar falha por workgroup permanecem.
+**Estado:** implementada. Fallback por CLI/cadastro, união com descoberta e papéis
+`preferred`/`legacy`/`unused_expected` são persistidos. A descoberta negada
+permanece parcial e bloqueia reconciliação. Cada workgroup registra separadamente
+`GetWorkGroup`, `ListQueryExecutions`, `BatchGetQueryExecution` e o fallback
+`GetQueryExecution`; negar um grupo não apaga os demais.
 
 ### Entrega
 
@@ -338,9 +343,9 @@ O trabalho de performance continua nesta ordem:
 ### P1 — S3 em contas grandes
 
 - manter streaming e deduplicação de prefixos já implementados;
-- adicionar adapter para S3 Inventory já existente;
-- incluir futuramente `s3:GetInventoryConfiguration` somente quando o adapter
-  estiver implementado e o time aprovar essa cobertura;
+- adapter opt-in para S3 Inventory CSV já existente implementado localmente;
+- mapear `s3:GetInventoryConfiguration`, mantendo a chamada desativada sem
+  `--s3-inventory` e a homologação real sujeita à aprovação humana;
 - nunca criar ou alterar Inventory;
 - validar idade, manifesto, schema, bucket e prefixo antes de consumir;
 - Inventory incompatível ou atrasado vira parcial e recua para o modo autorizado.
@@ -458,16 +463,16 @@ homologação na mesma conta, janela e cobertura.
 | P1 | Concorrência S3 Config sem contaminação | Implementada localmente |
 | P1 | Evitar repetição de negação global comprovada | Planejado; exige prova segura |
 | P1 | Batching global CloudWatch | Planejado após IAM-1/IAM-3 |
-| P1 | S3 Inventory existente | Planejado |
-| P2 | Expandir snapshots elegíveis | Parcial: `S3 Config` pronto |
-| P2 | Checkpoints por domínio e retomada | Parcial: `RunStore` pronto |
-| P2 | Worker assíncrono e merge da IA | Planejado |
+| P1 | S3 Inventory existente | Implementado localmente; homologação pendente |
+| P2 | Expandir snapshots elegíveis | Parcial: `S3 Config` e `Glue Triggers` |
+| P2 | Checkpoints por domínio e retomada | Implementado localmente |
+| P2 | Worker assíncrono e merge da IA | Implementado localmente |
 | P3 | Prioridade por caminho crítico e memória | Planejado |
 | P0 | Homologação read-only na conta | Bloqueada por acesso/aprovação |
 
 ## 14. Próxima execução de implementação
 
-1. concluir a homologação local de concorrência e papéis Athena;
-2. definir uma prova segura ou manifesto explícito para negação IAM global;
-3. iniciar o planejador global CloudWatch;
-4. homologar a policy read-only na conta somente com aprovação humana.
+1. adicionar caminho crítico, backpressure e limites de memória;
+2. ampliar telemetria operacional da fila e das unidades retomadas;
+3. avaliar novas fontes de configuração separadas de métricas voláteis;
+4. homologar Inventory e a policy read-only na conta somente com aprovação humana.

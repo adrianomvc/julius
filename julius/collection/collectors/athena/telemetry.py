@@ -17,7 +17,8 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
 from julius.collection.health.recorder import error_category
-from julius.collection.models import AthenaCoverage, CollectionHealth
+from julius.collection.iam import action_for_operation
+from julius.collection.models import AthenaCoverage, CollectionHealth, IamGap
 
 # Nome da fonte → (impacto, próxima ação). O prefixo mantém as entradas juntas
 # na saúde e deixa claro que descrevem a coleta Athena, não o serviço inteiro.
@@ -72,6 +73,18 @@ class AthenaTelemetry:
     def used(self, source: str) -> None:
         """Marca que a fonte foi consultada, mesmo que sem incidente."""
         self._touched.add(source)
+
+    def operation(
+        self,
+        workgroup: str,
+        operation: str,
+        category: str = "ok",
+    ) -> None:
+        """Registra cobertura Athena sem mensagem ou payload da AWS."""
+        self.used("Athena API")
+        self.coverage.workgroup_operation_status.setdefault(workgroup, {})[
+            operation
+        ] = category
 
     def partial(self, source: str, *, category: str, detail: str) -> None:
         """Evidência parcial: a fonte respondeu, a leitura foi interrompida.
@@ -129,15 +142,46 @@ class AthenaTelemetry:
             if not category and source in self.partials:
                 status = "partial"
                 category = self.partials[source]
-            out.append(
-                CollectionHealth(
-                    source=source,
-                    status=status,
-                    started_at=moment,
-                    completed_at=moment,
-                    error_category=category,
-                    impact=impact if category else "",
-                    next_action=next_action if category else "",
-                )
+            entry = CollectionHealth(
+                source=source,
+                status=status,
+                started_at=moment,
+                completed_at=moment,
+                error_category=category,
+                impact=impact if category else "",
+                next_action=next_action if category else "",
             )
+            if source == "Athena API":
+                entry.iam_gaps = self._iam_gaps()
+                if entry.iam_gaps:
+                    entry.next_action = "validar permissões read-only: " + ", ".join(
+                        sorted({gap.iam_action for gap in entry.iam_gaps})
+                    )
+            out.append(entry)
         return out
+
+    def _iam_gaps(self) -> list[IamGap]:
+        grouped: dict[str, IamGap] = {}
+        for workgroup, operations in self.coverage.workgroup_operation_status.items():
+            for operation, category in operations.items():
+                if category != "permission_denied":
+                    continue
+                action = action_for_operation(operation)
+                if not action:
+                    continue
+                gap = grouped.setdefault(
+                    operation,
+                    IamGap(
+                        service="athena",
+                        operation=operation,
+                        iam_action=action,
+                    ),
+                )
+                gap.affected_resources += 1
+                if (
+                    workgroup != "__account__"
+                    and workgroup not in gap.examples
+                    and len(gap.examples) < 3
+                ):
+                    gap.examples.append(workgroup)
+        return sorted(grouped.values(), key=lambda item: item.operation)

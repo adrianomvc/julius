@@ -23,6 +23,13 @@ class _WorkingListing(_DeniedListing):
         return _Paginator()
 
 
+class _OneDeniedWorkgroup(_WorkingListing):
+    def get_work_group(self, *, WorkGroup):
+        if WorkGroup == "analytics-workgroup":
+            raise PermissionError("denied")
+        return super().get_work_group(WorkGroup=WorkGroup)
+
+
 KNOWN = ("primary", "analytics-workgroup", "analytics-workgroup-v3")
 ROLES = {
     "primary": "unused_expected",
@@ -71,3 +78,26 @@ def test_discovery_is_unioned_with_known_workgroups() -> None:
     assert coverage.workgroups_total == 4
     assert coverage.workgroup_roles["discovered-fourth"] == "unclassified"
     assert coverage.workgroup_roles["analytics-workgroup-v3"] == "preferred"
+
+
+def test_one_denied_workgroup_is_visible_without_erasing_the_others() -> None:
+    coverage = AthenaCoverage()
+    telemetry = AthenaTelemetry(coverage)
+
+    names, configs = workgroups(
+        _OneDeniedWorkgroup(),
+        coverage,
+        telemetry,
+        configured=KNOWN,
+        configured_roles=ROLES,
+    )
+
+    assert names == ["discovered-fourth", *KNOWN]
+    assert set(configs) == {"discovered-fourth", "primary", "analytics-workgroup-v3"}
+    assert coverage.workgroup_operation_status["analytics-workgroup"] == {
+        "get_work_group": "permission_denied"
+    }
+    entry = telemetry.entries()[0]
+    assert entry.status == "partial"
+    assert entry.iam_gaps[0].iam_action == "athena:GetWorkGroup"
+    assert entry.iam_gaps[0].examples == ["analytics-workgroup"]

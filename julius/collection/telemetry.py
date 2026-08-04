@@ -26,6 +26,8 @@ from threading import Lock
 from time import perf_counter
 from typing import Any
 
+from julius.collection.iam import DeclaredPermissionDenied, action_for_call
+
 
 @dataclass
 class ApiCallStat:
@@ -76,6 +78,7 @@ class RunTelemetry:
     cloudwatch_metric_queries: int = 0
     cloudwatch_metric_batches: int = 0
     cloudwatch_coalesced_requests: int = 0
+    iam_short_circuits: int = 0
 
     def __post_init__(self) -> None:
         self._lock = Lock()
@@ -122,6 +125,10 @@ class RunTelemetry:
             self.cloudwatch_metric_queries += queries
             self.cloudwatch_metric_batches += batches
             self.cloudwatch_coalesced_requests += coalesced
+
+    def record_iam_short_circuit(self) -> None:
+        with self._lock:
+            self.iam_short_circuits += 1
 
     def estimate(self, pricing) -> float:
         cost = 0.0
@@ -170,6 +177,7 @@ class InstrumentedClient:
         cache: dict,
         *,
         cache_lock=None,
+        denied_iam_actions: frozenset[str] = frozenset(),
     ):
         self._client = client
         self._service = service
@@ -180,6 +188,7 @@ class InstrumentedClient:
         # Preenchido somente no cliente CloudWatch pelo CollectionContext.
         # Fica declarado aqui para o proxy continuar transparente e tipável.
         self._metric_batch_coordinator: Any = None
+        self._denied_iam_actions = denied_iam_actions
 
     def __getattr__(self, name):
         target = getattr(self._client, name)
@@ -191,12 +200,19 @@ class InstrumentedClient:
                 self._telemetry,
                 self._cache,
                 self._cache_lock,
+                self._denied_iam_actions,
             )
         if not callable(target):
             return target
 
         def call(*args, **kwargs):
             stat = self._telemetry.stat(self._service, name)
+            action = action_for_call(self._service, name)
+            if action in self._denied_iam_actions:
+                self._telemetry.record_iam_short_circuit()
+                exc = DeclaredPermissionDenied(action)
+                _annotate_iam_exception(exc, self._service, name)
+                raise exc
             cache_key = _cache_key(self._service, name, args, kwargs)
             if self._service == "ce":
                 with self._cache_lock:
@@ -208,6 +224,7 @@ class InstrumentedClient:
             try:
                 result = target(*args, **kwargs)
             except Exception as exc:
+                _annotate_iam_exception(exc, self._service, name)
                 code = str(
                     getattr(exc, "response", {}).get("Error", {}).get("Code", "")
                 ).lower()
@@ -250,16 +267,32 @@ class InstrumentedClient:
 
 
 class _InstrumentedPaginator:
-    def __init__(self, paginator, service, operation, telemetry, cache, cache_lock):
+    def __init__(
+        self,
+        paginator,
+        service,
+        operation,
+        telemetry,
+        cache,
+        cache_lock,
+        denied_iam_actions,
+    ):
         self._paginator = paginator
         self._service = service
         self._operation = operation
         self._telemetry = telemetry
         self._cache = cache
         self._cache_lock = cache_lock
+        self._denied_iam_actions = denied_iam_actions
 
     def paginate(self, **kwargs):
         stat = self._telemetry.stat(self._service, self._operation)
+        action = action_for_call(self._service, self._operation)
+        if action in self._denied_iam_actions:
+            self._telemetry.record_iam_short_circuit()
+            exc = DeclaredPermissionDenied(action)
+            _annotate_iam_exception(exc, self._service, self._operation)
+            raise exc
         cache_key = _cache_key(self._service, self._operation, (), kwargs)
         if self._service == "ce":
             with self._cache_lock:
@@ -280,6 +313,9 @@ class _InstrumentedPaginator:
                 )
                 pages.append(page)
                 yield page
+        except Exception as exc:
+            _annotate_iam_exception(exc, self._service, self._operation)
+            raise
         finally:
             stat.add(duration_ms=round((perf_counter() - started) * 1000))
             if self._service == "ce":
@@ -294,3 +330,12 @@ def _cache_key(service: str, operation: str, args, kwargs) -> str:
         sort_keys=True,
         ensure_ascii=True,
     )
+
+
+def _annotate_iam_exception(exc: Exception, service: str, operation: str) -> None:
+    """Anexa somente identificadores locais; mensagem AWS nunca é persistida."""
+    try:
+        exc.__dict__["julius_service"] = service
+        exc.__dict__["julius_operation"] = operation
+    except Exception:  # pragma: no cover - exceção imutável de biblioteca
+        return

@@ -30,6 +30,9 @@
 > prioridade de caminho crítico e a execução automática do provider de IA. A
 > Onda 6 começou com cache opt-in de `S3 Config`: TTL curto,
 > checksum, versão e isolamento por conta/região/escopo.
+> O P0 IAM também ganhou diagnóstico genérico no cliente instrumentado, cobertura
+> Athena por operação/workgroup e short-circuit somente por manifesto explícito
+> `--denied-iam-actions`; o primeiro `AccessDenied` nunca fecha circuito sozinho.
 
 ---
 
@@ -561,10 +564,11 @@ diferentes nunca são misturados.
 ### Onda 6 — snapshots e incremental
 
 **Estado:** parcialmente implementada. O store versionado, telemetria de
-hit/miss e a primeira política segura (`S3 Config`, TTL de 15 minutos) estão
-disponíveis com `julius collect --snapshot-dir DIRETÓRIO`. Métricas, custos e
-históricos continuam sempre frescos. A expansão para outras fontes depende de
-separar configuração estável de estado operacional volátil em seus payloads.
+hit/miss e políticas seguras para `S3 Config` (TTL de 15 minutos) e
+`Glue Triggers` (TTL de 5 minutos) estão disponíveis com
+`julius collect --snapshot-dir DIRETÓRIO`. Métricas, custos e históricos
+continuam sempre frescos. Novas fontes só entram depois de separar configuração
+estável de estado operacional volátil em seus payloads.
 
 **Entrega**
 
@@ -618,6 +622,12 @@ fila contextual. `agent next --run-store` reserva atomicamente o próximo pacote
 valida seu hash e entrega somente caminho, conta, scan e domínio — nunca sessão ou
 cliente AWS. Jobs `running` podem voltar a `pending` após queda do worker.
 
+**Ampliado localmente em 2026-08-04:** `collect --resume-scan-id` reidrata apenas
+domínios `ready` do mesmo scan cujo arquivo, schema, conta, região, janela,
+fontes e fingerprint de configuração ainda coincidam. O DAG trata essas fontes
+como concluídas e executa somente o restante. Um scan novo marca runs e jobs
+contextuais anteriores como `superseded`, sem tocar outra coleta ainda ativa.
+
 ### Onda 9 — análise contextual por checkpoint
 
 **Entrega**
@@ -636,11 +646,15 @@ cliente AWS. Jobs `running` podem voltar a `pending` após queda do worker.
 - relatório determinístico sai mesmo com IA indisponível;
 - resultado enriquecido não altera campo determinístico.
 
-**Implementado parcialmente em 2026-08-03:** pacotes por domínio são canônicos,
-imutáveis, isolados por conta/scan e deduplicados pelo hash. Estados `ready`,
-`partial` e `unavailable` carregam a saúde das fontes. Ainda falta o executor que
-chama automaticamente o provider e o merge dos resultados contextuais por domínio;
-o protocolo de fila/claim já está disponível para esse worker.
+**Implementado localmente em 2026-08-03:** pacotes por domínio são canônicos,
+imutáveis, isolados por conta/scan e deduplicados pelo hash. O fechamento congela
+somente os campos do domínio; JSON, hash, escrita e ledger rodam em executor local
+separado e se sobrepõem às fontes AWS restantes. Estados `ready`, `partial` e
+`unavailable` carregam a saúde das fontes. `agent work-domains` consome respostas
+de um inbox auditável, valida conta/scan/domínio/hash e recusa qualquer campo fora
+do envelope contextual; providers automáticos usam o mesmo protocolo sem receber
+boto3. `agent merge-domains` revalida arquivos e compõe um anexo separado, sem
+reescrever o dataset determinístico.
 
 ### Onda 10 — homologação read-only
 

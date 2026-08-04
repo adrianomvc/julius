@@ -16,6 +16,7 @@ from julius.collection.collectors.athena.evidence import (
     fingerprints,
 )
 from julius.collection.collectors.s3_evidence import list_objects, parse_location
+from julius.collection.health.recorder import error_category
 from julius.collection.models import AthenaCoverage
 from julius.collection.session import ATHENA_QUERY_BATCH_WORKERS
 
@@ -59,9 +60,13 @@ def workgroups(
             names.extend(item["Name"] for item in page.get("WorkGroups", []) if item.get("Name"))
     except Exception as exc:
         telemetry.partial_failure("Athena API", exc, detail="list_work_groups")
+        _record_operation(telemetry,
+            "__account__", "list_work_groups", error_category(exc)
+        )
         coverage.workgroups_discovery_complete = False
         names = list(configured or ("primary",))
     else:
+        _record_operation(telemetry, "__account__", "list_work_groups")
         # Um nome configurado e não listado ainda precisa ser tentado: pode ser
         # limitação de visibilidade da identidade, e silêncio não é ausência.
         names.extend(configured)
@@ -75,6 +80,7 @@ def workgroups(
     for name in names:
         try:
             configs[name] = client.get_work_group(WorkGroup=name).get("WorkGroup", {})
+            _record_operation(telemetry, name, "get_work_group")
             cfg = configs[name].get("Configuration", {})
             if not cfg.get("PublishCloudWatchMetricsEnabled", False):
                 telemetry.unavailable("Athena CloudWatch", category="not_configured", detail=f"{name}: métricas desabilitadas no workgroup")
@@ -89,7 +95,12 @@ def workgroups(
                 "BytesScannedCutoffPerQuery"
             )
         except Exception as exc:
-            telemetry.failed("Athena API", exc, detail=f"{name}: get_work_group")
+            _record_operation(telemetry, name, "get_work_group", error_category(exc))
+            telemetry.partial(
+                "Athena API",
+                category=error_category(exc),
+                detail=f"{name}: get_work_group",
+            )
     return names, configs
 
 
@@ -108,9 +119,17 @@ def execution_ids(client, workgroup: str, *, max_ids: int | None, telemetry):
                 truncated = True
                 ids = ids[:max_ids]
                 break
+        _record_operation(telemetry, workgroup, "list_query_executions")
         return ids, truncated
     except Exception as exc:
-        telemetry.failed("Athena API", exc, detail=f"{workgroup}: list_query_executions")
+        _record_operation(telemetry,
+            workgroup, "list_query_executions", error_category(exc)
+        )
+        telemetry.partial(
+            "Athena API",
+            category=error_category(exc),
+            detail=f"{workgroup}: list_query_executions",
+        )
         return None, False
 
 
@@ -183,6 +202,7 @@ def query_executions(
     telemetry,
     *,
     workers: int = ATHENA_QUERY_BATCH_WORKERS,
+    workgroup: str = "",
 ):
     """Resolve lotes de 50 em paralelo, preservando a ordem dos IDs.
 
@@ -204,7 +224,24 @@ def query_executions(
         with ThreadPoolExecutor(max_workers=min(workers, len(chunks))) as pool:
             resolved = list(pool.map(lambda chunk: _query_chunk(client, chunk), chunks))
 
-    for rows, unresolved, failures in resolved:
+    batch_categories = [
+        error_category(batch_error)
+        for _, _, _, batch_error in resolved
+        if batch_error is not None
+    ]
+    _record_operation(telemetry,
+        workgroup or "__unknown__",
+        "batch_get_query_execution",
+        batch_categories[0] if batch_categories else "ok",
+    )
+    all_failures = [exc for _, _, failures, _ in resolved for exc in failures]
+    if batch_categories:
+        _record_operation(telemetry,
+            workgroup or "__unknown__",
+            "get_query_execution",
+            error_category(all_failures[0]) if all_failures else "ok",
+        )
+    for rows, unresolved, failures, _batch_error in resolved:
         yield from rows
         if unresolved:
             telemetry.unavailable(
@@ -213,14 +250,29 @@ def query_executions(
                 detail=f"{unresolved} execuções não processadas",
             )
         for exc in failures:
-            telemetry.failed("Athena API", exc, detail="get_query_execution")
+            telemetry.partial(
+                "Athena API",
+                category=error_category(exc),
+                detail=f"{workgroup}: get_query_execution",
+            )
 
 
-def _query_chunk(client, ids: list[str]) -> tuple[list[dict], int, list[Exception]]:
+def _record_operation(
+    telemetry, workgroup: str, operation: str, category: str = "ok"
+) -> None:
+    recorder = getattr(telemetry, "operation", None)
+    if recorder is not None:
+        recorder(workgroup, operation, category)
+
+
+def _query_chunk(
+    client, ids: list[str]
+) -> tuple[list[dict], int, list[Exception], Exception | None]:
     """Um lote, sem escrever telemetria compartilhada dentro da thread."""
     rows: list[dict] = []
     pending = list(ids)
     failures: list[Exception] = []
+    batch_error: Exception | None = None
     try:
         response = client.batch_get_query_execution(QueryExecutionIds=ids)
         rows.extend(response.get("QueryExecutions", []))
@@ -230,9 +282,9 @@ def _query_chunk(client, ids: list[str]) -> tuple[list[dict], int, list[Exceptio
             for item in unprocessed
             if isinstance(item, dict) and item.get("QueryExecutionId")
         ]
-    except Exception:
+    except Exception as exc:
         # Alguns ambientes autorizam Get mas não BatchGet.
-        pass
+        batch_error = exc
 
     for query_id in pending:
         try:
@@ -248,7 +300,7 @@ def _query_chunk(client, ids: list[str]) -> tuple[list[dict], int, list[Exceptio
         if row.get("QueryExecutionId")
     }
     ordered = [by_id[query_id] for query_id in ids if query_id in by_id]
-    return ordered, len(ids) - len(ordered), failures
+    return ordered, len(ids) - len(ordered), failures, batch_error
 
 
 def execution(qe: dict, workgroup: dict) -> AthenaExecutionEvidence | None:

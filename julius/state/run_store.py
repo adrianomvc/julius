@@ -14,7 +14,7 @@ _RUN_TRANSITIONS = {
     "collecting": {"collection_partial", "deterministic_ready", "cancelled"},
     "collection_partial": {"deterministic_ready", "cancelled"},
     "deterministic_ready": {"deterministic_published", "cancelled"},
-    "deterministic_published": {"ai_pending", "enriched", "ai_failed"},
+    "deterministic_published": {"ai_pending", "enriched", "ai_failed", "superseded"},
     "ai_pending": {"ai_partial", "enriched", "ai_failed", "superseded"},
     "ai_partial": {"enriched", "ai_failed", "superseded"},
     "ai_failed": {"ai_pending", "superseded"},
@@ -53,6 +53,19 @@ class DomainCheckpoint:
     payload_path: str
     payload_hash: str
     sources: dict[str, str]
+
+
+@dataclass(frozen=True)
+class ContextualResult:
+    task_id: str
+    account_id: str
+    scan_id: str
+    domain: str
+    context_hash: str
+    provider: str
+    status: str
+    result_path: str
+    result_hash: str
 
 
 class RunStore:
@@ -114,6 +127,18 @@ class RunStore:
                 error_category VARCHAR NOT NULL,
                 created_at TIMESTAMP NOT NULL,
                 updated_at TIMESTAMP NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS contextual_results (
+                task_id VARCHAR PRIMARY KEY,
+                account_id VARCHAR NOT NULL,
+                scan_id VARCHAR NOT NULL,
+                domain VARCHAR NOT NULL,
+                context_hash VARCHAR NOT NULL,
+                provider VARCHAR NOT NULL,
+                status VARCHAR NOT NULL,
+                result_path VARCHAR NOT NULL,
+                result_hash VARCHAR NOT NULL,
+                created_at TIMESTAMP NOT NULL
             );
             """
         )
@@ -343,6 +368,73 @@ class RunStore:
             )
         return count
 
+    def supersede_older_context(
+        self, account_id: str, keep_scan_id: str
+    ) -> tuple[int, int]:
+        """Arquiva somente fases contextuais anteriores ao scan corrente.
+
+        Runs em ``collecting``/``collection_partial`` podem ser outra coleta
+        legítima em paralelo e nunca são tocados aqui.
+        """
+        eligible = (
+            "deterministic_published",
+            "ai_pending",
+            "ai_partial",
+            "ai_failed",
+        )
+        with self._lock:
+            self._db.execute("BEGIN TRANSACTION")
+            try:
+                keep = self._db.execute(
+                    """SELECT created_at FROM pipeline_runs
+                       WHERE account_id=? AND scan_id=?""",
+                    [account_id, keep_scan_id],
+                ).fetchone()
+                if keep is None:
+                    raise KeyError(f"run desconhecido: {account_id}/{keep_scan_id}")
+                older = self._db.execute(
+                    """SELECT scan_id FROM pipeline_runs
+                       WHERE account_id=? AND scan_id<>?
+                         AND (created_at < ? OR (created_at = ? AND scan_id < ?))
+                         AND status IN (?, ?, ?, ?)""",
+                    [
+                        account_id,
+                        keep_scan_id,
+                        keep[0],
+                        keep[0],
+                        keep_scan_id,
+                        *eligible,
+                    ],
+                ).fetchall()
+                scan_ids = [str(row[0]) for row in older]
+                if not scan_ids:
+                    self._db.execute("COMMIT")
+                    return 0, 0
+                placeholders = ",".join("?" for _ in scan_ids)
+                task_count = self._db.execute(
+                    f"""SELECT count(*) FROM ai_jobs
+                        WHERE account_id=? AND scan_id IN ({placeholders})
+                          AND status IN ('pending', 'running', 'failed')""",  # noqa: S608
+                    [account_id, *scan_ids],
+                ).fetchone()
+                self._db.execute(
+                    f"""UPDATE ai_jobs SET status='superseded',
+                               error_category='newer_scan', updated_at=?
+                        WHERE account_id=? AND scan_id IN ({placeholders})
+                          AND status IN ('pending', 'running', 'failed')""",  # noqa: S608
+                    [_now(), account_id, *scan_ids],
+                )
+                self._db.execute(
+                    f"""UPDATE pipeline_runs SET status='superseded', updated_at=?
+                        WHERE account_id=? AND scan_id IN ({placeholders})""",  # noqa: S608
+                    [_now(), account_id, *scan_ids],
+                )
+                self._db.execute("COMMIT")
+            except BaseException:
+                self._db.execute("ROLLBACK")
+                raise
+        return len(scan_ids), int(task_count[0]) if task_count is not None else 0
+
     def task_for_context(
         self,
         account_id: str,
@@ -425,6 +517,69 @@ class RunStore:
                 scan_id,
                 "enriched" if cross_service_completed else "ai_partial",
             )
+
+    def record_contextual_result(
+        self,
+        task_id: str,
+        *,
+        provider: str,
+        status: str,
+        result_path: str,
+        result_hash: str,
+    ) -> None:
+        """Anexa resultado somente ao job exato que está reservado."""
+        if status not in {"enriched", "needs_evidence"}:
+            raise ValueError(f"estado contextual inválido: {status}")
+        with self._lock:
+            row = self._db.execute(
+                """SELECT account_id, scan_id, domain, context_hash, status
+                   FROM ai_jobs WHERE task_id=?""",
+                [task_id],
+            ).fetchone()
+            if row is None:
+                raise KeyError(f"job desconhecido: {task_id}")
+            if str(row[4]) != "running":
+                raise ValueError(f"job contextual não reservado: {task_id}")
+            existing = self._db.execute(
+                """SELECT provider, status, result_path, result_hash
+                   FROM contextual_results WHERE task_id=?""",
+                [task_id],
+            ).fetchone()
+            expected = (provider, status, result_path, result_hash)
+            if existing is not None:
+                if tuple(str(value) for value in existing) != expected:
+                    raise ValueError(f"resultado contextual divergente: {task_id}")
+                return
+            self._db.execute(
+                """
+                INSERT INTO contextual_results VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                [
+                    task_id,
+                    str(row[0]),
+                    str(row[1]),
+                    str(row[2]),
+                    str(row[3]),
+                    provider,
+                    status,
+                    result_path,
+                    result_hash,
+                    _now(),
+                ],
+            )
+
+    def contextual_results(
+        self, account_id: str, scan_id: str
+    ) -> list[ContextualResult]:
+        with self._lock:
+            rows = self._db.execute(
+                """SELECT task_id, account_id, scan_id, domain, context_hash,
+                          provider, status, result_path, result_hash
+                   FROM contextual_results
+                   WHERE account_id=? AND scan_id=? ORDER BY domain, task_id""",
+                [account_id, scan_id],
+            ).fetchall()
+        return [ContextualResult(*row) for row in rows]
 
 
 def file_sha256(path: str | Path) -> str:

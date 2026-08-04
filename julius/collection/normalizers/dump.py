@@ -130,3 +130,42 @@ def account_to_dataset(account: Account) -> dict:
             "previous_results": [asdict(r) for r in account.previous_results],
         },
     }
+
+
+_DOMAIN_SINGLE_FIELDS = {
+    "athena_coverage",
+    "glue_cost_coverage",
+    "s3_cost_coverage",
+    "sagemaker_cost_coverage",
+    "sagemaker_savings_plans",
+    "redshift_cost_coverage",
+}
+
+
+def account_fields_to_dataset(account: Account, fields: tuple[str, ...]) -> dict:
+    """Congela somente campos de um domínio no mesmo schema do dataset.
+
+    Checkpoints fecham enquanto outros serviços ainda coletam. Serializar a
+    conta inteira nesse instante desperdiçava CPU e lia listas ainda mutáveis;
+    este recorte mantém exatamente a representação pública dos campos pedidos.
+    """
+    out: dict = {}
+    for field in fields:
+        if field == "stepfunctions_operational":
+            out[field] = {
+                "map_backlog": account.stepfunctions_map_backlog,
+                "open_executions": account.stepfunctions_open_executions,
+                "service_integration_failures": (
+                    account.stepfunctions_service_integration_failures
+                ),
+                "service_integration_timeouts": (
+                    account.stepfunctions_service_integration_timeouts
+                ),
+            }
+            continue
+        value = getattr(account, field)
+        if field in _DOMAIN_SINGLE_FIELDS:
+            out[field] = _clean(asdict(value)) if value else None
+        else:
+            out[field] = [_clean(asdict(item)) for item in value]
+    return out

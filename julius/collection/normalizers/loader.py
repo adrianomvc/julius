@@ -126,6 +126,11 @@ class UnsupportedDatasetVersionError(RuntimeError):
 
 def load_account(path: str | Path) -> Account:
     raw = json.loads(Path(path).read_text(encoding="utf-8"))
+    return account_from_dataset(raw)
+
+
+def account_from_dataset(raw: dict) -> Account:
+    """Carrega payload já decodificado; usado por retomada de domínio validada."""
     version = int(raw.get("dataset_schema_version", 1))
     if version != DATASET_SCHEMA_VERSION:
         raise UnsupportedDatasetVersionError(version)
@@ -209,6 +214,7 @@ def load_account(path: str | Path) -> Account:
         cloudwatch_coalesced_requests=int(
             telemetry.get("cloudwatch_coalesced_requests") or 0
         ),
+        iam_short_circuits=int(telemetry.get("iam_short_circuits") or 0),
     )
     if raw.get("athena_coverage"):
         account.athena_coverage = _pick(raw["athena_coverage"], AthenaCoverage)

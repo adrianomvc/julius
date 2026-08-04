@@ -99,6 +99,14 @@ def collect(
             "total gasto aparece na saúde da coleta."
         ),
     ),
+    s3_inventory: bool = typer.Option(
+        False,
+        "--s3-inventory",
+        help=(
+            "Consome S3 Inventory CSV já configurado para acelerar prefixos; "
+            "manifesto ausente ou incompatível mantém o fallback atual."
+        ),
+    ),
     sagemaker_full_metrics: bool = typer.Option(
         False,
         "--sagemaker-full-metrics",
@@ -131,6 +139,14 @@ def collect(
             "pacotes imutáveis sem esperar o restante da coleta."
         ),
     ),
+    resume_scan_id: str = typer.Option(
+        "",
+        "--resume-scan-id",
+        help=(
+            "Retoma domínios ready do mesmo scan quando hash, janela, escopo "
+            "e opções coincidirem; requer --run-store."
+        ),
+    ),
     checkpoint_dir: str = typer.Option(
         "",
         "--checkpoint-dir",
@@ -140,6 +156,14 @@ def collect(
         True,
         "--enqueue-domain-ai/--no-enqueue-domain-ai",
         help="Enfileira cada checkpoint fechado para processamento contextual.",
+    ),
+    denied_iam_actions: str = typer.Option(
+        "",
+        "--denied-iam-actions",
+        help=(
+            "Ações read-only comprovadamente negadas, separadas por vírgula. "
+            "Evita chamadas de rede somente por declaração explícita deste scan."
+        ),
     ),
     output: str = typer.Option("data/collected/account.json", "--output", "-o"),
     bootstrap: bool | None = typer.Option(
@@ -175,6 +199,8 @@ def collect(
         raise typer.BadParameter(
             "--collection-execution deve ser parallel ou serial"
         )
+    if resume_scan_id and not run_store:
+        raise typer.BadParameter("--resume-scan-id requer --run-store")
     if bootstrap and cadence == "monthly":
         raise typer.BadParameter(
             "--bootstrap não se aplica a --cadence monthly: o mês-calendário é "
@@ -229,7 +255,9 @@ def collect(
     except ValueError as exc:
         raise typer.BadParameter(str(exc)) from exc
     pipeline_store = RunStore(run_store) if run_store else None
-    scan_id = new_scan_id() if pipeline_store is not None else ""
+    scan_id = ""
+    if pipeline_store is not None:
+        scan_id = resume_scan_id or new_scan_id()
     resolved_checkpoint_dir = (
         Path(checkpoint_dir)
         if checkpoint_dir
@@ -251,6 +279,7 @@ def collect(
             datawarm_job=datawarm_job,
             catalog_scope=scope,
             s3_full_listing=s3_full_listing,
+            s3_inventory=s3_inventory,
             sagemaker_full_metrics=sagemaker_full_metrics,
             scope_policy=policy,
             max_scan_cost_usd=max_scan_cost,
@@ -265,6 +294,12 @@ def collect(
             run_store=pipeline_store,
             checkpoint_dir=resolved_checkpoint_dir,
             enqueue_domain_ai=enqueue_domain_ai,
+            denied_iam_actions=frozenset(
+                action.strip()
+                for action in denied_iam_actions.split(",")
+                if action.strip()
+            ),
+            resume_checkpoints=bool(resume_scan_id),
         )
     except RequiredCollectionError as exc:
         if pipeline_store is not None:
@@ -324,6 +359,11 @@ def collect(
             f"{account.run_telemetry.cloudwatch_metric_batches} lote(s) · "
             f"{account.run_telemetry.cloudwatch_coalesced_requests} "
             "requisição(ões) agrupada(s)"
+        )
+    if account.run_telemetry.iam_short_circuits:
+        typer.echo(
+            f"IAM: {account.run_telemetry.iam_short_circuits} chamada(s) "
+            "evitada(s) por manifesto explícito"
         )
     for line in slowest_sources(account.collection_health):
         typer.echo(line)
