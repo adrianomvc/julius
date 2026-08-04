@@ -158,3 +158,31 @@ def test_new_scan_supersedes_only_older_contextual_work(tmp_path: Path) -> None:
         superseded = store.tasks(status="superseded")
         assert superseded[0].task_id == old_task
         assert superseded[0].error_category == "newer_scan"
+
+
+def test_ai_queue_limit_is_audited_without_blocking_checkpoint(tmp_path: Path) -> None:
+    with RunStore(tmp_path / "runs.duckdb", max_pending_ai_jobs=1) as store:
+        store.create_run("111111111111", "scan-a", status="deterministic_published")
+        store.create_run("222222222222", "scan-b", status="deterministic_published")
+        accepted = store.enqueue_ai(
+            "111111111111",
+            "scan-a",
+            "s3",
+            context_hash="accepted",
+            payload_path="accepted.json",
+        )
+        rejected = store.enqueue_ai(
+            "222222222222",
+            "scan-b",
+            "athena",
+            context_hash="rejected",
+            payload_path="rejected.json",
+        )
+
+        stats = store.queue_stats()
+
+        assert accepted
+        assert rejected == ""
+        assert stats.pending == 1
+        assert stats.rejected == 1
+        assert stats.oldest_pending_ms >= 0

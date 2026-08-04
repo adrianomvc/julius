@@ -462,17 +462,16 @@ homologação na mesma conta, janela e cobertura.
 | P0 | Revisão/aplicação humana da política read-only | Externo; requer time IAM |
 | P1 | Concorrência S3 Config sem contaminação | Implementada localmente |
 | P1 | Evitar repetição de negação global comprovada | Planejado; exige prova segura |
-| P1 | Batching global CloudWatch | Planejado após IAM-1/IAM-3 |
+| P1 | Batching global CloudWatch | Implementado com deduplicação e telemetria |
 | P1 | S3 Inventory existente | Implementado localmente; homologação pendente |
-| P2 | Expandir snapshots elegíveis | Parcial: `S3 Config` e `Glue Triggers` |
+| P2 | Expandir snapshots elegíveis | `S3 Config`, `Glue Triggers` e `EventBridge Schedules` |
 | P2 | Checkpoints por domínio e retomada | Implementado localmente |
 | P2 | Worker assíncrono e merge da IA | Implementado localmente |
-| P3 | Prioridade por caminho crítico e memória | Planejado |
+| P3 | Prioridade por caminho crítico e memória | Implementado nesta evolução |
 | P0 | Homologação read-only na conta | Bloqueada por acesso/aprovação |
 
 ## 14. Próxima execução de implementação
 
-1. adicionar caminho crítico, backpressure e limites de memória;
-2. ampliar telemetria operacional da fila e das unidades retomadas;
-3. avaliar novas fontes de configuração separadas de métricas voláteis;
-4. homologar Inventory e a policy read-only na conta somente com aprovação humana.
+1. homologar Inventory e a policy read-only na conta somente com aprovação humana;
+2. medir serial/paralelo na mesma conta, janela e cobertura;
+3. fechar defaults percentuais somente depois desse benchmark aprovado.

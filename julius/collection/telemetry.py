@@ -22,11 +22,15 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field
-from threading import Lock
+from threading import Condition, Lock
 from time import perf_counter
 from typing import Any
 
 from julius.collection.iam import DeclaredPermissionDenied, action_for_call
+
+
+class CollectionMemoryLimitExceeded(RuntimeError):
+    """Interrompe uma fonte opcional quando o limite explícito foi excedido."""
 
 
 @dataclass
@@ -71,17 +75,39 @@ class RunTelemetry:
     collection_wall_ms: int = 0
     source_duration_ms: int = 0
     max_parallel_sources: int = 1
+    max_pending_sources: int = 0
+    critical_path_ms: int = 0
+    critical_path_sources: list[str] = field(default_factory=list)
+    scheduler_wait_ms: int = 0
     service_concurrency_limits: dict[str, int] = field(default_factory=dict)
+    service_limit_reductions: dict[str, int] = field(default_factory=dict)
+    page_concurrency_limit: int = 1
+    max_parallel_pages: int = 0
+    page_backpressure_wait_ms: int = 0
+    peak_memory_bytes: int = 0
+    memory_limit_bytes: int = 0
+    memory_pressure_events: int = 0
+    resumed_sources: int = 0
+    superseded_runs: int = 0
+    superseded_ai_jobs: int = 0
+    ai_queue_depth: int = 0
+    ai_queue_oldest_wait_ms: int = 0
+    ai_queue_rejected: int = 0
     snapshot_hits: int = 0
     snapshot_misses: int = 0
     cloudwatch_metric_requests: int = 0
     cloudwatch_metric_queries: int = 0
     cloudwatch_metric_batches: int = 0
     cloudwatch_coalesced_requests: int = 0
+    cloudwatch_deduplicated_queries: int = 0
+    cloudwatch_avoided_calls: int = 0
+    cloudwatch_estimated_saved_ms: int = 0
     iam_short_circuits: int = 0
 
     def __post_init__(self) -> None:
         self._lock = Lock()
+        self._page_condition = Condition()
+        self._active_pages = 0
 
     def stat(self, service: str, operation: str) -> ApiCallStat:
         key = f"{service}:{operation}"
@@ -118,6 +144,9 @@ class RunTelemetry:
         queries: int = 0,
         batches: int = 0,
         coalesced: int = 0,
+        deduplicated: int = 0,
+        avoided_calls: int = 0,
+        estimated_saved_ms: int = 0,
     ) -> None:
         """Registra economia de lote sem disputar o lock das chamadas API."""
         with self._lock:
@@ -125,6 +154,63 @@ class RunTelemetry:
             self.cloudwatch_metric_queries += queries
             self.cloudwatch_metric_batches += batches
             self.cloudwatch_coalesced_requests += coalesced
+            self.cloudwatch_deduplicated_queries += deduplicated
+            self.cloudwatch_avoided_calls += avoided_calls
+            self.cloudwatch_estimated_saved_ms += estimated_saved_ms
+
+    def configure_pressure(
+        self, *, page_limit: int, memory_limit_mb: int | None
+    ) -> None:
+        with self._page_condition:
+            self.page_concurrency_limit = max(1, page_limit)
+        self.memory_limit_bytes = max(0, int(memory_limit_mb or 0)) * 1024 * 1024
+
+    def acquire_page(self, *, current_memory_bytes: int = 0) -> None:
+        """Aplica backpressure entre páginas antes de entregá-las ao coletor."""
+        started = perf_counter()
+        with self._page_condition:
+            self._page_condition.wait_for(
+                lambda: self._active_pages < self.page_concurrency_limit
+            )
+            waited = max(0, round((perf_counter() - started) * 1000))
+            self._active_pages += 1
+            with self._lock:
+                self.page_backpressure_wait_ms += waited
+                self.max_parallel_pages = max(
+                    self.max_parallel_pages, self._active_pages
+                )
+                self.peak_memory_bytes = max(
+                    self.peak_memory_bytes, current_memory_bytes
+                )
+                if (
+                    self.memory_limit_bytes
+                    and current_memory_bytes > self.memory_limit_bytes
+                ):
+                    self.memory_pressure_events += 1
+                    self._active_pages -= 1
+                    self._page_condition.notify_all()
+                    raise CollectionMemoryLimitExceeded(
+                        "limite de memória da coleta excedido entre páginas"
+                    )
+
+    def release_page(self) -> None:
+        with self._page_condition:
+            self._active_pages -= 1
+            self._page_condition.notify_all()
+
+    def record_memory_peak(self, peak_bytes: int) -> None:
+        with self._lock:
+            self.peak_memory_bytes = max(self.peak_memory_bytes, peak_bytes)
+
+    def record_limiter_reduction(self, service: str) -> None:
+        with self._lock:
+            self.service_limit_reductions[service] = (
+                self.service_limit_reductions.get(service, 0) + 1
+            )
+
+    def record_scheduler_wait(self, wait_ms: int) -> None:
+        with self._lock:
+            self.scheduler_wait_ms += max(0, wait_ms)
 
     def record_iam_short_circuit(self) -> None:
         with self._lock:
@@ -286,6 +372,8 @@ class _InstrumentedPaginator:
         self._denied_iam_actions = denied_iam_actions
 
     def paginate(self, **kwargs):
+        import tracemalloc
+
         stat = self._telemetry.stat(self._service, self._operation)
         action = action_for_call(self._service, self._operation)
         if action in self._denied_iam_actions:
@@ -301,24 +389,39 @@ class _InstrumentedPaginator:
                 stat.add(cache_hits=1)
                 yield from cached
                 return
-        pages = []
+        # Somente Cost Explorer usa o cache de resposta. Antes todas as páginas
+        # de todos os serviços ficavam retidas até o fim da paginação, anulando
+        # o streaming justamente nas contas maiores.
+        pages = [] if self._service == "ce" else None
+        completed = False
         started = perf_counter()
         try:
             for page in self._paginator.paginate(**kwargs):
+                current_memory = (
+                    tracemalloc.get_traced_memory()[0]
+                    if tracemalloc.is_tracing()
+                    else 0
+                )
+                self._telemetry.acquire_page(current_memory_bytes=current_memory)
                 metadata = page.get("ResponseMetadata", {})
                 stat.add(
                     calls=1,
                     pages=1,
                     retries=int(metadata.get("RetryAttempts") or 0),
                 )
-                pages.append(page)
-                yield page
+                if pages is not None:
+                    pages.append(page)
+                try:
+                    yield page
+                finally:
+                    self._telemetry.release_page()
+            completed = True
         except Exception as exc:
             _annotate_iam_exception(exc, self._service, self._operation)
             raise
         finally:
             stat.add(duration_ms=round((perf_counter() - started) * 1000))
-            if self._service == "ce":
+            if pages is not None and completed:
                 with self._cache_lock:
                     self._cache[cache_key] = pages
 

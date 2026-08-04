@@ -157,6 +157,18 @@ def test_glue_trigger_definitions_are_explicitly_snapshot_eligible(tmp_path: Pat
     assert hit.value == [trigger]
 
 
+def test_eventbridge_schedule_definitions_are_snapshot_eligible():
+    from julius.collection.models import Schedule
+
+    source = next(item for item in SOURCES if item.name == "EventBridge Schedules")
+    assert source.snapshot_policy is not None
+    policy = source.snapshot_policy
+    values = [Schedule(name="daily", expression="rate(1 day)")]
+
+    assert policy.ttl_seconds == 5 * 60
+    assert policy.deserialize(policy.serialize(values)) == values
+
+
 def _context(
     store: CollectionSnapshotStore, instant: datetime
 ) -> CollectionContext:

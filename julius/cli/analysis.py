@@ -96,6 +96,12 @@ def agent_work_domains(
     """Processa pacotes de domínio sem sessão ou cliente boto3."""
     provider = InboxDomainProvider(inbox, name=provider_name)
     with RunStore(run_store) as store:
+        before = store.queue_stats()
+        typer.echo(
+            "Fila IA antes: "
+            f"{before.pending} pending · {before.running} running · "
+            f"espera máxima {before.oldest_pending_ms / 1000:.1f}s"
+        )
         if recover_running:
             recovered = store.requeue_running()
             typer.echo(f"Jobs abandonados recuperados: {recovered}")
@@ -117,6 +123,12 @@ def agent_work_domains(
                     else ""
                 )
             )
+        after = store.queue_stats()
+        typer.echo(
+            "Fila IA depois: "
+            f"{after.pending} pending · {after.running} running · "
+            f"{after.failed} failed · {after.rejected} rejeitado(s)"
+        )
     typer.echo(f"Jobs processados: {processed}. Nenhum cliente boto3 foi criado.")
 
 

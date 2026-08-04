@@ -9,6 +9,7 @@ from julius.state.history import (
     ReviewSummary,
 )
 from julius.state.run_store import (
+    AiQueueStats,
     ContextualResult,
     DomainCheckpoint,
     RunStore,
@@ -20,6 +21,7 @@ from julius.state.store import BacklogStore
 from julius.state.validation import ValidationResult, validate_benefit
 
 __all__ = [
+    "AiQueueStats",
     "BacklogStore",
     "BenefitSummary",
     "CalibrationFactor",

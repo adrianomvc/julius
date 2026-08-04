@@ -143,6 +143,10 @@ class CollectionRecorder:
 
 def error_category(exc: Exception) -> str:
     """Mapeia exceções para categorias estáveis sem persistir mensagens."""
+    from julius.collection.telemetry import CollectionMemoryLimitExceeded
+
+    if isinstance(exc, CollectionMemoryLimitExceeded):
+        return "memory_budget_exceeded"
     if isinstance(exc, UnsupportedCurrencyError):
         return "unsupported_currency"
     response = getattr(exc, "response", None)

@@ -537,6 +537,12 @@ ao coletor original. A telemetria grava requisições lógicas, queries, lotes
 físicos e quantas requisições participaram de coalescência. Janelas ou `ScanBy`
 diferentes nunca são misturados.
 
+**Completo nesta evolução:** consultas idênticas também são deduplicadas por
+namespace, métrica, dimensões, estatística e período. O resultado da consulta
+canônica é copiado aos consumidores equivalentes; falhas permanecem isoladas por
+lote. A telemetria registra queries evitadas, chamadas físicas evitadas e uma
+estimativa conservadora da latência economizada.
+
 **Aceite**
 
 - menos chamadas para o mesmo resultado;
@@ -563,9 +569,10 @@ diferentes nunca são misturados.
 
 ### Onda 6 — snapshots e incremental
 
-**Estado:** parcialmente implementada. O store versionado, telemetria de
-hit/miss e políticas seguras para `S3 Config` (TTL de 15 minutos) e
-`Glue Triggers` (TTL de 5 minutos) estão disponíveis com
+**Estado:** implementada para três payloads comprovadamente de configuração. O
+store versionado, telemetria de hit/miss e políticas seguras para `S3 Config`
+(TTL de 15 minutos), `Glue Triggers` e `EventBridge Schedules` (TTL de 5 minutos)
+estão disponíveis com
 `julius collect --snapshot-dir DIRETÓRIO`. Métricas, custos e históricos
 continuam sempre frescos. Novas fontes só entram depois de separar configuração
 estável de estado operacional volátil em seus payloads.
@@ -584,6 +591,15 @@ estável de estado operacional volátil em seus payloads.
 - apagar snapshots apenas perde performance, nunca correção.
 
 ### Onda 7 — controle adaptativo
+
+**Estado:** implementada nesta evolução. Fontes prontas são ordenadas pela
+quantidade de descendentes que liberam; empates preservam a ordem determinística.
+O limite adaptativo continua isolado por serviço e agora registra reduções e
+espera. Paginadores compartilham um teto configurável por
+`--max-parallel-pages`; páginas não usadas por cache deixaram de ser retidas em
+memória. `--max-collection-memory-mb` oferece corte cooperativo entre páginas e
+o modo sem limite ainda mede o pico Python. O caminho crítico real é persistido
+com duração e fontes.
 
 **Entrega**
 
@@ -627,6 +643,11 @@ domínios `ready` do mesmo scan cujo arquivo, schema, conta, região, janela,
 fontes e fingerprint de configuração ainda coincidam. O DAG trata essas fontes
 como concluídas e executa somente o restante. Um scan novo marca runs e jobs
 contextuais anteriores como `superseded`, sem tocar outra coleta ainda ativa.
+
+**Fila limitada e observável nesta evolução:** `--max-ai-queue` limita jobs
+`pending`/`running` no `RunStore`. Excesso é auditado sem bloquear o dataset
+determinístico. Profundidade, espera mais antiga, rejeições, retomadas e
+supersessões ficam disponíveis na CLI e na telemetria persistida.
 
 ### Onda 9 — análise contextual por checkpoint
 
@@ -766,7 +787,7 @@ Critérios que independem do baseline:
 | P0 | `SourceResult` sem estado compartilhado | 2 | habilita concorrência segura |
 | P0 | DAG e scheduler limitado | 3 | reduz caminho crítico entre serviços |
 | P1 | Consolidar Cost Explorer | 4 | reduz chamadas repetidas e throttling |
-| P1 | Lotes CloudWatch entre coletores | 4 | reduz latência e chamadas |
+| P1 | Lotes e deduplicação CloudWatch entre coletores | 4 | reduz latência e chamadas |
 | P1 | Deduplicar prefixos S3 | 5 | evita listar o mesmo dado mais de uma vez |
 | P1 | Agregação S3 streaming | 5 | controla memória em buckets grandes |
 | P2 | Consumir Inventory existente | 5 | escala melhor para inventários enormes |
