@@ -864,9 +864,20 @@ def _catalog_scope_health(
     elif not chosen:
         status = "partial"
         category = "no_data"
+        # A origem do nome muda a próxima ação, e sem ela o operador tenta as
+        # três: corrigir o cadastro, conferir o `FullName` da conta, ou aceitar
+        # que aquele apelido de perfil nunca foi um nome de conta.
+        origem = {
+            "explicit": "o nome veio de --account-name",
+            "registry": "o nome veio de ~/.julius-accounts.json",
+            "aws": "o nome veio do contato da conta na AWS",
+            "profile": (
+                "o nome é o apelido do perfil SSO, que não tem relação com a conta"
+            ),
+        }.get(scope.name_source, "origem do nome não declarada")
         next_action = (
-            f"nenhum banco casou com {scope.rule}; conferir o nome da conta "
-            "ou informar --glue-databases"
+            f"nenhum banco casou com {scope.rule}; {origem} — conferir o nome "
+            "da conta ou informar --glue-databases"
         )
     return CollectionHealth(
         source="Glue Catalog Scope",

@@ -56,6 +56,15 @@ class CatalogScope:
     """O recorte do catálogo, resolvido uma vez e repassado para baixo."""
 
     account_name: str = ""
+    #: De onde `account_name` veio: `explicit`, `registry`, `aws` ou `profile`.
+    #:
+    #: Não é metadado decorativo. `profile` significa que o nome é o apelido que
+    #: alguém deu ao perfil em `aws configure sso` — uma escolha local, sem
+    #: relação com a conta —, e é o único caso em que a coleta pode substituí-lo
+    #: pelo nome que a própria AWS informa. Também é o que faz a saúde da coleta
+    #: distinguir "nenhum banco casou porque o cadastro está errado" de "nenhum
+    #: banco casou porque o nome era um apelido".
+    name_source: str = ""
     #: Lista explícita: quando informada, substitui a regra de nome inteira.
     databases: tuple[str, ...] = ()
     #: Os bancos de nome fixo. Campo, e não constante embutida, para um ambiente
