@@ -66,6 +66,15 @@ COLUMNS: tuple[tuple[str, str, str], ...] = (
     ("Como aplicar", "how_to_apply", "text"),
     ("Como validar", "how_to_validate", "text"),
     ("Documentação", "doc_url", "text"),
+    # O que a análise contextual devolve, e que a planilha não mostrava — nem
+    # um campo. É aqui que quem executa trabalha, e o passo a passo estava
+    # visível só no `report.json`.
+    ("Passo a passo (Devin)", "ai_implementation_steps", "lines"),
+    ("Como validar (Devin)", "ai_validation_steps", "lines"),
+    ("Riscos (Devin)", "ai_risks", "lines"),
+    # Mesma correção, ativo diferente: a resposta foi apurada em outro achado da
+    # família. Sem esta coluna a planilha afirmaria procedência que não tem.
+    ("Apurado em", "ai_derived_from", "text"),
 )
 
 

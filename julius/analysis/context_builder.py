@@ -50,14 +50,18 @@ class AgentContext:
 def build_agent_context(
     analysis: Analysis,
     *,
-    top: int = 10,
+    # Teto de **famílias**, não de achados. O catálogo tem 23, então 25 não morde
+    # na prática — a flag deixa de recortar o portfólio e vira escape hatch para
+    # quem quiser pacote pequeno de propósito.
+    top: int = 25,
     technical_artifacts: list[dict] | None = None,
 ) -> AgentContext:
     if top < 1 or top > 25:
         raise ValueError("top deve estar entre 1 e 25")
+    representantes = _one_per_family(analysis.opportunities)[:top]
     opportunities = [
-        _opportunity_context(analysis, opportunity)
-        for opportunity in analysis.opportunities[:top]
+        _opportunity_context(analysis, opportunity, irmaos)
+        for opportunity, irmaos in representantes
     ]
     relevant_assets = {
         (item["asset_type"], item["asset_name"]) for item in opportunities
@@ -130,7 +134,12 @@ def build_agent_context(
         portfolio={
             "total_opportunities": len(analysis.opportunities),
             "analyzed": len(opportunities),
-            "selection": f"top_{top}_by_execution_priority",
+            # Quantos achados as respostas alcançam, que não é o número de
+            # perguntas. Sem esta linha o pacote diria "onze de trinta" quando os
+            # trinta são cobertos, e o silêncio sobre os dezenove viraria leitura
+            # de que ninguém olhou para eles.
+            "covered": sum(1 + len(irmaos) for _, irmaos in representantes),
+            "selection": f"one_per_remediation_family_max_{top}",
         },
         opportunities=opportunities,
         graph_edges=edges,
@@ -187,7 +196,32 @@ def _signals_context(analysis: Analysis, technical_artifacts: list[dict]) -> lis
     return out
 
 
-def _opportunity_context(analysis: Analysis, opportunity) -> dict:
+def _one_per_family(opportunities: list) -> list[tuple]:
+    """Um representante por família de remediação, com os irmãos que ele alcança.
+
+    O recorte era `[:top]` sobre a lista ordenada por prioridade de execução, e o
+    efeito era duplo. Quatro `GLUE-TIMEOUT-EXCESSIVE` são a **mesma correção** e
+    gastavam quatro das dez vagas para dizer a mesma coisa; e o que ficasse na
+    posição onze nunca era enriquecido, com a fronteira invisível para quem lê.
+
+    Agrupando pela família — que `remediation.classify_opportunities` já carimbou
+    em todo achado — o pacote encolhe e cobre tudo: trinta achados viram onze
+    perguntas na conta de exemplo.
+
+    O representante é o primeiro da família na lista, que já vem ordenada por
+    prioridade de execução. Achado cuja regra o catálogo não conhece vira família
+    de um, em vez de cair fora do pacote por não estar classificado.
+    """
+    por_familia: dict[str, list] = {}
+    for opportunity in opportunities:
+        # Sem família, a chave é o próprio id: garante entrada própria e nunca
+        # funde dois achados só porque ambos estão sem classificação.
+        chave = opportunity.remediation_family or f"\0{opportunity.opportunity_id}"
+        por_familia.setdefault(chave, []).append(opportunity)
+    return [(grupo[0], grupo[1:]) for grupo in por_familia.values()]
+
+
+def _opportunity_context(analysis: Analysis, opportunity, siblings=()) -> dict:
     contextual_inputs: dict[str, object] = {}
     if opportunity.asset_type == "glue_job":
         job = analysis.account.job_by_name(opportunity.asset_name)
@@ -207,6 +241,19 @@ def _opportunity_context(analysis: Analysis, opportunity) -> dict:
     return {
         "opportunity_id": opportunity.opportunity_id,
         "rule_id": opportunity.rule_id,
+        "remediation_family": opportunity.remediation_family,
+        # Os outros achados que esta mesma resposta vai alcançar. Sem a lista, a
+        # análise escreveria "reduzir para 12 workers" — verdade sobre um job e
+        # mentira sobre os outros três. Com ela, dá para escrever o passo para a
+        # família e nomear o que varia por ativo.
+        "applies_to": [
+            {
+                "opportunity_id": irmao.opportunity_id,
+                "asset_name": irmao.asset_name,
+                "rule_id": irmao.rule_id,
+            }
+            for irmao in siblings
+        ],
         "asset_type": opportunity.asset_type,
         "asset_name": opportunity.asset_name,
         "finding": redact_secrets(opportunity.finding),

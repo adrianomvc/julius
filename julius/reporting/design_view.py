@@ -96,6 +96,17 @@ def _recommendation(
         "howValidate": o.how_to_validate,
         "docUrl": o.doc_url,
         "devinNote": o.ai_diagnosis,
+        # De onde a resposta veio, quando não veio deste ativo. O desenho só
+        # mostra a linha quando há o que declarar.
+        "derivedFrom": o.ai_derived_from,
+        # O passo a passo que a análise devolve e que o relatório nunca mostrou.
+        # Numerado aqui e não no template: o desenho não conta, ele exibe.
+        "aiSteps": [
+            {"n": posicao, "text": passo}
+            for posicao, passo in enumerate(o.ai_implementation_steps, start=1)
+        ],
+        "aiValidate": list(o.ai_validation_steps),
+        "aiRisks": list(o.ai_risks),
     }
 
 

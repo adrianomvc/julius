@@ -153,7 +153,17 @@ def agent_merge_domains(
 def agent_prepare(
     input: str = typer.Option(_DEFAULT_INPUT, "--input", "-i"),
     output: str = typer.Option("data/agent", "--output", "-o"),
-    top: int = typer.Option(10, "--top", min=1, max=25),
+    top: int = typer.Option(
+        25,
+        "--top",
+        min=1,
+        max=25,
+        help=(
+            "Máximo de famílias de remediação no pacote. Uma resposta por "
+            "família alcança todos os achados dela; o catálogo tem 23, então o "
+            "padrão cobre o portfólio inteiro."
+        ),
+    ),
     artifacts_manifest: str = typer.Option(
         "", "--artifacts-manifest", help="Manifesto read-only de scripts, SQL e ASL."
     ),

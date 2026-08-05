@@ -44,7 +44,7 @@ def write_package(
     analysis: Analysis,
     workspace: Workspace,
     *,
-    top: int = 10,
+    top: int = 25,
     instructions: Callable[..., str],
     artifacts_manifest: str | Path | None = None,
 ) -> list[Path]:
@@ -186,7 +186,7 @@ def prepare_agent_workspace(
     analysis: Analysis,
     output_dir: str | Path,
     *,
-    top: int = 10,
+    top: int = 25,
     artifacts_manifest: str | Path | None = None,
 ) -> tuple[AgentContext, list[Path]]:
     """Compatibilidade: o caminho Devin, que era a única opção."""

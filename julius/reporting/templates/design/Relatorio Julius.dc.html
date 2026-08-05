@@ -222,6 +222,33 @@
                 <div style="margin-top:16px; border-left:3px solid #7a5cc0; background:#f6f3fc; border-radius:0 8px 8px 0; padding:11px 14px;">
                   <div style="font-size:10.5px; text-transform:uppercase; letter-spacing:.08em; color:#6a4fb0; font-weight:700; display:flex; align-items:center; gap:6px;"><span style="width:6px; height:6px; border-radius:50%; background:#7a5cc0; display:inline-block;"></span>Contexto do Devin</div>
                   <div style="margin-top:6px; font-size:12.5px; line-height:1.5; color:#4a4360;">{{ o.devinNote }}</div>
+                  <sc-if value="{{ o.derivedFrom }}" hint-placeholder-val="{{ false }}">
+                    <div style="margin-top:7px; font-size:11px; color:#7c74a0; font-style:italic;">Apurado em {{ o.derivedFrom }} — mesma correção, ativo diferente.</div>
+                  </sc-if>
+                  <sc-if value="{{ o.aiSteps }}" hint-placeholder-val="{{ false }}">
+                    <div style="margin-top:13px; font-size:10.5px; text-transform:uppercase; letter-spacing:.08em; color:#6a4fb0; font-weight:700;">Passo a passo</div>
+                    <div style="margin-top:6px; display:flex; flex-direction:column; gap:6px;">
+                      <sc-for list="{{ o.aiSteps }}" as="s" hint-placeholder-count="3">
+                        <div style="display:flex; gap:8px; align-items:baseline; font-size:12.5px; line-height:1.5; color:#4a4360;"><span style="color:#7a5cc0; font-weight:700;">{{ s.n }}.</span><span>{{ s.text }}</span></div>
+                      </sc-for>
+                    </div>
+                  </sc-if>
+                  <sc-if value="{{ o.aiValidate }}" hint-placeholder-val="{{ false }}">
+                    <div style="margin-top:13px; font-size:10.5px; text-transform:uppercase; letter-spacing:.08em; color:#6a4fb0; font-weight:700;">Como validar</div>
+                    <div style="margin-top:6px; display:flex; flex-direction:column; gap:5px;">
+                      <sc-for list="{{ o.aiValidate }}" as="v" hint-placeholder-count="2">
+                        <div style="display:flex; gap:8px; align-items:baseline; font-size:12.5px; line-height:1.5; color:#4a4360;"><span style="color:#7a5cc0;">•</span><span>{{ v }}</span></div>
+                      </sc-for>
+                    </div>
+                  </sc-if>
+                  <sc-if value="{{ o.aiRisks }}" hint-placeholder-val="{{ false }}">
+                    <div style="margin-top:13px; font-size:10.5px; text-transform:uppercase; letter-spacing:.08em; color:#a8543c; font-weight:700;">Riscos</div>
+                    <div style="margin-top:6px; display:flex; flex-direction:column; gap:5px;">
+                      <sc-for list="{{ o.aiRisks }}" as="r" hint-placeholder-count="2">
+                        <div style="display:flex; gap:8px; align-items:baseline; font-size:12.5px; line-height:1.5; color:#6b4a40;"><span style="color:#c26a4a;">!</span><span>{{ r }}</span></div>
+                      </sc-for>
+                    </div>
+                  </sc-if>
                 </div>
               </sc-if>
             </div>
@@ -286,6 +313,33 @@
                   <div style="margin-top:14px; border-left:3px solid #7a5cc0; background:#f6f3fc; border-radius:0 8px 8px 0; padding:10px 14px;">
                     <div style="font-size:10px; text-transform:uppercase; letter-spacing:.08em; color:#6a4fb0; font-weight:700;">Contexto do Devin</div>
                     <div style="margin-top:5px; font-size:12.5px; line-height:1.5; color:#4a4360;">{{ o.devinNote }}</div>
+                    <sc-if value="{{ o.derivedFrom }}" hint-placeholder-val="{{ false }}">
+                      <div style="margin-top:6px; font-size:10.5px; color:#7c74a0; font-style:italic;">Apurado em {{ o.derivedFrom }} — mesma correção, ativo diferente.</div>
+                    </sc-if>
+                    <sc-if value="{{ o.aiSteps }}" hint-placeholder-val="{{ false }}">
+                      <div style="margin-top:11px; font-size:10px; text-transform:uppercase; letter-spacing:.08em; color:#6a4fb0; font-weight:700;">Passo a passo</div>
+                      <div style="margin-top:5px; display:flex; flex-direction:column; gap:5px;">
+                        <sc-for list="{{ o.aiSteps }}" as="s" hint-placeholder-count="3">
+                          <div style="display:flex; gap:8px; align-items:baseline; font-size:12.5px; line-height:1.5; color:#4a4360;"><span style="color:#7a5cc0; font-weight:700;">{{ s.n }}.</span><span>{{ s.text }}</span></div>
+                        </sc-for>
+                      </div>
+                    </sc-if>
+                    <sc-if value="{{ o.aiValidate }}" hint-placeholder-val="{{ false }}">
+                      <div style="margin-top:11px; font-size:10px; text-transform:uppercase; letter-spacing:.08em; color:#6a4fb0; font-weight:700;">Como validar</div>
+                      <div style="margin-top:5px; display:flex; flex-direction:column; gap:4px;">
+                        <sc-for list="{{ o.aiValidate }}" as="v" hint-placeholder-count="2">
+                          <div style="display:flex; gap:8px; align-items:baseline; font-size:12.5px; line-height:1.5; color:#4a4360;"><span style="color:#7a5cc0;">•</span><span>{{ v }}</span></div>
+                        </sc-for>
+                      </div>
+                    </sc-if>
+                    <sc-if value="{{ o.aiRisks }}" hint-placeholder-val="{{ false }}">
+                      <div style="margin-top:11px; font-size:10px; text-transform:uppercase; letter-spacing:.08em; color:#a8543c; font-weight:700;">Riscos</div>
+                      <div style="margin-top:5px; display:flex; flex-direction:column; gap:4px;">
+                        <sc-for list="{{ o.aiRisks }}" as="r" hint-placeholder-count="2">
+                          <div style="display:flex; gap:8px; align-items:baseline; font-size:12.5px; line-height:1.5; color:#6b4a40;"><span style="color:#c26a4a;">!</span><span>{{ r }}</span></div>
+                        </sc-for>
+                      </div>
+                    </sc-if>
                   </div>
                 </sc-if>
               </div>

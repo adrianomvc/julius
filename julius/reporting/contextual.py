@@ -17,6 +17,19 @@ def attach_contextual_analysis(
     recommendations = {
         item.opportunity_id: item for item in analysis.recommendations
     }
+    # O pacote leva um representante por família, então a resposta chega com o
+    # id dele e precisa alcançar os irmãos — é o que faz trinta achados serem
+    # cobertos por onze perguntas em vez de dez de trinta ficarem cobertos.
+    #
+    # O ativo de origem viaja junto. Sem ele o cartão do irmão afirmaria que
+    # aquele passo foi apurado ali, e não foi.
+    por_familia: dict[str, tuple[object, str]] = {}
+    for opportunity in vm.table:
+        contextual = recommendations.get(opportunity.id)
+        if contextual is not None and opportunity.remediation_family:
+            por_familia.setdefault(
+                opportunity.remediation_family, (contextual, opportunity.asset)
+            )
     collections = (
         vm.focus,
         vm.table,
@@ -30,6 +43,12 @@ def attach_contextual_analysis(
             contextual = recommendations.get(opportunity.id)
             if contextual is not None:
                 _attach_opportunity(opportunity, contextual)
+                continue
+            herdado = por_familia.get(opportunity.remediation_family)
+            if herdado is not None:
+                irmao, origem = herdado
+                _attach_opportunity(opportunity, irmao)
+                opportunity.ai_derived_from = origem
 
     titles = {opportunity.id: opportunity.title for opportunity in vm.table}
     vm.ai_summary = analysis.executive_summary
@@ -47,7 +66,12 @@ def attach_contextual_analysis(
     # O pacote enviado ao provedor é um recorte do portfólio; dizer qual evita
     # que o silêncio sobre o resto seja lido como ausência de problema.
     vm.ai_coverage = {
-        "analyzed": len(analysis.recommendations),
+        # Perguntas feitas e achados alcançados são números diferentes desde que
+        # o pacote passou a ser por família. Publicar só o primeiro diria "onze
+        # de trinta" com os trinta cobertos, e o silêncio sobre os dezenove seria
+        # lido como ninguém ter olhado para eles.
+        "answers": len(analysis.recommendations),
+        "covered": sum(1 for item in vm.table if item.ai_diagnosis),
         "total": len(vm.table),
     }
     # O sinal descartado continua no result.json para auditoria, mas não ocupa
