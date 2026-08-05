@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from dataclasses import asdict, is_dataclass
+from dataclasses import asdict, is_dataclass, replace
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -21,13 +21,14 @@ from julius.collection.checkpoints import (
     DomainCheckpointWriter,
     resume_ready_domains,
 )
+from julius.collection.collectors.account_name import collect_account_name
 from julius.collection.collectors.last_read import apply_last_read
 from julius.collection.health import CollectionRecorder, RequiredCollectionError
 from julius.collection.models import Account
 from julius.collection.policy import ScopePolicy, policy_for_profile
 from julius.collection.redundant_reads import apply_redundant_reads
 from julius.collection.scheduler import run_sources
-from julius.collection.scope import CatalogScope
+from julius.collection.scope import CatalogScope, normalize
 from julius.collection.session import make_client
 from julius.collection.settings import ANALYSIS_WINDOW_DAYS
 from julius.collection.snapshot import CollectionSnapshotStore
@@ -82,6 +83,7 @@ def collect_account(
     billing = BillingMonth.current(now=now)
 
     ident = _verified_identity(session, health, account_id)
+    catalog_scope = _named_catalog_scope(session, health, catalog_scope)
     policy = scope_policy or policy_for_profile(None)
     account = Account(
         account_id=ident,
@@ -301,6 +303,68 @@ def _record_read_evidence(account: Account, health: CollectionRecorder) -> None:
         ),
         affects_status=False,
     )
+
+
+def _named_catalog_scope(
+    session: boto3.Session,
+    health: CollectionRecorder,
+    scope: CatalogScope | None,
+) -> CatalogScope:
+    """Completa o escopo com o nome que a própria conta informa.
+
+    Roda aqui, e não no CLI, por três razões: a identidade já foi confirmada, a
+    chamada passa pelo recorder e aparece na saúde, e a telemetria a conta como
+    qualquer outra. Uma chamada AWS solta no CLI não teria nenhuma das três.
+
+    Consulta **sempre** que o nome importa, mesmo quando o cadastro já resolveu —
+    é o que permite comparar. Sem comparação, cadastro desatualizado envelhece
+    calado, e o sintoma é um recorte de catálogo que não casa com nada.
+
+    Substitui somente quando a origem é `profile`: esse não é um nome de conta, é
+    o apelido que alguém deu ao perfil. Quem declarou explicitamente ou cadastrou
+    à mão teve uma razão, e uma API não a sobrescreve.
+    """
+    scope = scope or CatalogScope()
+    if scope.databases:
+        # A lista explícita substitui a regra de nome inteira: o nome não é usado,
+        # e pedir dado de contato para descartá-lo seria gratuito.
+        return scope
+
+    da_conta = health.capture(
+        "AWS account name",
+        lambda: collect_account_name(session),
+        "",
+        count=lambda value: 1 if value else 0,
+        expected=1,
+        impact=(
+            "sem o nome da conta o recorte do Glue Catalog usa o apelido do perfil "
+            "SSO, que não tem relação com a conta"
+        ),
+        next_action=(
+            "conceder account:GetContactInformation, ou cadastrar a conta em "
+            "~/.julius-accounts.json, ou informar --account-name"
+        ),
+    )
+    # `capture` assume que fonte não obrigatória degrada o scan, e esta não pode:
+    # não saber o nome não estraga nenhuma medição, só estreita o recorte do
+    # catálogo. Quem reporta essa consequência é `Glue Catalog Scope`, que também
+    # não degrada — as duas precisam dizer a mesma coisa sobre a mesma coisa.
+    health.entries[-1].affects_status = False
+    if not da_conta:
+        return scope
+    if scope.name_source == "profile" or not scope.account_name:
+        return replace(scope, account_name=da_conta, name_source="aws")
+    if normalize(scope.account_name) != normalize(da_conta):
+        health.entries[-1].status = "partial"
+        health.entries[-1].error_category = "name_mismatch"
+        health.entries[-1].impact = (
+            f"a conta se chama {da_conta!r} na AWS e {scope.account_name!r} na "
+            f"origem {scope.name_source!r}, que prevalece"
+        )
+        health.entries[-1].next_action = (
+            "conferir ~/.julius-accounts.json, ou --account-name, contra o nome da conta"
+        )
+    return scope
 
 
 def _verified_identity(

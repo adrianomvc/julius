@@ -145,6 +145,32 @@ def load_account_targets(
     return enabled
 
 
+def _resolve_account_name(
+    explicit_name: str,
+    sso_profile: str,
+    config_path: str | Path,
+) -> tuple[str, str]:
+    """O nome lógico e **de onde ele veio**, numa cascata só.
+
+    A procedência importa porque o último degrau não é um nome de conta: é o
+    apelido que alguém deu ao perfil em `aws configure sso`. Quem chama precisa
+    poder distinguir "o operador declarou isto" de "não sobrou mais nada", e é
+    essa distinção que autoriza a coleta a buscar o nome na própria AWS.
+
+    Uma função só devolvendo os dois, em vez de duas percorrendo a mesma
+    cascata: duas cópias divergiriam no dia em que um degrau mudasse.
+    """
+    if explicit_name.strip():
+        return explicit_name.strip(), "explicit"
+    profile = sso_profile.strip()
+    path = Path(config_path).expanduser()
+    if profile and path.exists():
+        for target in load_account_targets(path, require_enabled=False):
+            if target.sso_profile == profile:
+                return target.name, "registry"
+    return profile, "profile"
+
+
 def resolve_account_name(
     *,
     explicit_name: str = "",
@@ -157,15 +183,21 @@ def resolve_account_name(
     explícito continua soberano; sem cadastro, o perfil preserva o fallback
     histórico do CLI.
     """
-    if explicit_name.strip():
-        return explicit_name.strip()
-    profile = sso_profile.strip()
-    path = Path(config_path).expanduser()
-    if profile and path.exists():
-        for target in load_account_targets(path, require_enabled=False):
-            if target.sso_profile == profile:
-                return target.name
-    return profile
+    return _resolve_account_name(explicit_name, sso_profile, config_path)[0]
+
+
+def resolve_account_name_source(
+    *,
+    explicit_name: str = "",
+    sso_profile: str = "",
+    config_path: str | Path = DEFAULT_ACCOUNT_TARGETS_PATH,
+) -> str:
+    """De onde o nome veio: `explicit`, `registry` ou `profile`.
+
+    `profile` é o único que não é uma declaração sobre a conta — e é por isso
+    que ele é o único que a coleta pode substituir pelo nome que a AWS informa.
+    """
+    return _resolve_account_name(explicit_name, sso_profile, config_path)[1]
 
 
 def resolve_scope_profile(

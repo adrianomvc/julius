@@ -29,6 +29,22 @@ RAIZ = Path(__file__).resolve().parents[1] / "julius"
 OPERACOES_PERMITIDAS = {
     # Identidade — confirma que a credencial ativa é a conta esperada.
     "get_caller_identity",
+    # Nome da conta, para recortar o Glue Catalog. Somente leitura: quem escreve
+    # é `PutContactInformation`, que não está aqui e não pode estar.
+    #
+    # `iam:ListAccountAliases` seria a API própria para isto e não tocaria dado
+    # pessoal nenhum — foi tentada primeiro e devolve `[]` nesta organização.
+    # Sem o nome, a coleta percorre todos os bancos do catálogo, inclusive os
+    # compartilhados por outras contas, sobre os quais esta conta não pode agir.
+    #
+    # **Esta é a única operação da lista cujo propósito declarado é dado
+    # pessoal.** A resposta traz nome, endereço, telefone e empresa do contato
+    # da conta. Só `ContactInformation.FullName` é lido; o resto do payload não
+    # é atribuído a variável, não vai para o dataset, não vai para a saúde da
+    # coleta e não entra em log. Numa conta onde esse campo guarde o nome de uma
+    # pessoa de verdade, é esse valor que chega — e por isso ele existe em
+    # memória só o tempo de virar nome de banco.
+    "get_contact_information",
     # Cost Explorer.
     "get_cost_and_usage",
     "get_cost_forecast",
