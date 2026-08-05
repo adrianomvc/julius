@@ -232,14 +232,19 @@ def contract_digest() -> str:
 
     Só que "qualquer mudança sobe a versão" é promessa que ninguém cumpre de
     memória. Este dígito cobre a diferença: ele resume regras, corpo canônico,
-    playbooks, métodos permitidos e schema de saída, e o teste compara com o
-    valor congelado. Mudar conteúdo sem subir a versão falha, e a mensagem diz
-    o que fazer.
+    playbooks, métodos permitidos, schema de saída **e a prosa do briefing**, e o
+    teste compara com o valor congelado. Mudar conteúdo sem subir a versão falha,
+    e a mensagem diz o que fazer.
+
+    A prosa entrou por último e era o furo maior. O dígito cobria o dado
+    estruturado e não o texto que diz o que fazer com ele — `DETERMINISTIC`, a
+    divisão por grau de certeza, as quatro tarefas. Tudo isso é instrução, vai em
+    todo pacote, e podia ser reescrito sem que a versão se mexesse.
     """
     import hashlib
     import json
 
-    from julius.analysis.guardrails import RULES
+    from julius.analysis.guardrails import RULES, canonical_briefing
     from julius.analysis.playbook import select
     from julius.analysis.response_validator import ANALYSIS_OUTPUT_SCHEMA
 
@@ -253,6 +258,11 @@ def contract_digest() -> str:
             if chave != "prompt_version"
         },
         "schema": ANALYSIS_OUTPUT_SCHEMA,
+        # A prosa que apresenta tudo acima. Sem ela, o dígito cobria os dados e
+        # não o texto que diz o que fazer com eles — e reescrever a divisão de
+        # trabalho não subia versão nenhuma. Cobre também `DETERMINISTIC`, que
+        # nunca foi campo do motor e mesmo assim vai em todo briefing.
+        "briefing": canonical_briefing(),
     }
     bruto = json.dumps(material, ensure_ascii=False, sort_keys=True, default=str)
     return hashlib.sha256(bruto.encode("utf-8")).hexdigest()[:16]

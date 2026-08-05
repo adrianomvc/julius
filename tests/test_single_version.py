@@ -47,8 +47,13 @@ from julius.analysis.skill_registry import contract_digest
 #: não a cobria, então acrescentar uma regra mudava o que a análise é instruída a
 #: fazer sem mudar a versão — e `prompt_version`, gravado em todo veredito,
 #: deixava de identificar a instrução que o produziu. Aditiva.
-VERSAO_CONGELADA = "3.2.0"
-DIGEST_CONGELADO = "0214e3d06edb0b0b"
+#: 3.2.1 — patch, e é o primeiro. O conteúdo do contrato **não mudou**: a prosa do
+#: briefing entrou no dígito, que até aqui cobria só dado estruturado. Um veredito
+#: dado em 3.2.0 leu exatamente o mesmo texto que um dado em 3.2.1 — subir minor
+#: diria que a análise foi instruída de outro jeito, e ela não foi. Patch é
+#: "a trava passou a cobrir mais, o contrato continua o mesmo".
+VERSAO_CONGELADA = "3.2.1"
+DIGEST_CONGELADO = "b845dc23fffd49a6"
 
 
 def test_the_contract_did_not_change_without_a_version_bump():
@@ -58,8 +63,9 @@ def test_the_contract_did_not_change_without_a_version_bump():
     assert atual == DIGEST_CONGELADO, (
         f"o contrato da análise mudou (digest {atual}, esperado "
         f"{DIGEST_CONGELADO}).\n"
-        "Regras, corpo de Skill, playbook, método permitido ou schema de saída "
-        "foram alterados. Suba PROMPT_VERSION em julius/analysis/guardrails.py e "
+        "Regras, corpo de Skill, playbook, método permitido, schema de saída ou "
+        "a prosa do briefing foram alterados. Suba PROMPT_VERSION em "
+        "julius/analysis/guardrails.py e "
         "atualize VERSAO_CONGELADA e DIGEST_CONGELADO neste arquivo — os três "
         "andam juntos, sempre."
     )
@@ -87,6 +93,55 @@ def test_the_digest_actually_covers_the_contract():
     assert alterado != original, (
         "acrescentar uma regra precisa mudar o dígito, ou ele não cobre nada"
     )
+
+
+def test_the_prose_counts_as_contract_too():
+    """O texto que apresenta as regras é instrução tanto quanto elas.
+
+    `DETERMINISTIC` é o caso que denunciou o furo: vai em todo briefing, diz o que
+    a análise não deve refazer, e nunca foi campo do motor. Mudá-la reescrevia a
+    divisão de trabalho sem mudar o dígito.
+    """
+    from unittest.mock import patch
+
+    from julius.analysis import guardrails
+
+    original = contract_digest()
+    with patch.object(
+        guardrails, "DETERMINISTIC", (*guardrails.DETERMINISTIC, "coisa nova")
+    ):
+        assert contract_digest() != original, (
+            "mudar o que o briefing diz que já está decidido precisa mudar o dígito"
+        )
+
+
+def test_rewriting_the_tasks_changes_the_digest():
+    """A contraprova direta: trocar quatro tarefas por outra coisa é mudança."""
+    from unittest.mock import patch
+
+    from julius.analysis import guardrails
+
+    original = contract_digest()
+    with patch.object(
+        guardrails, "canonical_briefing", lambda: "faça o que quiser"
+    ):
+        assert contract_digest() != original
+
+
+def test_bumping_the_version_alone_does_not_move_the_digest():
+    """A exclusão é de propósito, e sem teste ela parece descuido.
+
+    `PROMPT_VERSION` está na primeira linha do briefing. Se entrasse no dígito, o
+    dígito mudaria toda vez que a versão subisse — inclusive quando subiu por
+    outra causa —, e ele deixaria de responder "o conteúdo mudou?".
+    """
+    from unittest.mock import patch
+
+    from julius.analysis import guardrails
+
+    original = contract_digest()
+    with patch.object(guardrails, "PROMPT_VERSION", "99.0.0"):
+        assert contract_digest() == original
 
 
 def test_the_version_reaches_every_place_that_records_it():

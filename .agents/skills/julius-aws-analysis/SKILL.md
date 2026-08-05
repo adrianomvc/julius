@@ -11,7 +11,7 @@ metadata:
     - evidence requirements
     - output contract
     - contextual range
-  prompt_version: 3.2.0
+  prompt_version: 3.2.1
   allowed_estimation_methods:
     - glue_interactive_capacity_reduction_v1
     - glue_shuffle_reduction_v1

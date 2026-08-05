@@ -16,7 +16,7 @@ aplica, e são injetados no frontmatter de cada artefato.
 
 | Campo | Origem | Valor |
 |---|---|---|
-| `prompt_version` | `analysis.guardrails.PROMPT_VERSION` | `3.2.0` |
+| `prompt_version` | `analysis.guardrails.PROMPT_VERSION` | `3.2.1` |
 | `allowed_estimation_methods` | `knowledge.contextual_estimation.allowed_methods()` | `glue_interactive_capacity_reduction_v1`, `glue_shuffle_reduction_v1`, `sagemaker_gpu_to_cpu_instance_v1`, `sagemaker_managed_spot_training_v1`, `sfn_standard_to_express_v1` |
 | `deterministic_fields_are_immutable` | `analysis.context_builder.DETERMINISTIC_FIELDS` | `estimated_gain`, `difficulty_score`, `confidence`, `execution_priority`, `strategic_priority` |
 
