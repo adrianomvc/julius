@@ -41,8 +41,14 @@ from julius.analysis.skill_registry import contract_digest
 #: 3.1.0 — a família `table_format` entrou no catálogo de remediação, que é campo
 #: do motor desde 2.2.0 e por isso parte do contrato. Aditiva: nenhuma família
 #: saiu, e um veredito que declarou família em 3.0.0 continua válido.
-VERSAO_CONGELADA = "3.1.0"
-DIGEST_CONGELADO = "441d7cb3025b0675"
+#: 3.2.0 — `GLUE-CODE-PUSHDOWN` e `GLUE-CODE-FULL-OVERWRITE` passaram a aceitar
+#: faixa contextual, e a lista de elegíveis entrou nos campos do motor. A segunda
+#: parte é a que importa: o briefing anunciava essa lista desde sempre e o digest
+#: não a cobria, então acrescentar uma regra mudava o que a análise é instruída a
+#: fazer sem mudar a versão — e `prompt_version`, gravado em todo veredito,
+#: deixava de identificar a instrução que o produziu. Aditiva.
+VERSAO_CONGELADA = "3.2.0"
+DIGEST_CONGELADO = "0214e3d06edb0b0b"
 
 
 def test_the_contract_did_not_change_without_a_version_bump():

@@ -11,7 +11,7 @@ metadata:
     - evidence requirements
     - output contract
     - contextual range
-  prompt_version: 3.1.0
+  prompt_version: 3.2.0
   allowed_estimation_methods:
     - glue_interactive_capacity_reduction_v1
     - glue_shuffle_reduction_v1
@@ -61,6 +61,18 @@ metadata:
     - storage_class
     - table_format
     - training_convergence
+  contextual_range_rules:
+    - GLUE-CODE-CACHE-LIFECYCLE
+    - GLUE-CODE-DRIVER-MATERIALIZATION
+    - GLUE-CODE-FULL-OVERWRITE
+    - GLUE-CODE-ITERATIVE-PLAN
+    - GLUE-CODE-PUSHDOWN
+    - GLUE-CODE-PYTHON-UDF
+    - GLUE-CODE-REPEATED-ACTIONS
+    - GLUE-CODE-ROW-EXTERNAL-IO
+    - SM-CODE-FIXED-EPOCHS
+    - SM-CODE-FULL-DATASET-LOAD
+    - SM-CODE-ROW-EXTERNAL-IO
   documentation_domain: docs.aws.amazon.com
 ---
 

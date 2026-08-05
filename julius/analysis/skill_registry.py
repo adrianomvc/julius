@@ -267,6 +267,7 @@ def engine_fields() -> dict[str, object]:
     from julius.analysis.context_builder import DETERMINISTIC_FIELDS
     from julius.analysis.guardrails import PROMPT_VERSION
     from julius.knowledge.contextual_estimation import allowed_methods
+    from julius.knowledge.generative_estimation import eligible_rule_ids
     from julius.knowledge.remediation import FAMILIES
 
     metodos = allowed_methods()
@@ -280,6 +281,11 @@ def engine_fields() -> dict[str, object]:
         # parte do contrato: a análise precisa saber quais nomes existem, e mudar
         # o catálogo precisa subir a versão como qualquer outra mudança de regra.
         "remediation_families": sorted(FAMILIES),
+        # A lista que o briefing anuncia em `_generative_eligibility`. Sem ela
+        # aqui, acrescentar uma regra elegível mudava o que a análise é instruída
+        # a fazer sem mudar a versão — e `prompt_version`, gravado em todo
+        # veredito, deixava de identificar a instrução que o produziu.
+        "contextual_range_rules": list(eligible_rule_ids()),
         "documentation_domain": "docs.aws.amazon.com",
     }
 
