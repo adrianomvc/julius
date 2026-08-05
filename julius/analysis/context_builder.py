@@ -208,9 +208,19 @@ def _one_per_family(opportunities: list) -> list[tuple]:
     em todo achado — o pacote encolhe e cobre tudo: trinta achados viram onze
     perguntas na conta de exemplo.
 
-    O representante é o primeiro da família na lista, que já vem ordenada por
-    prioridade de execução. Achado cuja regra o catálogo não conhece vira família
-    de um, em vez de cair fora do pacote por não estar classificado.
+    O representante é o primeiro da família na lista, e ela vem ordenada por
+    `scoring.priority.ranking_key` — cujo **primeiro** critério é entrar no
+    portfólio, não a prioridade de execução. O efeito é que a análise recebe o
+    achado com cifra medida da família, e não o de maior prioridade: em
+    `failure_waste`, o representante tem prioridade 6 e três irmãos têm 63.
+
+    É a escolha certa, e vale dizer por quê em vez de deixar por conta do acaso.
+    Quem entra no portfólio tem baseline resolvido e evidência completa; irmão
+    bloqueado é bloqueado justamente por faltar a medição. Analisar o bloqueado
+    daria à IA menos material sobre a mesma correção.
+
+    Achado cuja regra o catálogo não conhece vira família de um, em vez de cair
+    fora do pacote por não estar classificado.
     """
     por_familia: dict[str, list] = {}
     for opportunity in opportunities:

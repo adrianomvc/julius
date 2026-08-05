@@ -229,3 +229,28 @@ def test_the_deterministic_how_to_stays_next_to_the_ai_block(analise):
 
     assert "Como aplicar" in html
     assert determinístico[:40] in html
+
+
+def test_the_representative_is_the_one_with_a_measured_figure(analise):
+    """Quem representa a família é quem tem cifra, não quem tem prioridade.
+
+    Vem de `ranking_key`, cujo primeiro critério é entrar no portfólio — em
+    `failure_waste` o representante tem prioridade 6 e três irmãos têm 63. O
+    efeito é o desejado e por isso está fixado aqui: quem entra no portfólio tem
+    baseline resolvido e evidência completa, e irmão bloqueado é bloqueado
+    justamente por faltar a medição. Analisar o bloqueado daria à análise menos
+    material sobre a mesma correção.
+
+    Sem este teste, mexer na ordenação da lista trocaria silenciosamente qual
+    ativo a IA lê — e ninguém ligaria uma coisa à outra.
+    """
+    from julius.analysis.context_builder import _one_per_family
+
+    for representante, irmaos in _one_per_family(analise.opportunities):
+        if not irmaos:
+            continue
+        if any(irmao.include_in_portfolio for irmao in irmaos):
+            assert representante.include_in_portfolio, (
+                f"{representante.remediation_family}: a análise vai ler um achado "
+                "sem cifra tendo um com cifra na mesma família"
+            )
