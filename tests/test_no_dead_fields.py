@@ -206,7 +206,8 @@ SEM_CONSUMIDOR_CONHECIDO = frozenset(
         "owner_user_profile",
         "partition_keys",
         "partition_projection_enabled",
-        "period_kind",
+        # `period_kind` saiu daqui: passou a decidir o rótulo da cobrança e a
+        # guarda de projeção, quando o padrão virou o mês anterior fechado.
         "planning_p95_ms",
         "platform_identifier",
         "price_performance_target",

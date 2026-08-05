@@ -99,7 +99,7 @@ def _summary_sheet(sheet: Worksheet, vm: ReportViewModel) -> None:
         ("Janela", vm.lookback),
         ("Scan", vm.scan_id),
         ("Gerado em", vm.generated_at),
-        ("Cobrança do mês (MTD)", vm.total_cost_fmt),
+        (vm.billing_period_label, vm.total_cost_fmt),
         ("Economia identificada/mês", vm.identified_fmt),
         ("Alta confiança/mês", vm.high_conf_fmt),
         ("Realizável no ano", vm.realizable_year_fmt),
