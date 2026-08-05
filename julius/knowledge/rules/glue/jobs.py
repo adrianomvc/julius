@@ -71,7 +71,7 @@ def detect(account: Account, config: Config, scan_id: str) -> list[Opportunity]:
             else job.avg_cpu_load
         )
         low_cpu = utilization is not None and utilization < config.thresholds.low_cpu
-        capacity_evidence = _capacity_evidence(job, config)
+        capacity_gaps = _capacity_gaps(job, config)
 
         if _inactive_days(job) >= 365:
             out.append(
@@ -93,6 +93,12 @@ def detect(account: Account, config: Config, scan_id: str) -> list[Opportunity]:
                     ],
                     doc_link=_DOC_JOB_PROPERTIES,
                     category="governance",
+                    how_to_apply=(
+                        "Confirmar com o owner se o job é sazonal ou de contingência; sem essa confirmação, arquivar a definição e o schedule que o dispara."
+                    ),
+                    how_to_validate=(
+                        "Nenhuma execução nem alerta de dependência nos 30 dias seguintes."
+                    ),
                 )
             )
 
@@ -138,6 +144,12 @@ def detect(account: Account, config: Config, scan_id: str) -> list[Opportunity]:
                 ],
                 doc_link=_DOC_MONITORING,
                 estimation=estimation,
+                how_to_apply=(
+                    "O job escreve muitos arquivos pequenos. Reparticionar a escrita — coalesce ou repartition antes do write — para o tamanho de arquivo que o consumidor espera, sem mudar o particionamento lógico da tabela. Arquivo pequeno custa request de GET a cada leitura, e esse custo aparece em quem lê, não neste job."
+                ),
+                how_to_validate=(
+                    "Contar arquivos e tamanho médio na próxima escrita, e comparar os GETs do prefixo na janela seguinte."
+                ),
                 has_optional_metrics=(
                     estimation.saving_quality != "unavailable"
                 ),
@@ -156,9 +168,9 @@ def detect(account: Account, config: Config, scan_id: str) -> list[Opportunity]:
             and job.worker_type in _AUTOSCALE_TYPES
         )
         if not job.auto_scaling and autoscaling_eligible and low_cpu:
-            out.append(_autoscaling(account, job, config, scan_id, capacity_evidence))
+            out.append(_autoscaling(account, job, config, scan_id, capacity_gaps))
         elif low_cpu and (job.number_of_workers or 0) > config.thresholds.session_min_dpu:
-            out.append(_overprovisioned(account, job, config, scan_id, capacity_evidence))
+            out.append(_overprovisioned(account, job, config, scan_id, capacity_gaps))
 
         # Versão antiga: fatura em blocos de 10 min. Abaixo de 2.0 o desperdício
         # é aritmético; entre 2.0 e a preferencial só o script diz se migrar
@@ -221,6 +233,12 @@ def detect(account: Account, config: Config, scan_id: str) -> list[Opportunity]:
                         f"retries ligados a run anterior={job.retry_runs_in_window}",
                     ],
                     doc_link=_DOC_JOB_PROPERTIES,
+                    how_to_apply=(
+                        "Duas execuções do mesmo job correram ao mesmo tempo e ambas cobraram DPU. Conferir se MaxConcurrentRuns maior que 1 é intencional; se não for, reduzir para 1 e habilitar enfileiramento de execução."
+                    ),
+                    how_to_validate=(
+                        "Nenhuma sobreposição na janela seguinte, com a mesma quantidade de execuções."
+                    ),
                 )
             )
 
@@ -251,6 +269,12 @@ def detect(account: Account, config: Config, scan_id: str) -> list[Opportunity]:
                     ],
                     baseline_cost=baseline,
                     doc_link=_DOC_STREAMING,
+                    how_to_apply=(
+                        "O job de streaming consumiu capacidade sem receber registro. Conferir a fonte — tópico, partição, permissão — e decidir entre corrigir a origem ou parar o job enquanto ela não produz."
+                    ),
+                    how_to_validate=(
+                        "Registros consumidos por janela depois da correção; continuando zero, a decisão é parar."
+                    ),
                 )
             )
 
@@ -277,6 +301,12 @@ def detect(account: Account, config: Config, scan_id: str) -> list[Opportunity]:
                         f"runs na janela={job.runs_in_window}",
                     ],
                     doc_link=_DOC_MONITORING,
+                    how_to_apply=(
+                        "O job pagou DPU-hora sem ler byte nenhum na janela: executou, custou e não tinha o que processar. Conferir se a fonte deveria ter dado no horário do schedule e, se não, alinhar a frequência à cadência real da origem."
+                    ),
+                    how_to_validate=(
+                        "Bytes lidos por execução na janela seguinte, e nenhuma execução sem entrada."
+                    ),
                 )
             )
 
@@ -286,7 +316,7 @@ def detect(account: Account, config: Config, scan_id: str) -> list[Opportunity]:
             and job.avg_cpu_load is not None
             and job.avg_cpu_load < th.worker_type_low_cpu
         ):
-            out.append(_worker_type(account, job, config, scan_id, capacity_evidence))
+            out.append(_worker_type(account, job, config, scan_id, capacity_gaps))
 
         duration_cv = (
             job.execution_stddev_sec / job.avg_execution_sec if job.avg_execution_sec > 0 else 0.0
@@ -313,6 +343,12 @@ def detect(account: Account, config: Config, scan_id: str) -> list[Opportunity]:
                     "Tasks com duração muito desigual",
                     "Revisar stages, joins e particionamento antes de alterar capacidade",
                     variance_evidence,
+                    how_to_apply=(
+                        "Algumas tasks duram muito mais que as outras no mesmo stage: o dado está distribuído de forma desigual entre as partições, e o job só termina quando a mais lenta termina — os demais executores ficam ociosos, pagando. Revisar a chave de join ou de particionamento antes de mexer em capacidade; acrescentar worker não corrige skew, só aumenta a conta."
+                    ),
+                    how_to_validate=(
+                        "Comparar a razão entre a task mais lenta e a mediana do stage, antes e depois."
+                    ),
                 )
             )
 
@@ -340,6 +376,12 @@ def detect(account: Account, config: Config, scan_id: str) -> list[Opportunity]:
                             f"máximo necessário médio={job.avg_max_needed_executors:.1f}",
                             f"gap={gap:.0%}",
                         ],
+                        how_to_apply=(
+                            "O job mantém mais executores do que chegou a usar no pico. Reduzir o número de workers para perto do máximo necessário observado, ou habilitar Auto Scaling se a demanda variar entre execuções."
+                        ),
+                        how_to_validate=(
+                            "Executores alocados contra necessários no pico, na próxima execução."
+                        ),
                     )
                 )
 
@@ -354,6 +396,12 @@ def detect(account: Account, config: Config, scan_id: str) -> list[Opportunity]:
                     "Shuffle com spill para disco",
                     "Otimizar joins/particionamento e avaliar capacidade de memória",
                     [f"shuffle spill={job.shuffle_spill_bytes:.0f} bytes"],
+                    how_to_apply=(
+                        "O shuffle não coube na memória e derramou para disco, o que multiplica I/O e estende a duração. Revisar o particionamento antes do estágio que derrama e, se o volume justificar, avaliar worker com mais memória."
+                    ),
+                    how_to_validate=(
+                        "Bytes derramados e duração do stage antes e depois, no mesmo volume."
+                    ),
                 )
             )
 
@@ -379,6 +427,12 @@ def detect(account: Account, config: Config, scan_id: str) -> list[Opportunity]:
                             f"observadas ~{job.runs_per_month:.1f}/mês",
                         ],
                         category="inventory_integrity",
+                        how_to_apply=(
+                            "O agendamento prevê uma frequência e o histórico mostra outra. Conferir se há trigger duplicado, execução manual recorrente ou schedule desalinhado com a cadência real da fonte."
+                        ),
+                        how_to_validate=(
+                            "Execuções por mês contra o previsto pelo cron, na janela seguinte."
+                        ),
                     )
                 )
     # A cobrança comparável é a da janela de análise, não a do painel de
@@ -565,11 +619,12 @@ def _worker_type(
     job: GlueJob,
     config: Config,
     scan_id: str,
-    capacity_evidence: bool,
+    capacity_gaps: list[str],
 ) -> Opportunity:
     est, new_type = glue_est.worker_type_downgrade_saving(job, config)
-    if not capacity_evidence:
-        _zero_unproven(est)
+    capacity_evidence = not capacity_gaps
+    if capacity_gaps:
+        _zero_unproven(est, capacity_gaps)
     return build(
         Finding(
             asset_type="glue_job",
@@ -1056,11 +1111,12 @@ def _autoscaling(
     job: GlueJob,
     config: Config,
     scan_id: str,
-    capacity_evidence: bool,
+    capacity_gaps: list[str],
 ) -> Opportunity:
     est = glue_est.autoscaling_saving(job, config)
-    if not capacity_evidence:
-        _zero_unproven(est)
+    capacity_evidence = not capacity_gaps
+    if capacity_gaps:
+        _zero_unproven(est, capacity_gaps)
     return build(
         Finding(
             asset_type="glue_job",
@@ -1113,7 +1169,7 @@ def _overprovisioned(
     job: GlueJob,
     config: Config,
     scan_id: str,
-    capacity_evidence: bool,
+    capacity_gaps: list[str],
 ) -> Opportunity:
     est = glue_est.worker_reduction_saving(job, config)
     candidates = _worker_candidates(job, config)
@@ -1123,8 +1179,9 @@ def _overprovisioned(
         and job.rightsize_test_runs >= 3
         and job.rightsize_output_validated
     )
-    if not capacity_evidence:
-        _zero_unproven(est)
+    capacity_evidence = not capacity_gaps
+    if capacity_gaps:
+        _zero_unproven(est, capacity_gaps)
     opportunity = build(
         Finding(
             asset_type="glue_job",
@@ -1220,26 +1277,72 @@ def _worker_candidates(job: GlueJob, config: Config) -> list[int]:
     return sorted({upper, midpoint, target}, reverse=True)
 
 
-def _capacity_evidence(job: GlueJob, config: Config) -> bool:
+#: Cada medição que o gate de capacidade exige, e a fonte que a produz. A fonte
+#: entra porque é ela que o operador destrava: "faltou `max_memory_used_pct`" não
+#: diz o que fazer; "conceda CloudWatch Glue Observability" diz.
+_FONTE_DA_MEDICAO = {
+    "max_memory_used_pct": "CloudWatch Glue Observability",
+    "max_disk_used_pct": "CloudWatch Glue Observability",
+    "spill medido": "Spark Event Logs",
+    "Spark event log completo": "Spark Event Logs",
+}
+
+
+def _capacity_gaps(job: GlueJob, config: Config) -> list[str]:
+    """O que falta para afirmar que dá para reduzir capacidade.
+
+    Devolve a lista, e não um `bool`, porque a mensagem antiga dizia sempre
+    "evidência de memória, disco e spill incompleta" — mesmo quando faltava só
+    uma das quatro. Quem lê precisa saber **qual**, senão a próxima ação é
+    conceder três permissões para descobrir que faltava uma.
+    """
     th = config.thresholds
-    return (
-        job.max_memory_used_pct is not None
-        and job.max_memory_used_pct < th.worker_memory_pressure_high
-        and job.max_disk_used_pct is not None
-        and job.max_disk_used_pct < th.worker_disk_pressure_high
-        and job.has_spill_evidence
-        and job.spark_event_log_evidence_complete
-        and (job.shuffle_spill_bytes or 0) <= 0
+    faltando: list[str] = []
+    if job.max_memory_used_pct is None:
+        faltando.append("max_memory_used_pct")
+    if job.max_disk_used_pct is None:
+        faltando.append("max_disk_used_pct")
+    if not job.spark_event_log_evidence_complete:
+        faltando.append("Spark event log completo")
+    if not job.has_spill_evidence:
+        faltando.append("spill medido")
+    if faltando:
+        return faltando
+    # Medido, e o resultado nega a redução: aqui não falta evidência — ela existe
+    # e diz que o job está sob pressão. É outra frase, e a ação também é outra.
+    sob_pressao = []
+    if (job.max_memory_used_pct or 0) >= th.worker_memory_pressure_high:
+        sob_pressao.append(f"memória em {job.max_memory_used_pct:.0f}%")
+    if (job.max_disk_used_pct or 0) >= th.worker_disk_pressure_high:
+        sob_pressao.append(f"disco em {job.max_disk_used_pct:.0f}%")
+    if (job.shuffle_spill_bytes or 0) > 0:
+        sob_pressao.append(f"spill de {job.shuffle_spill_bytes:.0f} bytes")
+    return [f"medido e sob pressão: {', '.join(sob_pressao)}"] if sob_pressao else []
+
+
+def _capacity_evidence(job: GlueJob, config: Config) -> bool:
+    return not _capacity_gaps(job, config)
+
+
+def _porque_falta(faltando: list[str]) -> str:
+    """A frase que nomeia o que falta e por onde se consegue."""
+    if not faltando:
+        return "evidência incompleta"
+    return "; ".join(
+        f"{item} (fonte {_FONTE_DA_MEDICAO[item]})"
+        if item in _FONTE_DA_MEDICAO
+        else item
+        for item in faltando
     )
 
 
-def _zero_unproven(
-    estimation,
-    reason: str = "evidência de memória, disco e spill incompleta",
-) -> None:
+def _zero_unproven(estimation, faltando: list[str] | None = None) -> None:
+    """Zera a cifra e diz **o que** faltou para ela existir."""
     estimation.estimated_saving = 0.0
     estimation.projected_cost = estimation.baseline_cost
-    estimation.assumptions.append(f"economia não quantificada: {reason}")
+    estimation.assumptions.append(
+        "economia não quantificada, falta: " + _porque_falta(faltando or [])
+    )
 
 
 def _investigation(
@@ -1257,6 +1360,12 @@ def _investigation(
     category: str = "cost_optimization",
     estimation: Estimation | None = None,
     has_optional_metrics: bool = True,
+    # Estas duas eram fixas no corpo, e nove regras saíam com o mesmo par de
+    # frases: "Analisar as execuções referenciadas e testar uma mudança isolada"
+    # servia para skew, para job sem input e para arquivo pequeno. Cada regra sabe
+    # o que observou e o que corrige aquilo; o helper é que não sabia.
+    how_to_apply: str = "Analisar as execuções referenciadas e testar uma mudança isolada.",
+    how_to_validate: str = "Comparar duração p95, DPU-h e saída antes/depois.",
 ) -> Opportunity:
     if estimation is None:
         estimation = Estimation(
@@ -1281,8 +1390,8 @@ def _investigation(
         Recommendation(
             difficulty=3,
             action=action,
-            how_to_apply="Analisar as execuções referenciadas e testar uma mudança isolada.",
-            how_to_validate="Comparar duração p95, DPU-h e saída antes/depois.",
+            how_to_apply=how_to_apply,
+            how_to_validate=how_to_validate,
             risks=["não alterar capacidade antes de confirmar a causa"],
             docs=[doc_link],
             blocked=True,

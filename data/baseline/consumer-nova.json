@@ -169,6 +169,11 @@
       "asset_name": "explora-nova",
       "asset_type": "glue_session",
       "blocked": true,
+      "blocked_reason": {
+        "missing": "contrafactual de bytes/custo ainda não medido",
+        "source_next_action": "",
+        "unblocked_by": "coleta"
+      },
       "bucket": "investigar_primeiro",
       "calibrated_gain": null,
       "calibration": null,
@@ -292,6 +297,11 @@
       "asset_name": "amostra_diaria",
       "asset_type": "athena_query",
       "blocked": true,
+      "blocked_reason": {
+        "missing": "contrafactual de bytes/custo ainda não medido",
+        "source_next_action": "",
+        "unblocked_by": "coleta"
+      },
       "bucket": "investigar_primeiro",
       "calibrated_gain": null,
       "calibration": null,
@@ -405,6 +415,7 @@
       "asset_name": "AWS Glue",
       "asset_type": "glue_service",
       "blocked": true,
+      "blocked_reason": null,
       "bucket": "investigar_primeiro",
       "calibrated_gain": null,
       "calibration": null,

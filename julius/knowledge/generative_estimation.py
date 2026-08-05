@@ -138,6 +138,29 @@ _ELEGIVEIS: dict[str, GenerativeCandidate] = {
             "declara e o inventário não mede por job"
         ),
     ),
+    # As duas últimas do levantamento de `knowledge/coverage.py` sem cálculo
+    # nenhum. Mesmo mecanismo e mesma fonte de baseline das entradas acima: o
+    # Glue cobra DPU-hora, e ler menos ou reescrever menos encurta a execução.
+    "GLUE-CODE-PUSHDOWN": GenerativeCandidate(
+        rule_id="GLUE-CODE-PUSHDOWN",
+        mechanism="glue_dpu_hour",
+        baseline_source="glue_job",
+        why_no_formula=(
+            "quanto o filtro na leitura evita depende de quantas partições ele "
+            "descarta, e isso é propriedade do dado do dia — a mesma consulta "
+            "poda noventa por cento numa data e nada na seguinte"
+        ),
+    ),
+    "GLUE-CODE-FULL-OVERWRITE": GenerativeCandidate(
+        rule_id="GLUE-CODE-FULL-OVERWRITE",
+        mechanism="glue_dpu_hour",
+        baseline_source="glue_job",
+        why_no_formula=(
+            "o que a escrita incremental pouparia é a fração da tabela que não "
+            "mudou, e nenhuma métrica do Glue separa linha nova de linha "
+            "reescrita — só o dado responde, e ele muda a cada execução"
+        ),
+    ),
     "SM-CODE-ROW-EXTERNAL-IO": GenerativeCandidate(
         rule_id="SM-CODE-ROW-EXTERNAL-IO",
         mechanism="sagemaker_instance_second",

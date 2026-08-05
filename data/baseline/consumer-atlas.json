@@ -193,6 +193,11 @@
       "asset_name": "consolida_pedidos",
       "asset_type": "glue_job",
       "blocked": true,
+      "blocked_reason": {
+        "missing": "métricas operacionais parciais; contrafactual de bytes/custo ainda não medido",
+        "source_next_action": "",
+        "unblocked_by": "coleta"
+      },
       "bucket": "investigar_primeiro",
       "calibrated_gain": null,
       "calibration": null,
@@ -318,6 +323,11 @@
       "asset_name": "consolida_pedidos",
       "asset_type": "glue_job",
       "blocked": true,
+      "blocked_reason": {
+        "missing": "economia não quantificada, falta: max_memory_used_pct (fonte CloudWatch Glue Observability); max_disk_used_pct (fonte CloudWatch Glue Observability); Spark event log completo (fonte Spark Event Logs); spill medido (fonte Spark Event Logs)",
+        "source_next_action": "",
+        "unblocked_by": "time"
+      },
       "bucket": "investigar_primeiro",
       "calibrated_gain": null,
       "calibration": null,
@@ -351,7 +361,7 @@
           "utilização observada 31% vs. alvo 75%",
           "Auto Scaling reduz workers ociosos (redução limitada a 60%)",
           "tarifa de 0.4400 USD/DPU-h · tabela sa-east-1 v2.0-usd (não conferida)",
-          "economia não quantificada: evidência de memória, disco e spill incompleta"
+          "economia não quantificada, falta: max_memory_used_pct (fonte CloudWatch Glue Observability); max_disk_used_pct (fonte CloudWatch Glue Observability); Spark event log completo (fonte Spark Event Logs); spill medido (fonte Spark Event Logs)"
         ],
         "avoidable_bytes": null,
         "baseline_bytes": null,
@@ -446,6 +456,11 @@
       "asset_name": "consolida_pedidos",
       "asset_type": "glue_job",
       "blocked": true,
+      "blocked_reason": {
+        "missing": "confirmação de que o SLA tolera início adiado e capacidade não garantida",
+        "source_next_action": "",
+        "unblocked_by": "time"
+      },
       "bucket": "investigar_primeiro",
       "calibrated_gain": null,
       "calibration": null,
@@ -575,6 +590,11 @@
       "asset_name": "extrato_mensal",
       "asset_type": "athena_query",
       "blocked": true,
+      "blocked_reason": {
+        "missing": "contrafactual de bytes/custo ainda não medido",
+        "source_next_action": "",
+        "unblocked_by": "time"
+      },
       "bucket": "investigar_primeiro",
       "calibrated_gain": null,
       "calibration": null,
@@ -694,6 +714,11 @@
       "asset_name": "extrato_mensal",
       "asset_type": "athena_query",
       "blocked": true,
+      "blocked_reason": {
+        "missing": "contrafactual de bytes/custo ainda não medido",
+        "source_next_action": "",
+        "unblocked_by": "coleta"
+      },
       "bucket": "investigar_primeiro",
       "calibrated_gain": null,
       "calibration": null,
@@ -807,6 +832,7 @@
       "asset_name": "AWS Glue",
       "asset_type": "glue_service",
       "blocked": true,
+      "blocked_reason": null,
       "bucket": "investigar_primeiro",
       "calibrated_gain": null,
       "calibration": null,

@@ -21,7 +21,7 @@ from julius.analysis.playbook import asset_types_in_context
 from julius.analysis.playbook import render as render_playbooks
 from julius.knowledge.remediation import CATALOG, FAMILIES
 
-PROMPT_VERSION = "3.1.0"
+PROMPT_VERSION = "3.2.1"
 
 #: As regras em si, separadas do texto que as apresenta — o validador de
 #: resposta verifica o resultado das mesmas restrições.
@@ -281,6 +281,44 @@ Depois de produzir `{result_file}`, execute:
 
     julius agent validate --context {context_file} --result {result_file}
 """
+
+
+#: Um pacote vazio, só para render o molde. Nada dele descreve conta nenhuma: o
+#: que interessa aqui é o texto ao redor dos números, e números de um pacote real
+#: mudariam o dígito a cada scan.
+_PACOTE_VAZIO = AgentContext(
+    schema_version="",
+    prompt_version="",
+    account={"id": "000000000000"},
+    scan_id="",
+    constraints={},
+    portfolio={},
+    opportunities=[],
+)
+
+
+def canonical_briefing() -> str:
+    """O briefing inteiro, sem versão e sem pacote — o que o digest tem de cobrir.
+
+    `contract_digest` cobria as regras, o corpo da Skill, os playbooks, os campos
+    do motor e o schema: tudo que é dado estruturado. A **prosa** que apresenta
+    esses dados ficava de fora, e ela é instrução tanto quanto eles. Trocar "suas
+    quatro tarefas" por cinco, ou reescrever a divisão por grau de certeza, mudava
+    o que a análise recebe sem mudar `prompt_version` — e a versão é o que liga
+    cada veredito à pergunta que o produziu.
+
+    São duas partes porque o molde e o corpo variam por motivos diferentes. O
+    molde vem de um pacote vazio, onde os playbooks e as famílias somem por
+    recorte; o corpo vem com `None` nos dois, que é o máximo que o texto pode
+    conter. Junto, é o teto do que qualquer pacote consegue dizer.
+
+    `PROMPT_VERSION` sai do texto de propósito. Ela aparece na primeira linha do
+    briefing, e mantê-la faria o dígito mudar toda vez que a versão subisse —
+    inclusive quando subiu por causa de outra coisa. O dígito responde "o conteúdo
+    mudou?", e essa pergunta não pode depender da resposta que ela mesma provoca.
+    """
+    molde = build_agent_prompt(_PACOTE_VAZIO).replace(PROMPT_VERSION, "{versão}")
+    return f"{molde}\n{_division_of_labour(None, None)}"
 
 
 #: Nome antigo, quando havia um host só. Mantido porque `build_devin_prompt` é
