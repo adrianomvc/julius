@@ -446,6 +446,7 @@
       "asset_name": "dw-legado",
       "asset_type": "redshift_cluster",
       "blocked": false,
+      "blocked_reason": null,
       "bucket": "planejar",
       "calibrated_gain": null,
       "calibration": null,
@@ -561,6 +562,7 @@
       "asset_name": "resumo_regional",
       "asset_type": "table",
       "blocked": false,
+      "blocked_reason": null,
       "bucket": "monitorar",
       "calibrated_gain": null,
       "calibration": null,
@@ -674,6 +676,7 @@
       "asset_name": "base_legado_diaria",
       "asset_type": "table",
       "blocked": false,
+      "blocked_reason": null,
       "bucket": "monitorar",
       "calibrated_gain": null,
       "calibration": null,
@@ -789,6 +792,7 @@
       "asset_name": "sync_parceiros",
       "asset_type": "glue_job",
       "blocked": false,
+      "blocked_reason": null,
       "bucket": "monitorar",
       "calibrated_gain": null,
       "calibration": null,
@@ -918,6 +922,7 @@
       "asset_name": "s3://consumer-avi-datalake/athena-results/",
       "asset_type": "s3_prefix",
       "blocked": false,
+      "blocked_reason": null,
       "bucket": "monitorar",
       "calibrated_gain": null,
       "calibration": null,
@@ -1032,6 +1037,7 @@
       "asset_name": "consumer-avi-datalake",
       "asset_type": "s3_bucket",
       "blocked": false,
+      "blocked_reason": null,
       "bucket": "investigar_primeiro",
       "calibrated_gain": null,
       "calibration": null,
@@ -1144,6 +1150,7 @@
       "asset_name": "s3://consumer-avi-datalake/spark-logs/processa_interacoes/",
       "asset_type": "s3_prefix",
       "blocked": false,
+      "blocked_reason": null,
       "bucket": "monitorar",
       "calibrated_gain": null,
       "calibration": null,
@@ -1262,6 +1269,11 @@
       "asset_name": "jupyter-avi-ds",
       "asset_type": "sagemaker_app",
       "blocked": true,
+      "blocked_reason": {
+        "missing": "contrafactual de bytes/custo ainda não medido",
+        "source_next_action": "",
+        "unblocked_by": "coleta"
+      },
       "bucket": "investigar_primeiro",
       "calibrated_gain": null,
       "calibration": null,
@@ -1379,6 +1391,11 @@
       "asset_name": "processa_interacoes",
       "asset_type": "glue_job",
       "blocked": true,
+      "blocked_reason": {
+        "missing": "métricas operacionais parciais; contrafactual de bytes/custo ainda não medido",
+        "source_next_action": "",
+        "unblocked_by": "coleta"
+      },
       "bucket": "investigar_primeiro",
       "calibrated_gain": null,
       "calibration": null,
@@ -1504,6 +1521,11 @@
       "asset_name": "gera_base_legado",
       "asset_type": "glue_job",
       "blocked": true,
+      "blocked_reason": {
+        "missing": "métricas operacionais parciais; contrafactual de bytes/custo ainda não medido",
+        "source_next_action": "",
+        "unblocked_by": "coleta"
+      },
       "bucket": "investigar_primeiro",
       "calibrated_gain": null,
       "calibration": null,
@@ -1629,6 +1651,11 @@
       "asset_name": "agrega_vendas",
       "asset_type": "glue_job",
       "blocked": true,
+      "blocked_reason": {
+        "missing": "métricas operacionais parciais; contrafactual de bytes/custo ainda não medido",
+        "source_next_action": "",
+        "unblocked_by": "coleta"
+      },
       "bucket": "investigar_primeiro",
       "calibrated_gain": null,
       "calibration": null,
@@ -1755,6 +1782,11 @@
       "asset_name": "treina_features",
       "asset_type": "glue_job",
       "blocked": true,
+      "blocked_reason": {
+        "missing": "métricas operacionais parciais; contrafactual de bytes/custo ainda não medido",
+        "source_next_action": "",
+        "unblocked_by": "coleta"
+      },
       "bucket": "investigar_primeiro",
       "calibrated_gain": null,
       "calibration": null,
@@ -1880,6 +1912,11 @@
       "asset_name": "treina_features",
       "asset_type": "glue_job",
       "blocked": true,
+      "blocked_reason": {
+        "missing": "economia não quantificada, falta: max_memory_used_pct (fonte CloudWatch Glue Observability); max_disk_used_pct (fonte CloudWatch Glue Observability); Spark event log completo (fonte Spark Event Logs); spill medido (fonte Spark Event Logs)",
+        "source_next_action": "",
+        "unblocked_by": "time"
+      },
       "bucket": "investigar_primeiro",
       "calibrated_gain": null,
       "calibration": null,
@@ -2011,6 +2048,11 @@
       "asset_name": "etl-explore",
       "asset_type": "glue_session",
       "blocked": true,
+      "blocked_reason": {
+        "missing": "contrafactual de bytes/custo ainda não medido",
+        "source_next_action": "",
+        "unblocked_by": "coleta"
+      },
       "bucket": "investigar_primeiro",
       "calibrated_gain": null,
       "calibration": null,
@@ -2134,6 +2176,11 @@
       "asset_name": "primary",
       "asset_type": "athena_workgroup",
       "blocked": true,
+      "blocked_reason": {
+        "missing": "contrafactual de bytes/custo ainda não medido",
+        "source_next_action": "",
+        "unblocked_by": "time"
+      },
       "bucket": "investigar_primeiro",
       "calibrated_gain": null,
       "calibration": null,
@@ -2244,6 +2291,11 @@
       "asset_name": "sync_parceiros",
       "asset_type": "glue_job",
       "blocked": true,
+      "blocked_reason": {
+        "missing": "confirmação de que o SLA tolera início adiado e capacidade não garantida",
+        "source_next_action": "",
+        "unblocked_by": "time"
+      },
       "bucket": "investigar_primeiro",
       "calibrated_gain": null,
       "calibration": null,
@@ -2372,6 +2424,11 @@
       "asset_name": "processa_interacoes",
       "asset_type": "glue_job",
       "blocked": true,
+      "blocked_reason": {
+        "missing": "economia não quantificada, falta: max_memory_used_pct (fonte CloudWatch Glue Observability); max_disk_used_pct (fonte CloudWatch Glue Observability); Spark event log completo (fonte Spark Event Logs); spill medido (fonte Spark Event Logs)",
+        "source_next_action": "",
+        "unblocked_by": "time"
+      },
       "bucket": "investigar_primeiro",
       "calibrated_gain": null,
       "calibration": null,
@@ -2503,6 +2560,11 @@
       "asset_name": "agrega_vendas",
       "asset_type": "glue_job",
       "blocked": true,
+      "blocked_reason": {
+        "missing": "economia não quantificada, falta: max_memory_used_pct (fonte CloudWatch Glue Observability); max_disk_used_pct (fonte CloudWatch Glue Observability); Spark event log completo (fonte Spark Event Logs); spill medido (fonte Spark Event Logs)",
+        "source_next_action": "",
+        "unblocked_by": "time"
+      },
       "bucket": "investigar_primeiro",
       "calibrated_gain": null,
       "calibration": null,
@@ -2635,6 +2697,11 @@
       "asset_name": "agrega_vendas",
       "asset_type": "glue_job",
       "blocked": true,
+      "blocked_reason": {
+        "missing": "confirmação de que o SLA tolera início adiado e capacidade não garantida",
+        "source_next_action": "",
+        "unblocked_by": "time"
+      },
       "bucket": "investigar_primeiro",
       "calibrated_gain": null,
       "calibration": null,
@@ -2764,6 +2831,11 @@
       "asset_name": "relatorio_diario",
       "asset_type": "athena_query",
       "blocked": true,
+      "blocked_reason": {
+        "missing": "contrafactual de bytes/custo ainda não medido",
+        "source_next_action": "",
+        "unblocked_by": "time"
+      },
       "bucket": "investigar_primeiro",
       "calibrated_gain": null,
       "calibration": null,
@@ -2883,6 +2955,11 @@
       "asset_name": "relatorio_diario",
       "asset_type": "athena_query",
       "blocked": true,
+      "blocked_reason": {
+        "missing": "contrafactual de bytes/custo ainda não medido",
+        "source_next_action": "",
+        "unblocked_by": "coleta"
+      },
       "bucket": "investigar_primeiro",
       "calibrated_gain": null,
       "calibration": null,
@@ -2996,6 +3073,11 @@
       "asset_name": "treina_features",
       "asset_type": "glue_job",
       "blocked": true,
+      "blocked_reason": {
+        "missing": "confirmação de que o SLA tolera início adiado e capacidade não garantida",
+        "source_next_action": "",
+        "unblocked_by": "time"
+      },
       "bucket": "investigar_primeiro",
       "calibrated_gain": null,
       "calibration": null,
@@ -3124,6 +3206,11 @@
       "asset_name": "gera_base_legado",
       "asset_type": "glue_job",
       "blocked": true,
+      "blocked_reason": {
+        "missing": "confirmação de que o SLA tolera início adiado e capacidade não garantida",
+        "source_next_action": "",
+        "unblocked_by": "time"
+      },
       "bucket": "investigar_primeiro",
       "calibrated_gain": null,
       "calibration": null,
@@ -3252,6 +3339,11 @@
       "asset_name": "orquestra_ingestao",
       "asset_type": "state_machine",
       "blocked": true,
+      "blocked_reason": {
+        "missing": "contrafactual de bytes/custo ainda não medido",
+        "source_next_action": "",
+        "unblocked_by": "analise"
+      },
       "bucket": "investigar_primeiro",
       "calibrated_gain": null,
       "calibration": null,
@@ -3368,6 +3460,11 @@
       "asset_name": "kpi_horario",
       "asset_type": "athena_query",
       "blocked": true,
+      "blocked_reason": {
+        "missing": "contrafactual de bytes/custo ainda não medido",
+        "source_next_action": "",
+        "unblocked_by": "coleta"
+      },
       "bucket": "investigar_primeiro",
       "calibrated_gain": null,
       "calibration": null,
@@ -3481,6 +3578,11 @@
       "asset_name": "dashboard_adhoc",
       "asset_type": "athena_query",
       "blocked": true,
+      "blocked_reason": {
+        "missing": "métricas operacionais parciais; contrafactual de bytes/custo ainda não medido",
+        "source_next_action": "",
+        "unblocked_by": "time"
+      },
       "bucket": "investigar_primeiro",
       "calibrated_gain": null,
       "calibration": null,
@@ -3597,6 +3699,11 @@
       "asset_name": "processa_interacoes",
       "asset_type": "glue_job",
       "blocked": true,
+      "blocked_reason": {
+        "missing": "evidência não declarada pela regra",
+        "source_next_action": "",
+        "unblocked_by": "time"
+      },
       "bucket": "investigar_primeiro",
       "calibrated_gain": null,
       "calibration": null,
@@ -3721,6 +3828,11 @@
       "asset_name": "dw-legado",
       "asset_type": "redshift_cluster",
       "blocked": true,
+      "blocked_reason": {
+        "missing": "economia não quantificada até haver medição de uso",
+        "source_next_action": "",
+        "unblocked_by": "time"
+      },
       "bucket": "investigar_primeiro",
       "calibrated_gain": null,
       "calibration": null,
@@ -3833,6 +3945,11 @@
       "asset_name": "processa_interacoes",
       "asset_type": "glue_job",
       "blocked": true,
+      "blocked_reason": {
+        "missing": "volume novo e volume já processado por execução; confirmação de que a fonte cresce de forma incremental",
+        "source_next_action": "",
+        "unblocked_by": "time"
+      },
       "bucket": "investigar_primeiro",
       "calibrated_gain": null,
       "calibration": null,
@@ -3960,6 +4077,7 @@
       "asset_name": "AWS Glue",
       "asset_type": "glue_service",
       "blocked": true,
+      "blocked_reason": null,
       "bucket": "investigar_primeiro",
       "calibrated_gain": null,
       "calibration": null,

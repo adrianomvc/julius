@@ -71,6 +71,15 @@ def render_email(vm: ReportViewModel, report_url: str | None = None) -> tuple[st
 
 
 def render_json(vm: ReportViewModel, opportunities: list[Opportunity]) -> str:
+    _motivo = {
+        item.id: {
+            "missing": item.blocked_missing,
+            "unblocked_by": item.blocked_unblocked_by,
+            "source_next_action": item.blocked_next_action,
+        }
+        for item in vm.table
+        if item.blocked_missing
+    }
     payload = {
         "account": vm.account_id,
         "period": vm.period,
@@ -142,6 +151,11 @@ def render_json(vm: ReportViewModel, opportunities: list[Opportunity]) -> str:
         "opportunities": [
             {
                 **asdict(o),
+                # Por que saiu sem cifra e quem destrava. Vem do view model, que
+                # já resolveu o motivo uma vez por relatório: recalcular aqui
+                # varreria a saúde da coleta de novo, por linha, para chegar ao
+                # mesmo lugar.
+                "blocked_reason": _motivo.get(o.opportunity_id),
                 "classification": (
                     "validated_opportunity"
                     if o.status == "validated"

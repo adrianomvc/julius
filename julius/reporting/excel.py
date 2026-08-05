@@ -44,6 +44,11 @@ COLUMNS: tuple[tuple[str, str, str], ...] = (
     ("Achado", "title", "text"),
     ("Ação recomendada", "action", "text"),
     ("Economia/mês", "monthly_fmt", "money"),
+    # As três colunas do lado da economia, e é onde elas têm de ficar: quem lê
+    # "Indisponível" pergunta por quê na mesma linha, não três abas adiante.
+    ("Por que sem cifra", "blocked_missing", "text"),
+    ("Quem destrava", "blocked_unblocked_by", "text"),
+    ("Como destravar", "blocked_next_action", "text"),
     ("Faixa", "band_fmt", "text"),
     ("Realizável no ano", "year_fmt", "money"),
     ("Baseline", "baseline_fmt", "money"),

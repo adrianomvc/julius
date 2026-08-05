@@ -95,6 +95,13 @@ class OpportunityVM:
     traceability: str
     include_in_portfolio: bool
     portfolio_exclusion_reasons: list[str]
+    #: Por que este achado saiu sem cifra, e quem destrava. Vazio quando ele tem
+    #: cifra. `portfolio_exclusion_reasons` diz o **estado** — `blocked`,
+    #: `saving_not_validated` —, que é vocabulário do motor; estes três dizem o
+    #: que fazer a respeito, que é o que o leitor perguntou seis vezes.
+    blocked_missing: str = ""
+    blocked_unblocked_by: str = ""
+    blocked_next_action: str = ""
     ai_diagnosis: str = ""
     ai_recommendation: str = ""
     ai_implementation_steps: list[str] = field(default_factory=list)
@@ -171,6 +178,17 @@ def _prev_vm(r: PreviousResult) -> PreviousResultVM:
     )
 
 
+def _motivo_para(account: Account):
+    """Fecha a conta sobre a qual o motivo é calculado, uma vez por relatório.
+
+    A saúde da coleta é a mesma para todos os achados; recalculá-la por linha
+    seria varrer a lista de fontes uma vez por oportunidade.
+    """
+    from julius.reporting.pending import blocked_reason
+
+    return lambda opportunity: blocked_reason(account, opportunity)
+
+
 def _mask(account_id: str) -> str:
     # Mascara apenas IDs numéricos de conta AWS (12 dígitos); nomes amigáveis
     # (ex.: "consumer-avi") passam intactos.
@@ -179,7 +197,9 @@ def _mask(account_id: str) -> str:
     return account_id
 
 
-def _opp_vm(o: Opportunity, currency: str) -> OpportunityVM:
+def _opp_vm(
+    o: Opportunity, currency: str, motivo=None
+) -> OpportunityVM:
     cat_label, cat_fg, cat_bg = fmt.CATEGORY_LABELS.get(
         o.asset_type, (o.asset_type, "#5b6169", "#eef0ea")
     )
@@ -332,6 +352,11 @@ def _opp_vm(o: Opportunity, currency: str) -> OpportunityVM:
         window_end=o.window_end or "—",
         traceability="; ".join(trace_parts) or "sem IDs de execução disponíveis",
         include_in_portfolio=o.include_in_portfolio,
+        blocked_missing=motivo.missing if motivo else "",
+        blocked_unblocked_by=motivo.unblocked_by if motivo else "",
+        blocked_next_action=(
+            motivo.source_next_action if motivo and motivo.source_next_action else ""
+        ),
         portfolio_exclusion_reasons=list(o.portfolio_exclusion_reasons),
     )
 
@@ -1007,6 +1032,7 @@ def build(
     athena_coverage, athena_queries, athena_actors, athena_gaps = _athena_views(account)
 
     table_sorted = sorted(opportunities, key=ranking_key, reverse=True)
+    _motivo = _motivo_para(account)
 
     account_currency = (
         account.services[0].currency
@@ -1096,13 +1122,13 @@ def build(
             for o in integrity
         ],
         guardrails=guardrails,
-        focus=[_opp_vm(o, account_currency) for o in pareto.financial_focus],
+        focus=[_opp_vm(o, account_currency, _motivo(o)) for o in pareto.financial_focus],
         focus_ids=[o.opportunity_id for o in pareto.financial_focus],
-        table=[_opp_vm(o, account_currency) for o in table_sorted],
-        do_now=[_opp_vm(o, account_currency) for o in do_now],
-        plan=[_opp_vm(o, account_currency) for o in plan],
-        monitor=[_opp_vm(o, account_currency) for o in monitor],
-        investigate=[_opp_vm(o, account_currency) for o in investigate],
+        table=[_opp_vm(o, account_currency, _motivo(o)) for o in table_sorted],
+        do_now=[_opp_vm(o, account_currency, _motivo(o)) for o in do_now],
+        plan=[_opp_vm(o, account_currency, _motivo(o)) for o in plan],
+        monitor=[_opp_vm(o, account_currency, _motivo(o)) for o in monitor],
+        investigate=[_opp_vm(o, account_currency, _motivo(o)) for o in investigate],
         producers=[_producer_vm(p) for p in account.producer_candidates],
         previous_results=[_prev_vm(r) for r in account.previous_results],
         manifest=manifest,

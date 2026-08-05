@@ -94,12 +94,34 @@ def _unblocker(signal: Signal, gaps: dict[str, CollectionHealth]) -> tuple[str, 
     família só se fecha com o time depois. Oferecer o benchmark antes da permissão
     IAM é mandar alguém medir o que o scan seguinte mediria de graça.
     """
-    for fonte in unblocking_sources(signal.asset_type):
+    return unblocker_for(
+        signal.asset_type,
+        signal.remediation_family,
+        gaps,
+        from_code=signal.kind == "code",
+    )
+
+
+def unblocker_for(
+    asset_type: str,
+    family_id: str,
+    gaps: dict[str, CollectionHealth],
+    *,
+    from_code: bool = False,
+) -> tuple[str, str, str]:
+    """Quem destrava, a partir do ativo e da família — sem depender de `Signal`.
+
+    Sinal e achado com cifra bloqueada fazem a **mesma** pergunta sobre a mesma
+    conta: o que falta para isto virar número, e quem consegue. Duas cópias desta
+    cascata divergiriam no dia em que uma fonte mudasse de nome, e a que
+    divergisse ficaria calada — não errada, calada, que é pior.
+    """
+    for fonte in unblocking_sources(asset_type):
         entrada = gaps.get(fonte)
         if entrada is not None:
             return "coleta", fonte, entrada.next_action or ""
-    familia = FAMILIES.get(signal.remediation_family)
-    if signal.kind == "code" and familia is not None and familia.resolved_by == "time":
+    familia = FAMILIES.get(family_id)
+    if from_code and familia is not None and familia.resolved_by == "time":
         # Sinal de código com o artefato em mãos: a leitura pode descartá-lo sem
         # ninguém medir nada, e descartar é metade do valor.
         return "analise", "", ""
@@ -145,4 +167,72 @@ def build(account: Account, signals: list[Signal]) -> PendingSummary:
     )
 
 
-__all__ = ["PendingMeasurement", "PendingSummary", "build"]
+
+@dataclass(frozen=True)
+class BlockedReason:
+    """Por que um achado saiu sem cifra, e quem consegue destravá-lo."""
+
+    #: O que falta, na frase que a própria regra escreveu.
+    missing: str
+    #: `coleta`, `analise` ou `time`.
+    unblocked_by: str
+    #: A fonte que voltou com lacuna e explica a falta, quando existe uma.
+    blocked_source: str = ""
+    #: O que a saúde da coleta já disse que resolve aquela fonte.
+    source_next_action: str = ""
+
+    def to_dict(self) -> dict[str, str]:
+        return {
+            "missing": self.missing,
+            "unblocked_by": self.unblocked_by,
+            "blocked_source": self.blocked_source,
+            "source_next_action": self.source_next_action,
+        }
+
+
+#: Prefixo que `_zero_unproven` e as regras usam para dizer o que faltou. Ler a
+#: premissa é feio, e a alternativa era pior: um campo estruturado novo em
+#: `Estimation` que oito regras teriam de preencher, contra uma frase que todas
+#: já escrevem. Quando a segunda regra precisar de estrutura, o campo se paga.
+_MARCA_DE_FALTA = "economia não quantificada"
+
+
+def _o_que_falta(opportunity) -> str:
+    """A frase que a regra escreveu sobre o que faltou, ou a evidência ausente."""
+    estimation = getattr(opportunity, "estimation", None)
+    for premissa in getattr(estimation, "assumptions", []) or []:
+        if premissa.startswith(_MARCA_DE_FALTA):
+            return premissa
+    faltando = list(getattr(opportunity, "missing_evidence", []) or [])
+    return "; ".join(faltando) if faltando else "evidência não declarada pela regra"
+
+
+def blocked_reason(account: Account, opportunity) -> BlockedReason | None:
+    """Por que este achado não tem cifra. `None` quando ele tem.
+
+    O gate é `include_in_portfolio`, e não `blocked`: um achado estratégico ou de
+    economia zero também chega ao leitor sem número, e a pergunta dele é a mesma.
+    """
+    if opportunity.include_in_portfolio:
+        return None
+    dono, fonte, proximo = unblocker_for(
+        opportunity.asset_type,
+        getattr(opportunity, "remediation_family", ""),
+        _gaps_by_source(account),
+    )
+    return BlockedReason(
+        missing=_o_que_falta(opportunity),
+        unblocked_by=dono,
+        blocked_source=fonte,
+        source_next_action=proximo,
+    )
+
+
+__all__ = [
+    "BlockedReason",
+    "PendingMeasurement",
+    "PendingSummary",
+    "blocked_reason",
+    "build",
+    "unblocker_for",
+]
