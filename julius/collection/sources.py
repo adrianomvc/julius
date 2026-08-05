@@ -907,7 +907,7 @@ SOURCES: tuple[Source, ...] = (
         into="services",
         count=len,
         data_through=_latest_data_through,
-        impact="cobrança MTD, forecast e reconciliação ficam indisponíveis",
+        impact="cobrança do período, forecast e reconciliação ficam indisponíveis",
         next_action="validar ce:GetCostAndUsage e ce:GetCostForecast",
         apply=lambda ctx, services: (
             setattr(ctx.account, "currency", services[0].currency) if services else None

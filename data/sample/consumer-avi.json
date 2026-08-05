@@ -1,5 +1,5 @@
 {
-  "dataset_schema_version": 2,
+  "dataset_schema_version": 3,
   "account": "consumer-avi",
   "region": "sa-east-1",
   "period": "jul/2026",
@@ -534,5 +534,7 @@
       "primary": 0,
       "analytics": 1099511627776
     }
-  }
+  },
+  "cadence": "weekly",
+  "financial_period": ""
 }

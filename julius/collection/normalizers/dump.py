@@ -49,6 +49,12 @@ def account_to_dataset(account: Account) -> dict:
         },
         "region": account.region,
         "period": account.period,
+        # A cadência não era gravada, e o default de `Account` decidia sozinho na
+        # releitura. Enquanto o default foi "weekly" isso passou despercebido;
+        # trocá-lo para "monthly" reinterpretaria todo dataset antigo em silêncio,
+        # que é precisamente o que `dataset_schema_version` existe para impedir.
+        "cadence": account.cadence,
+        "financial_period": account.financial_period,
         "lookback_days": account.lookback_days,
         "generated_at": account.generated_at,
         **({"scan_id": account.scan_id} if account.scan_id else {}),

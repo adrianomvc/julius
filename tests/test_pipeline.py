@@ -195,9 +195,9 @@ def test_previous_results_precision(analysis):
     assert prev["Redução de workers"].predicted_fmt.startswith("US$")
 
 
-def test_report_json_calls_billing_cost_mtd_by_its_real_period(analysis):
+def test_report_json_calls_billing_cost_period_by_its_real_period(analysis):
     payload = json.loads(renderer.render_json(analysis.vm, analysis.opportunities))
-    assert payload["summary"]["billing_cost_mtd"].startswith("US$")
+    assert payload["summary"]["billing_cost_period"].startswith("US$")
     assert "total_cost_monthly" not in payload["summary"]
 
 

@@ -110,3 +110,26 @@ def test_every_command_the_skill_names_exists_in_the_cli(comando):
         f"a skill manda rodar `julius {comando}`, que não existe no CLI. "
         f"Comandos disponíveis: {sorted(disponiveis)}"
     )
+
+
+def test_the_skill_invites_every_optional_field_the_engine_accepts():
+    """Campo opcional que a Skill não convida nunca é preenchido.
+
+    `remediation_family` esteve nesse limbo: o schema aceita, o validador confere
+    contra o catálogo, o briefing pede — e a Skill não mencionava. Opcional e não
+    convidado é o mesmo que ausente, e o campo é justamente o que diz que dois
+    sinais são a mesma correção. Sem ele o relatório mostra dois trabalhos onde
+    existe um, que é o problema que o catálogo de famílias existe para resolver.
+
+    A lista é curta e escrita à mão de propósito. Derivar do schema exigiria
+    casar nome de campo em inglês com prosa em português, e o casamento erraria
+    nos dois sentidos — `recommendation` contra "recomendação" passa por acaso,
+    `implementation_order` contra "ordem de implementação" não passa nunca.
+    """
+    texto = _texto()
+
+    for campo in ("remediation_family", "suspected_injections"):
+        assert campo in texto, (
+            f"a Skill não nomeia `{campo}`. A IA recebe o schema e poderia "
+            "descobrir o nome, mas campo que ninguém pede não se preenche"
+        )

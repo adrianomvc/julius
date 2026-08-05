@@ -69,7 +69,12 @@ MIN_DAYS_FOR_FORECAST = 5
 # Versão do dataset exportado. Sobe quando o significado de um campo muda, não
 # só quando um campo é adicionado: um dataset da versão anterior mede
 # mês-corrente, e esse número não pode ser reinterpretado como janela móvel.
-DATASET_SCHEMA_VERSION = 2
+#
+# 3 — a cobrança passou a ser o mês anterior fechado por padrão, e o campo
+# mudou de nome junto: `billing_cost_mtd` virou `billing_cost_period`. É o caso
+# que o parágrafo acima já antecipava, agora acontecido. Um dataset da versão 2
+# mede mês-corrente e não pode ser somado nem comparado com um da 3.
+DATASET_SCHEMA_VERSION = 3
 
 # DPU por worker type do Glue (Glue 2.0+). É um fato da AWS sobre o recurso,
 # não uma premissa de preço.

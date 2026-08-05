@@ -34,13 +34,17 @@ def collect_services(
     billing: BillingMonth,
     include_forecast: bool = False,
 ) -> list[ServiceCost]:
-    """GetCostAndUsage agrupado por serviço → cobrança MTD em USD.
+    """GetCostAndUsage agrupado por serviço → cobrança do período em USD.
 
     Serviços fora do escopo do Julius são somados em "Outros".
     """
     month_start = billing.month_start
     billing_end = billing.end_exclusive
     period = {"Start": month_start.isoformat(), "End": billing_end.isoformat()}
+    # O dado declara que período ele é, e o relatório só lê. Rotular na
+    # apresentação exigiria que ela redescobrisse o calendário, e um dataset
+    # relido meses depois perderia a informação de vez.
+    period_kind = "closed_month" if billing.is_closed else "month_to_date"
 
     resp = ce_client.get_cost_and_usage(
         TimePeriod=period,
@@ -66,10 +70,18 @@ def collect_services(
             totals[label] = totals.get(label, 0.0) + amount
 
     # Com poucos dias fechados a projeção da AWS ainda oscila demais para ser
-    # exibida como número; nesse caso o painel mostra apenas o MTD.
+    # exibida como número; nesse caso o painel mostra apenas o acumulado.
+    #
+    # Mês encerrado não se projeta, e a guarda mora aqui e não só em quem chama.
+    # Não é preferência de exibição: `billing_end` de um mês fechado é o dia 1º
+    # do mês **seguinte**, então a projeção sairia sobre o mês errado — e com
+    # data inicial no passado, que `GetCostForecast` recusa. O que era para ser
+    # informação a mais viraria erro de coleta.
     forecasts = (
         _forecast_by_service(ce_client, billing_end, totals)
-        if include_forecast and billing.observed_days >= MIN_DAYS_FOR_FORECAST
+        if include_forecast
+        and not billing.is_closed
+        and billing.observed_days >= MIN_DAYS_FOR_FORECAST
         else {}
     )
     services: list[ServiceCost] = []
@@ -91,6 +103,7 @@ def collect_services(
                     billing_end,
                     estimated,
                     forecasts.get(label),
+                    period_kind,
                 )
             )
     if totals:
@@ -103,6 +116,7 @@ def collect_services(
                 billing_end,
                 estimated,
                 None,
+                period_kind,
             )
         )
     return services
@@ -116,6 +130,7 @@ def _service(
     billing_end: date,
     estimated: bool,
     forecast: float | None,
+    period_kind: str,
 ) -> ServiceCost:
     return ServiceCost(
         name=label,
@@ -125,7 +140,7 @@ def _service(
         period_start=period["Start"],
         data_through=(billing_end - timedelta(days=1)).isoformat(),
         estimated=estimated,
-        period_kind="month_to_date",
+        period_kind=period_kind,
         cost_basis="cost_explorer_unblended",
         forecast_cost_eom=forecast,
     )

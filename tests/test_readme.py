@@ -116,3 +116,52 @@ def test_the_version_in_the_readme_matches_the_engine():
         f"o README cita versão que não é a do motor ({JULIUS_VERSION}): "
         f"{sorted(citadas - {JULIUS_VERSION})}"
     )
+
+
+def test_the_counts_in_the_readme_come_from_the_engine():
+    """Número no README envelhece calado, e este envelheceu.
+
+    O texto anunciava 40 fontes, 135 regras e 22 famílias enquanto o motor já
+    tinha 41, 137 e 23 — a defasagem entrou junto com regras e coletores novos,
+    e nada falhou. Quem lê o README para saber o tamanho do motor recebia a
+    resposta de três PRs atrás.
+
+    A checagem é por número solto e não por frase inteira: a prosa ao redor pode
+    ser reescrita à vontade, o que não pode é a contagem discordar do código.
+    """
+    from julius.collection.sources import SOURCES
+    from julius.knowledge.remediation import CATALOG, FAMILIES
+
+    texto = _texto()
+    esperado = {
+        "fontes": len(SOURCES),
+        "regras": len(CATALOG),
+        "famílias": len(FAMILIES),
+    }
+
+    for nome, quantidade in esperado.items():
+        assert re.search(rf"\b{quantidade}\b[^\n]*{nome}|{nome}[^\n]*\b{quantidade}\b", texto), (
+            f"o README não diz {quantidade} {nome} — o motor tem {quantidade}, "
+            "e o texto ficou para trás"
+        )
+
+
+def test_the_readme_does_not_claim_a_count_the_engine_contradicts():
+    """A direção que falta na anterior: número velho ainda presente no texto.
+
+    Sem isto, trocar `135 regras` por `137 regras` em um lugar e esquecer o outro
+    passaria — a busca acharia o certo e ignoraria o errado ao lado.
+    """
+    from julius.collection.sources import SOURCES
+    from julius.knowledge.remediation import CATALOG, FAMILIES
+
+    texto = _texto()
+    for nome, atual in (
+        ("fontes", len(SOURCES)),
+        ("regras", len(CATALOG)),
+        ("famílias", len(FAMILIES)),
+    ):
+        citados = {int(n) for n in re.findall(rf"(\d+)\s+{nome}\b", texto)}
+        assert citados <= {atual}, (
+            f"o README ainda cita {sorted(citados - {atual})} {nome}; o motor tem {atual}"
+        )

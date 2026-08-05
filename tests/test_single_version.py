@@ -52,8 +52,13 @@ from julius.analysis.skill_registry import contract_digest
 #: dado em 3.2.0 leu exatamente o mesmo texto que um dado em 3.2.1 — subir minor
 #: diria que a análise foi instruída de outro jeito, e ela não foi. Patch é
 #: "a trava passou a cobrir mais, o contrato continua o mesmo".
-VERSAO_CONGELADA = "3.2.1"
-DIGEST_CONGELADO = "b845dc23fffd49a6"
+#: 3.3.0 — a Skill passou a nomear `remediation_family` e `suspected_injections`.
+#: Os dois já existiam no schema e no validador, e o briefing já pedia o primeiro;
+#: o que faltava era a Skill convidar. Campo opcional que ninguém pede não se
+#: preenche, e `remediation_family` é o que diz que dois sinais são a mesma
+#: correção. Aditiva: nada saiu, nenhuma proibição mudou.
+VERSAO_CONGELADA = "3.3.0"
+DIGEST_CONGELADO = "00277af69e4b71e9"
 
 
 def test_the_contract_did_not_change_without_a_version_bump():

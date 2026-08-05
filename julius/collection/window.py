@@ -146,10 +146,19 @@ class AnalysisWindow:
 
 @dataclass(frozen=True)
 class BillingMonth:
-    """Mês-calendário corrente até o último dia fechado, em UTC.
+    """Mês-calendário da cobrança, em UTC. Dois modos, e eles não se confundem.
 
     Existe só para o painel que reconcilia com a fatura. Nenhum baseline de
     oportunidade se apoia neste período.
+
+    - `current()` — mês corrente até o último dia fechado. Parcial por definição,
+      e é o único caso em que projetar o fechamento faz sentido.
+    - `closed(period)` / `previous()` — um mês inteiro que já terminou. É o que a
+      cadência mensal usa, e o que a fatura da AWS de fato cobra.
+
+    A distinção não é cosmética: `GetCostForecast` exige data futura, então
+    projetar um mês encerrado não é apenas inútil, é chamada que falha. Quem
+    precisa decidir isso pergunta a `is_closed` em vez de reabrir o calendário.
     """
 
     month_start: date
@@ -163,6 +172,41 @@ class BillingMonth:
         # janela inválida Start == End; nesse caso a cobrança inclui o dia atual.
         end_exclusive = today if today > month_start else today + timedelta(days=1)
         return cls(month_start=month_start, end_exclusive=end_exclusive)
+
+    @classmethod
+    def closed(cls, period: str) -> BillingMonth:
+        """Mês `YYYY-MM` inteiro. Reusa a validação da janela de análise.
+
+        Construir sobre `AnalysisWindow.calendar_month` em vez de repetir o
+        `split` e o cuidado com dezembro é o que garante que os dois períodos
+        cortem no mesmo instante — que é a coisa toda que este módulo existe
+        para sustentar.
+        """
+        janela = AnalysisWindow.calendar_month(period)
+        return cls(month_start=janela.start_date, end_exclusive=janela.end_date)
+
+    @classmethod
+    def previous(cls, *, now: datetime | None = None) -> BillingMonth:
+        """O último mês encerrado — o padrão da cadência mensal."""
+        reference = utc_now(now).date().replace(day=1)
+        return cls.closed((reference - timedelta(days=1)).strftime("%Y-%m"))
+
+    @property
+    def is_closed(self) -> bool:
+        """O período cobre um mês inteiro? Decide projeção e rótulo, num lugar só.
+
+        Deliberadamente sem consultar o relógio. Um mês-calendário completo é
+        encerrado por definição, e `current()` nunca produz um — nem no último
+        dia do mês, porque o fim é exclusivo e para no dia corrente. Derivar da
+        própria janela mantém a resposta determinística no teste e dispensa
+        passar `now` para uma propriedade, que não teria onde recebê-lo.
+        """
+        return (self.end_exclusive - self.month_start).days == self.days_in_month
+
+    @property
+    def period(self) -> str:
+        """`YYYY-MM` do mês coberto, para rótulo e para o dataset."""
+        return self.month_start.strftime("%Y-%m")
 
     @property
     def data_through(self) -> date:

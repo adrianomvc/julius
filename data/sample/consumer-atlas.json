@@ -1,5 +1,5 @@
 {
-  "dataset_schema_version": 2,
+  "dataset_schema_version": 3,
   "account": "consumer-atlas",
   "region": "sa-east-1",
   "period": "jul/2026",
@@ -111,5 +111,7 @@
     "cost_quality": "partial",
     "allocation_version": "glue-cost-allocation-1.0",
     "gaps": []
-  }
+  },
+  "cadence": "weekly",
+  "financial_period": ""
 }
