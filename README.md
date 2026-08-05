@@ -71,16 +71,16 @@ pode já estar no que foi identificado"*.
 
 ```
 coleta read-only  →  motor determinístico  →  análise contextual  →  relatório
-   40 fontes          135 regras                 sinais julgados       3 perguntas
+   41 fontes          137 regras                 sinais julgados       3 perguntas
 ```
 
-**Coleta** (`julius collect`) — 40 fontes sobre Glue, Athena, S3, SageMaker,
+**Coleta** (`julius collect`) — 41 fontes sobre Glue, Athena, S3, SageMaker,
 Redshift, Step Functions, EventBridge, CloudTrail e Cost Explorer. Executa como
 DAG com limites por serviço, e o que cada fonte mediu — cobertura, atualização,
 erro categorizado, lacuna de IAM — fica registrado na saúde da coleta. Ausência
 nunca vira zero.
 
-**Motor determinístico** — 135 regras em 7 serviços, agrupadas em 22 **famílias de
+**Motor determinístico** — 137 regras em 8 grupos, agrupadas em 23 **famílias de
 remediação**. A família é o que diz que duas regras são a mesma correção:
 `GLUE-CODE-SHUFFLE` e `GLUE-CODE-SINGLE-PARTITION` se resolvem reparticionando, e
 sem isso o relatório mostra dois trabalhos onde existe um.
