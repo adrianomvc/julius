@@ -572,7 +572,7 @@
   "scan_id": "baseline",
   "signals": [],
   "summary": {
-    "billing_cost_mtd": "US$ 846,16",
+    "billing_cost_period": "US$ 846,16",
     "committed_monthly": "US$ 0",
     "high_confidence_monthly": "US$ 0",
     "identified_monthly": "US$ 0",

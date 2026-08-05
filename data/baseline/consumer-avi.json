@@ -4812,7 +4812,7 @@
     }
   ],
   "summary": {
-    "billing_cost_mtd": "US$ 5.860,46",
+    "billing_cost_period": "US$ 5.860,46",
     "committed_monthly": "US$ 0",
     "high_confidence_monthly": "US$ 1.121,21",
     "identified_monthly": "US$ 1.140,70",

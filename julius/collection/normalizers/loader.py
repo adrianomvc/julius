@@ -144,6 +144,8 @@ def account_from_dataset(raw: dict) -> Account:
         s3_mode=str(scope.get("s3_mode") or "proposal"),
         region=raw.get("region", "sa-east-1"),
         period=raw.get("period", ""),
+        cadence=raw.get("cadence", "weekly"),
+        financial_period=raw.get("financial_period", ""),
         lookback_days=raw.get("lookback_days", ANALYSIS_WINDOW_DAYS),
         generated_at=raw.get("generated_at", ""),
         scan_id=str(raw.get("scan_id") or ""),

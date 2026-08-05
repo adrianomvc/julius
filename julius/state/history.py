@@ -1187,6 +1187,6 @@ def _efficiency_rows(account: Account) -> list[tuple[str, str, str, float, str]]
                     )
                 )
     rows.append(
-        ("account", account.account_id, "monthly_cost", account.billing_cost_mtd, "USD")
+        ("account", account.account_id, "monthly_cost", account.billing_cost_period, "USD")
     )
     return rows

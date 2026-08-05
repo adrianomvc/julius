@@ -189,6 +189,31 @@ def _motivo_para(account: Account):
     return lambda opportunity: blocked_reason(account, opportunity)
 
 
+_MESES = (
+    "janeiro", "fevereiro", "março", "abril", "maio", "junho",
+    "julho", "agosto", "setembro", "outubro", "novembro", "dezembro",
+)
+
+
+def _billing_label(account: Account) -> str:
+    """"Cobrança de julho/2026" ou "Cobrança do mês (MTD)", conforme o dado.
+
+    Lê `period_kind`, que o coletor gravou, e não o calendário de hoje: um
+    dataset de julho relido em dezembro precisa continuar dizendo julho. Sem
+    serviço coletado não há período a nomear, e o rótulo genérico é o honesto.
+    """
+    if not account.services:
+        return "Cobrança do período"
+    servico = account.services[0]
+    if servico.period_kind != "closed_month":
+        return "Cobrança do mês (MTD)"
+    try:
+        ano, mes = servico.period_start.split("-")[:2]
+        return f"Cobrança de {_MESES[int(mes) - 1]}/{ano}"
+    except (ValueError, IndexError):
+        return "Cobrança do mês fechado"
+
+
 def _mask(account_id: str) -> str:
     # Mascara apenas IDs numéricos de conta AWS (12 dígitos); nomes amigáveis
     # (ex.: "consumer-avi") passam intactos.
@@ -437,6 +462,12 @@ class ReportViewModel:
     realized_fmt: str = "US$ 0.00"
     realization_rate_pct: str = "—"
     lifecycle_lead_times: list[dict] = field(default_factory=list)
+    #: Como chamar a linha de cobrança. Mês fechado e acumulado até hoje são
+    #: números diferentes, e chamar os dois de "MTD" foi o que fez um relatório
+    #: apresentar quatro dias de agosto como se fossem a fatura do período.
+    #: Sai do `period_kind` que o coletor gravou, nunca do calendário de hoje:
+    #: um dataset relido em dezembro precisa continuar dizendo o que era.
+    billing_period_label: str = "Cobrança do mês (MTD)"
     ai_summary: str = ""
     ai_implementation_order: list[dict] = field(default_factory=list)
     ai_recommendations: list[dict] = field(default_factory=list)
@@ -525,7 +556,7 @@ def _services(account: Account, opportunities: list[Opportunity]) -> tuple[list[
             if o.estimation is not None:
                 saving_currency_by_service[svc] = o.estimation.currency
 
-    total = account.billing_cost_mtd or 1.0
+    total = account.billing_cost_period or 1.0
     rows = []
     for s in account.services:
         saving = saving_by_service.get(s.name, 0.0)
@@ -536,7 +567,9 @@ def _services(account: Account, opportunities: list[Opportunity]) -> tuple[list[
             {
                 "name": s.name,
                 "sub": (
-                    f"{s.subtitle} · MTD até {s.data_through or '—'}"
+                    f"{s.subtitle} · "
+                    f"{'mês fechado até' if s.period_kind == 'closed_month' else 'MTD até'}"
+                    f" {s.data_through or '—'}"
                     f"{' · estimado pela AWS' if s.estimated else ''}"
                     + (
                         f" · forecast AWS {fmt.money(s.forecast_cost_eom, s.currency)}"
@@ -1058,7 +1091,8 @@ def build(
         scan_id=manifest_val(manifest, "scan_id"),
         generated_at=account.generated_at,
         currency=account_currency,
-        total_cost_fmt=fmt.money(account.billing_cost_mtd, account_currency),
+        total_cost_fmt=fmt.money(account.billing_cost_period, account_currency),
+        billing_period_label=_billing_label(account),
         identified_fmt=fmt.money(identified, saving_currency),
         technical_identified_fmt=fmt.money(
             technical_identified, saving_currency
@@ -1079,16 +1113,16 @@ def build(
         executable_count=len(pareto.executable_focus),
         months_remaining=months_remaining_in_year(),
         services=services,
-        account_total_fmt=fmt.money(account.billing_cost_mtd, account_currency),
+        account_total_fmt=fmt.money(account.billing_cost_period, account_currency),
         account_saving_fmt=fmt.money(identified, saving_currency),
         account_saving_pct=(
-            f"{round(identified / account.billing_cost_mtd * 100)}%"
-            if account.billing_cost_mtd and account_saving_comparable
+            f"{round(identified / account.billing_cost_period * 100)}%"
+            if account.billing_cost_period and account_saving_comparable
             else "—"
         ),
         account_bar_w=(
-            f"{identified / account.billing_cost_mtd * 100:.1f}%"
-            if account.billing_cost_mtd and account_saving_comparable
+            f"{identified / account.billing_cost_period * 100:.1f}%"
+            if account.billing_cost_period and account_saving_comparable
             else "0%"
         ),
         process_costs=_process_costs(account),

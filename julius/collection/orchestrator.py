@@ -36,6 +36,25 @@ from julius.collection.sources import SOURCES, CollectionContext
 from julius.collection.window import AnalysisWindow, BillingMonth
 
 
+def _billing_for_window(
+    window: AnalysisWindow, *, cadence: str, now: datetime | None
+) -> BillingMonth:
+    """O período da fatura, lido da **janela** que já foi decidida.
+
+    Era aqui o defeito: `BillingMonth.current` ficava fixo e ignorava a cadência,
+    então um scan mensal apresentava julho fechado na análise ao lado de quatro
+    dias de agosto na cobrança — e o percentual "economia sobre a conta" dividia
+    um pelo outro.
+
+    A correção não é escolher certo duas vezes; é não escolher duas vezes.
+    Derivando o mês da janela, `--period` explícito já vem junto e os dois
+    períodos não têm como divergir, porque não existe segunda decisão para errar.
+    """
+    if cadence == "monthly":
+        return BillingMonth.closed(window.start_date.strftime("%Y-%m"))
+    return BillingMonth.current(now=now)
+
+
 def collect_account(
     session: boto3.Session,
     *,
@@ -80,7 +99,7 @@ def collect_account(
     # Duas janelas, construídas uma vez, ambas em UTC. Nenhum coletor volta a
     # decidir sozinho qual período está olhando.
     window = window or AnalysisWindow.trailing(days=lookback_days, now=now)
-    billing = BillingMonth.current(now=now)
+    billing = _billing_for_window(window, cadence=cadence, now=now)
 
     ident = _verified_identity(session, health, account_id)
     catalog_scope = _named_catalog_scope(session, health, catalog_scope)

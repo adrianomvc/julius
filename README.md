@@ -182,11 +182,20 @@ julius collect --sso-profile <perfil> --output data/collected/<conta>.json
 julius agent collect-artifacts --input data/collected/<conta>.json --output data/artifacts/<conta>
 ```
 
-A primeira coleta de uma conta pede 90 dias; as seguintes voltam a 30, e o próprio
-`--output` anterior é o checkpoint. Cada família de fonte recorta essa janela no
-que a AWS ainda retém — 45 dias no Athena, 30 no Step Functions, 90 no Glue.
-`--max-scan-cost` limita o custo estimado do scan;
-`--collection-execution serial` desliga o paralelismo.
+O padrão é **o último mês-calendário fechado**, na análise e na cobrança — os dois
+recortam o mesmo período, e é por isso que "economia sobre a conta" é uma divisão
+legítima. `--period YYYY-MM` escolhe outro mês.
+
+`--cadence weekly` troca para a janela móvel de 30 dias, com a fatura do mês
+corrente até ontem. É o modo em que `--lookback-days` e `--bootstrap` valem: a
+primeira coleta de uma conta pede 90 dias, as seguintes voltam a 30, e o próprio
+`--output` anterior é o checkpoint. Numa conta nova vale rodar
+`--cadence weekly --bootstrap` uma vez, porque várias regras só produzem cifra com
+90 dias de cobertura.
+
+Cada família de fonte recorta a janela no que a AWS ainda retém — 45 dias no
+Athena, 30 no Step Functions, 90 no Glue. `--max-scan-cost` limita o custo
+estimado do scan; `--collection-execution serial` desliga o paralelismo.
 
 Sem `--artifacts-manifest`, nenhuma linha de código é analisada.
 

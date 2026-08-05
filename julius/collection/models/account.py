@@ -66,7 +66,7 @@ class Account:
     s3_mode: str = "proposal"
     region: str = "sa-east-1"
     period: str = ""
-    cadence: str = "weekly"
+    cadence: str = "monthly"
     financial_period: str = ""
     lookback_days: int = ANALYSIS_WINDOW_DAYS
     generated_at: str = ""
@@ -144,8 +144,12 @@ class Account:
         return next((j for j in self.glue_jobs if j.name == name), None)
 
     @property
-    def billing_cost_mtd(self) -> float:
-        """Cobrança do mês-calendário até a data — o painel de fatura.
+    def billing_cost_period(self) -> float:
+        """Cobrança do período de cobrança — o painel de fatura.
+
+        Chamava-se `billing_cost_mtd` e o nome passou a mentir: na cadência
+        mensal, que é o padrão, o período é um mês inteiro já encerrado, não um
+        acumulado até hoje. O `MTD` sobrevive só em `--cadence weekly`.
 
         Não é o período da análise. Nenhum baseline de oportunidade se apoia
         neste número; ele existe para reconciliar com o que a AWS emite.
@@ -154,7 +158,7 @@ class Account:
 
     @property
     def total_monthly_cost(self) -> float:
-        return self.billing_cost_mtd
+        return self.billing_cost_period
 
     def process_cost_for_asset(self, asset_name: str) -> float | None:
         matches = [

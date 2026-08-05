@@ -86,7 +86,7 @@ def render_json(vm: ReportViewModel, opportunities: list[Opportunity]) -> str:
         "scan_id": vm.scan_id,
         "currency": vm.currency,
         "summary": {
-            "billing_cost_mtd": vm.total_cost_fmt,
+            "billing_cost_period": vm.total_cost_fmt,
             "identified_monthly": vm.identified_fmt,
             "technical_identified_monthly": vm.technical_identified_fmt,
             "high_confidence_monthly": vm.high_conf_fmt,

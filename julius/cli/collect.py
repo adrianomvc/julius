@@ -25,7 +25,10 @@ def collect(
     lookback_days: int = typer.Option(
         ANALYSIS_WINDOW_DAYS,
         "--lookback-days",
-        help="Dias UTC completos da janela de análise (custo e comportamento).",
+        help=(
+            "Dias UTC completos da janela de análise (custo e comportamento). "
+            "Só vale com --cadence weekly: mês-calendário não tem janela móvel."
+        ),
     ),
     touches_table: str = typer.Option("", "--touches-table", help="Tabela oficial de toques (Athena)."),
     athena_workgroup: str = typer.Option("julius", "--athena-workgroup"),
@@ -53,9 +56,12 @@ def collect(
         ),
     ),
     cadence: str = typer.Option(
-        "weekly",
+        "monthly",
         "--cadence",
-        help="weekly usa 30 dias móveis; monthly usa um mês-calendário completo.",
+        help=(
+            "monthly (padrão) usa o último mês-calendário fechado, na análise e "
+            "na cobrança; weekly usa 30 dias móveis e a fatura do mês corrente."
+        ),
     ),
     period: str = typer.Option(
         "",
@@ -197,7 +203,9 @@ def collect(
         "--bootstrap/--no-bootstrap",
         help=(
             "Janela profunda na primeira coleta da conta. Sem a flag, decide "
-            "pela existência do --output anterior. Ignorado em --cadence monthly."
+            "pela existência do --output anterior. Não se aplica ao padrão "
+            "--cadence monthly: use --cadence weekly --bootstrap na primeira "
+            "coleta de uma conta nova."
         ),
     ),
 ) -> None:
@@ -230,8 +238,10 @@ def collect(
         raise typer.BadParameter("--resume-scan-id requer --run-store")
     if bootstrap and cadence == "monthly":
         raise typer.BadParameter(
-            "--bootstrap não se aplica a --cadence monthly: o mês-calendário é "
-            "fechamento financeiro de um período específico, não janela móvel"
+            "--bootstrap não se aplica a --cadence monthly (o padrão): o "
+            "mês-calendário é fechamento financeiro de um período específico, "
+            "não janela móvel. Para a primeira coleta de uma conta nova, que é "
+            "onde a janela profunda vale, use: --cadence weekly --bootstrap"
         )
     dias, usar_bootstrap = resolve_depth(
         lookback_days=lookback_days,
