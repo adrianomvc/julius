@@ -1914,7 +1914,7 @@
           "utilização observada 20% vs. alvo 75%",
           "Auto Scaling reduz workers ociosos (redução limitada a 60%)",
           "custo alocado do Cost Explorer (0.4400 USD/DPU-h observado no mês, qualidade reconciled)",
-          "economia não quantificada: evidência de memória, disco e spill incompleta"
+          "economia não quantificada, falta: max_memory_used_pct (fonte CloudWatch Glue Observability); max_disk_used_pct (fonte CloudWatch Glue Observability); Spark event log completo (fonte Spark Event Logs); spill medido (fonte Spark Event Logs)"
         ],
         "avoidable_bytes": null,
         "baseline_bytes": null,
@@ -2406,7 +2406,7 @@
           "redução só é acionável com memória, disco e spill observados",
           "ganho potencial até concluir três runs por candidato",
           "custo alocado do Cost Explorer (0.4400 USD/DPU-h observado no mês, qualidade reconciled)",
-          "economia não quantificada: evidência de memória, disco e spill incompleta"
+          "economia não quantificada, falta: max_memory_used_pct (fonte CloudWatch Glue Observability); max_disk_used_pct (fonte CloudWatch Glue Observability); Spark event log completo (fonte Spark Event Logs); spill medido (fonte Spark Event Logs)"
         ],
         "avoidable_bytes": null,
         "baseline_bytes": null,
@@ -2537,7 +2537,7 @@
           "redução só é acionável com memória, disco e spill observados",
           "ganho potencial até concluir três runs por candidato",
           "custo alocado do Cost Explorer (0.4400 USD/DPU-h observado no mês, qualidade reconciled)",
-          "economia não quantificada: evidência de memória, disco e spill incompleta"
+          "economia não quantificada, falta: max_memory_used_pct (fonte CloudWatch Glue Observability); max_disk_used_pct (fonte CloudWatch Glue Observability); Spark event log completo (fonte Spark Event Logs); spill medido (fonte Spark Event Logs)"
         ],
         "avoidable_bytes": null,
         "baseline_bytes": null,

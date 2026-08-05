@@ -71,7 +71,7 @@ def detect(account: Account, config: Config, scan_id: str) -> list[Opportunity]:
             else job.avg_cpu_load
         )
         low_cpu = utilization is not None and utilization < config.thresholds.low_cpu
-        capacity_evidence = _capacity_evidence(job, config)
+        capacity_gaps = _capacity_gaps(job, config)
 
         if _inactive_days(job) >= 365:
             out.append(
@@ -156,9 +156,9 @@ def detect(account: Account, config: Config, scan_id: str) -> list[Opportunity]:
             and job.worker_type in _AUTOSCALE_TYPES
         )
         if not job.auto_scaling and autoscaling_eligible and low_cpu:
-            out.append(_autoscaling(account, job, config, scan_id, capacity_evidence))
+            out.append(_autoscaling(account, job, config, scan_id, capacity_gaps))
         elif low_cpu and (job.number_of_workers or 0) > config.thresholds.session_min_dpu:
-            out.append(_overprovisioned(account, job, config, scan_id, capacity_evidence))
+            out.append(_overprovisioned(account, job, config, scan_id, capacity_gaps))
 
         # Versão antiga: fatura em blocos de 10 min. Abaixo de 2.0 o desperdício
         # é aritmético; entre 2.0 e a preferencial só o script diz se migrar
@@ -286,7 +286,7 @@ def detect(account: Account, config: Config, scan_id: str) -> list[Opportunity]:
             and job.avg_cpu_load is not None
             and job.avg_cpu_load < th.worker_type_low_cpu
         ):
-            out.append(_worker_type(account, job, config, scan_id, capacity_evidence))
+            out.append(_worker_type(account, job, config, scan_id, capacity_gaps))
 
         duration_cv = (
             job.execution_stddev_sec / job.avg_execution_sec if job.avg_execution_sec > 0 else 0.0
@@ -565,11 +565,12 @@ def _worker_type(
     job: GlueJob,
     config: Config,
     scan_id: str,
-    capacity_evidence: bool,
+    capacity_gaps: list[str],
 ) -> Opportunity:
     est, new_type = glue_est.worker_type_downgrade_saving(job, config)
-    if not capacity_evidence:
-        _zero_unproven(est)
+    capacity_evidence = not capacity_gaps
+    if capacity_gaps:
+        _zero_unproven(est, capacity_gaps)
     return build(
         Finding(
             asset_type="glue_job",
@@ -1056,11 +1057,12 @@ def _autoscaling(
     job: GlueJob,
     config: Config,
     scan_id: str,
-    capacity_evidence: bool,
+    capacity_gaps: list[str],
 ) -> Opportunity:
     est = glue_est.autoscaling_saving(job, config)
-    if not capacity_evidence:
-        _zero_unproven(est)
+    capacity_evidence = not capacity_gaps
+    if capacity_gaps:
+        _zero_unproven(est, capacity_gaps)
     return build(
         Finding(
             asset_type="glue_job",
@@ -1113,7 +1115,7 @@ def _overprovisioned(
     job: GlueJob,
     config: Config,
     scan_id: str,
-    capacity_evidence: bool,
+    capacity_gaps: list[str],
 ) -> Opportunity:
     est = glue_est.worker_reduction_saving(job, config)
     candidates = _worker_candidates(job, config)
@@ -1123,8 +1125,9 @@ def _overprovisioned(
         and job.rightsize_test_runs >= 3
         and job.rightsize_output_validated
     )
-    if not capacity_evidence:
-        _zero_unproven(est)
+    capacity_evidence = not capacity_gaps
+    if capacity_gaps:
+        _zero_unproven(est, capacity_gaps)
     opportunity = build(
         Finding(
             asset_type="glue_job",
@@ -1220,26 +1223,72 @@ def _worker_candidates(job: GlueJob, config: Config) -> list[int]:
     return sorted({upper, midpoint, target}, reverse=True)
 
 
-def _capacity_evidence(job: GlueJob, config: Config) -> bool:
+#: Cada medição que o gate de capacidade exige, e a fonte que a produz. A fonte
+#: entra porque é ela que o operador destrava: "faltou `max_memory_used_pct`" não
+#: diz o que fazer; "conceda CloudWatch Glue Observability" diz.
+_FONTE_DA_MEDICAO = {
+    "max_memory_used_pct": "CloudWatch Glue Observability",
+    "max_disk_used_pct": "CloudWatch Glue Observability",
+    "spill medido": "Spark Event Logs",
+    "Spark event log completo": "Spark Event Logs",
+}
+
+
+def _capacity_gaps(job: GlueJob, config: Config) -> list[str]:
+    """O que falta para afirmar que dá para reduzir capacidade.
+
+    Devolve a lista, e não um `bool`, porque a mensagem antiga dizia sempre
+    "evidência de memória, disco e spill incompleta" — mesmo quando faltava só
+    uma das quatro. Quem lê precisa saber **qual**, senão a próxima ação é
+    conceder três permissões para descobrir que faltava uma.
+    """
     th = config.thresholds
-    return (
-        job.max_memory_used_pct is not None
-        and job.max_memory_used_pct < th.worker_memory_pressure_high
-        and job.max_disk_used_pct is not None
-        and job.max_disk_used_pct < th.worker_disk_pressure_high
-        and job.has_spill_evidence
-        and job.spark_event_log_evidence_complete
-        and (job.shuffle_spill_bytes or 0) <= 0
+    faltando: list[str] = []
+    if job.max_memory_used_pct is None:
+        faltando.append("max_memory_used_pct")
+    if job.max_disk_used_pct is None:
+        faltando.append("max_disk_used_pct")
+    if not job.spark_event_log_evidence_complete:
+        faltando.append("Spark event log completo")
+    if not job.has_spill_evidence:
+        faltando.append("spill medido")
+    if faltando:
+        return faltando
+    # Medido, e o resultado nega a redução: aqui não falta evidência — ela existe
+    # e diz que o job está sob pressão. É outra frase, e a ação também é outra.
+    sob_pressao = []
+    if (job.max_memory_used_pct or 0) >= th.worker_memory_pressure_high:
+        sob_pressao.append(f"memória em {job.max_memory_used_pct:.0f}%")
+    if (job.max_disk_used_pct or 0) >= th.worker_disk_pressure_high:
+        sob_pressao.append(f"disco em {job.max_disk_used_pct:.0f}%")
+    if (job.shuffle_spill_bytes or 0) > 0:
+        sob_pressao.append(f"spill de {job.shuffle_spill_bytes:.0f} bytes")
+    return [f"medido e sob pressão: {', '.join(sob_pressao)}"] if sob_pressao else []
+
+
+def _capacity_evidence(job: GlueJob, config: Config) -> bool:
+    return not _capacity_gaps(job, config)
+
+
+def _porque_falta(faltando: list[str]) -> str:
+    """A frase que nomeia o que falta e por onde se consegue."""
+    if not faltando:
+        return "evidência incompleta"
+    return "; ".join(
+        f"{item} (fonte {_FONTE_DA_MEDICAO[item]})"
+        if item in _FONTE_DA_MEDICAO
+        else item
+        for item in faltando
     )
 
 
-def _zero_unproven(
-    estimation,
-    reason: str = "evidência de memória, disco e spill incompleta",
-) -> None:
+def _zero_unproven(estimation, faltando: list[str] | None = None) -> None:
+    """Zera a cifra e diz **o que** faltou para ela existir."""
     estimation.estimated_saving = 0.0
     estimation.projected_cost = estimation.baseline_cost
-    estimation.assumptions.append(f"economia não quantificada: {reason}")
+    estimation.assumptions.append(
+        "economia não quantificada, falta: " + _porque_falta(faltando or [])
+    )
 
 
 def _investigation(

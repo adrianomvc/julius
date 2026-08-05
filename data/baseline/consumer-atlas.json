@@ -351,7 +351,7 @@
           "utilização observada 31% vs. alvo 75%",
           "Auto Scaling reduz workers ociosos (redução limitada a 60%)",
           "tarifa de 0.4400 USD/DPU-h · tabela sa-east-1 v2.0-usd (não conferida)",
-          "economia não quantificada: evidência de memória, disco e spill incompleta"
+          "economia não quantificada, falta: max_memory_used_pct (fonte CloudWatch Glue Observability); max_disk_used_pct (fonte CloudWatch Glue Observability); Spark event log completo (fonte Spark Event Logs); spill medido (fonte Spark Event Logs)"
         ],
         "avoidable_bytes": null,
         "baseline_bytes": null,
