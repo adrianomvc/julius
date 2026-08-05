@@ -26,8 +26,17 @@ from julius.reporting import design, design_view, renderer
 SAMPLE = "data/sample/consumer-avi.json"
 
 #: sha256 dos arquivos como vieram do pacote do designer.
+#:
+#: v2 — o bloco do Devin ganhou passo a passo, validação, riscos e a linha de
+#: procedência. Antes ele exibia só `devinNote`: a análise devolve dez campos por
+#: oportunidade e o desenho mostrava um, então o "como resolver" do relatório era
+#: a frase única da regra determinística.
+#:
+#: ATENÇÃO: a cópia no editor do designer precisa receber a mesma alteração. Se a
+#: próxima entrega vier da v1, ela desfaz isto em silêncio — e é exatamente o
+#: cenário que este arquivo existe para tornar visível.
 ORIGINAIS = {
-    design.SCREEN: "d9d1ba041854a4fb4d730b4cb14f4e987d4e9ceb24a5546acb8ef21b7f1a5c6a",
+    design.SCREEN: "ab6e39fd69d29d96fa11e058085494ca5175f9fe70567a50a83482a4b670c286",
 }
 
 

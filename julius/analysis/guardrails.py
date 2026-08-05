@@ -21,7 +21,7 @@ from julius.analysis.playbook import asset_types_in_context
 from julius.analysis.playbook import render as render_playbooks
 from julius.knowledge.remediation import CATALOG, FAMILIES
 
-PROMPT_VERSION = "3.3.0"
+PROMPT_VERSION = "3.4.0"
 
 #: As regras em si, separadas do texto que as apresenta — o validador de
 #: resposta verifica o resultado das mesmas restrições.
@@ -223,6 +223,17 @@ Suas quatro tarefas, nesta ordem:
 {_generative_eligibility()}
 2. Enriquecer as oportunidades determinísticas: causa provável a partir da
    evidência citada, passos, dependências, conflitos e ordem de implementação.
+
+   Cada oportunidade do pacote representa uma **família de remediação**, e
+   `applies_to` lista os outros achados que a sua resposta vai alcançar — mesma
+   correção, ativos diferentes. Quando essa lista não está vazia, escreva os
+   passos para a família e **nomeie o que varia por ativo**, em vez de fixar os
+   números de um só. "Reduzir para 12 workers" é verdade sobre um job e mentira
+   sobre os outros três; "reduzir ao número que o próprio job indica — aqui 12,
+   e os demais estão em `applies_to`" sobrevive aos quatro. O ativo que você
+   analisou fica registrado no relatório ao lado da resposta, então o leitor
+   sabe de onde ela veio; o que ele não pode receber é número de um ativo
+   apresentado como sendo do dele.
 3. Escolher o lado quando a recomendação admite dois caminhos, dizendo quem
    quebra com a escolha.
 4. Registrar em `uncovered_findings` o desperdício que nenhuma regra do pacote

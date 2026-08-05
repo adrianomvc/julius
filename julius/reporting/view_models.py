@@ -102,6 +102,14 @@ class OpportunityVM:
     blocked_missing: str = ""
     blocked_unblocked_by: str = ""
     blocked_next_action: str = ""
+    #: A família de remediação, que é a chave do reuso: uma resposta da análise
+    #: vale para todos os achados da mesma família.
+    remediation_family: str = ""
+    #: O ativo em que a resposta da análise foi apurada, quando não foi neste.
+    #: Vazio no representante. Sem este campo o cartão afirmaria que o passo saiu
+    #: deste ativo, e não saiu — é a diferença entre reusar análise e inventar
+    #: procedência.
+    ai_derived_from: str = ""
     ai_diagnosis: str = ""
     ai_recommendation: str = ""
     ai_implementation_steps: list[str] = field(default_factory=list)
@@ -383,6 +391,7 @@ def _opp_vm(
             motivo.source_next_action if motivo and motivo.source_next_action else ""
         ),
         portfolio_exclusion_reasons=list(o.portfolio_exclusion_reasons),
+        remediation_family=o.remediation_family,
     )
 
 

@@ -57,8 +57,13 @@ from julius.analysis.skill_registry import contract_digest
 #: o que faltava era a Skill convidar. Campo opcional que ninguém pede não se
 #: preenche, e `remediation_family` é o que diz que dois sinais são a mesma
 #: correção. Aditiva: nada saiu, nenhuma proibição mudou.
-VERSAO_CONGELADA = "3.3.0"
-DIGEST_CONGELADO = "00277af69e4b71e9"
+#: 3.4.0 — o pacote passou a levar um representante por família de remediação, e
+#: o briefing precisa dizer isso: a resposta alcança os achados listados em
+#: `applies_to`, então os passos se escrevem para a família, nomeando o que varia
+#: por ativo. Sem a instrução, "reduzir para 12 workers" — verdade sobre um job —
+#: viraria afirmação sobre outros três. Aditiva.
+VERSAO_CONGELADA = "3.4.0"
+DIGEST_CONGELADO = "b6d4f59cfa4df6bc"
 
 
 def test_the_contract_did_not_change_without_a_version_bump():
