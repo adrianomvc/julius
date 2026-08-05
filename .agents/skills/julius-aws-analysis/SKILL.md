@@ -11,7 +11,7 @@ metadata:
     - evidence requirements
     - output contract
     - contextual range
-  prompt_version: 3.0.0
+  prompt_version: 3.1.0
   allowed_estimation_methods:
     - glue_interactive_capacity_reduction_v1
     - glue_shuffle_reduction_v1
@@ -59,6 +59,7 @@ metadata:
     - shuffle_partitioning
     - silent_failure
     - storage_class
+    - table_format
     - training_convergence
   documentation_domain: docs.aws.amazon.com
 ---

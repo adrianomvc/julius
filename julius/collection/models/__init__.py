@@ -46,6 +46,7 @@ from julius.collection.models.glue import (
     GlueCrawler,
     GlueJob,
     GlueTrigger,
+    GlueUsageProfile,
     InteractiveSession,
 )
 from julius.collection.models.health import CollectionHealth, IamGap
@@ -76,6 +77,7 @@ __all__ = [
     "GlueCrawler",
     "GlueJob",
     "GlueTrigger",
+    "GlueUsageProfile",
     "InteractiveSession",
     "PreviousResult",
     "ProcessCost",

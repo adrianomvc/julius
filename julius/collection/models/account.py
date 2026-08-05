@@ -42,6 +42,7 @@ from julius.collection.models.glue import (
     GlueCrawler,
     GlueJob,
     GlueTrigger,
+    GlueUsageProfile,
     InteractiveSession,
 )
 from julius.collection.models.health import CollectionHealth
@@ -88,6 +89,9 @@ class Account:
     interactive_sessions: list[InteractiveSession] = field(default_factory=list)
     glue_crawlers: list[GlueCrawler] = field(default_factory=list)
     glue_triggers: list[GlueTrigger] = field(default_factory=list)
+    #: Guardrails do Glue. Não alimentam regra: são estado que o relatório
+    #: mostra, porque prevenção não tem economia medida.
+    glue_usage_profiles: list[GlueUsageProfile] = field(default_factory=list)
     databrew_jobs: list[DataBrewJob] = field(default_factory=list)
     process_costs: list[ProcessCost] = field(default_factory=list)
     athena_queries: list[AthenaQuery] = field(default_factory=list)

@@ -10,6 +10,7 @@ from julius.findings.build import RuleContext, build
 from julius.findings.evidence import Evidence
 from julius.findings.finding import Finding
 from julius.findings.recommendation import Recommendation
+from julius.findings.signal import Signal
 
 _DOC = "https://docs.aws.amazon.com/glue/latest/dg/tables-described.html"
 
@@ -139,3 +140,59 @@ def _unused(account, table: Table, writer, config: Config, scan_id: str) -> Oppo
             scan_id=scan_id,
         ),
     )
+
+
+#: Tabela grande o bastante para a migração de formato ter efeito mensurável.
+#: Abaixo disso o custo de reescrever supera qualquer ganho de pruning.
+_TAMANHO_MINIMO_BYTES = 50 * _GB
+
+_DOC_ICEBERG = (
+    "https://docs.aws.amazon.com/athena/latest/ug/querying-iceberg.html"
+)
+
+
+def signals(account: Account, config: Config) -> list[Signal]:
+    """Tabela principal ainda em formato Hive comum.
+
+    **Por que sinal.** O ganho de um formato de tabela aberta — pruning por
+    manifesto, compactação, evolução de partição — depende do padrão de consulta
+    de cada consumidor, e o custo de reescrever depende do volume. Nenhuma
+    métrica coletável fecha essa conta, e afirmar economia aqui seria escolher
+    uma fração e chamá-la de medição.
+
+    **As três portas.** Formato ainda não migrado, tamanho que justifica a
+    reescrita, e leitura observada na janela. A terceira é a que separa "tabela
+    principal" de tabela grande e esquecida — e para essa última a recomendação é
+    outra, que `DATA-UNUSED-OUTPUT` já faz.
+
+    `open_table_format` vazio significa Hive comum **ou** catálogo que não
+    declarou. As duas caem aqui de propósito: nos dois casos a pergunta continua
+    aberta, e quem lê o catálogo responde.
+    """
+    return [
+        Signal(
+            kind="config",
+            rule_id="GLUE-TABLE-FORMAT-REVIEW",
+            asset_type="table",
+            asset_name=table.name,
+            observation=(
+                f"Tabela de {table.storage_bytes / _GB:.0f} GB em formato Hive "
+                f"comum, com {table.touches_90d} leitura(s) na janela."
+            ),
+            question=(
+                "O padrão de consulta desta tabela se beneficia de um formato de "
+                "tabela aberta — pruning por manifesto, compactação, evolução de "
+                "partição — o bastante para pagar a reescrita e a revalidação de "
+                "todos os consumidores?"
+            ),
+            missing_evidence=[
+                "bytes varridos por consulta antes e depois, num piloto",
+                "consumidores que precisam ser revalidados",
+            ],
+            doc_links=[_DOC_ICEBERG],
+        )
+        for table in account.tables
+        if not table.open_table_format
+        and table.storage_bytes >= _TAMANHO_MINIMO_BYTES
+        and table.touches_90d > 0
+    ]

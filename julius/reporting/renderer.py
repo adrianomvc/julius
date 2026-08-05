@@ -123,6 +123,10 @@ def render_json(vm: ReportViewModel, opportunities: list[Opportunity]) -> str:
         "glue_cost": vm.glue_cost,
         "s3_cost": vm.s3_cost,
         "producer_candidates": [asdict(pc) for pc in vm.producers],
+        # Guardrail declarado pela conta. Fora de `opportunities` porque não é
+        # oportunidade: prevenção não desperdiçou nada, e não há economia a somar.
+        # Lista vazia é resposta — a conta não tem perfil de uso.
+        "guardrails": vm.guardrails,
         "integrity": {
             "inventory": vm.inventory_integrity,
             "rule_families_without_evidence": vm.rule_families_without_evidence,

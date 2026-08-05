@@ -78,6 +78,7 @@ def collect_sessions(
                 number_of_workers=workers,
                 max_capacity=max_capacity,
                 glue_version=str(s.get("GlueVersion") or ""),
+                profile_name=str(s.get("ProfileName") or ""),
                 idle_timeout_min=int(s.get("IdleTimeout", 2880) or 2880),
                 status=s.get("Status", "READY"),
                 idle_hours_per_day=activity["idle_hours_per_day"],

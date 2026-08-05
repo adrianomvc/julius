@@ -67,6 +67,9 @@ def account_to_dataset(account: Account) -> dict:
         "interactive_sessions": [_clean(asdict(s)) for s in account.interactive_sessions],
         "glue_crawlers": [_clean(asdict(c)) for c in account.glue_crawlers],
         "glue_triggers": [_clean(asdict(t)) for t in account.glue_triggers],
+        "glue_usage_profiles": [
+            _clean(asdict(p)) for p in account.glue_usage_profiles
+        ],
         "databrew_jobs": [_clean(asdict(j)) for j in account.databrew_jobs],
         "process_costs": [_clean(asdict(p)) for p in account.process_costs],
         "athena_queries": [_clean(asdict(q)) for q in account.athena_queries],

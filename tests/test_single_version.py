@@ -38,8 +38,11 @@ from julius.analysis.skill_registry import contract_digest
 #: a Skill removida nunca tenha sido instalada (`install/install.sh` publica só a
 #: que fica) é o motivo da fusão, não licença para tratá-la como aditiva: esta
 #: versão é o rastro que liga cada veredito ao contrato que o produziu.
-VERSAO_CONGELADA = "3.0.0"
-DIGEST_CONGELADO = "76ad13bfe304ba91"
+#: 3.1.0 — a família `table_format` entrou no catálogo de remediação, que é campo
+#: do motor desde 2.2.0 e por isso parte do contrato. Aditiva: nenhuma família
+#: saiu, e um veredito que declarou família em 3.0.0 continua válido.
+VERSAO_CONGELADA = "3.1.0"
+DIGEST_CONGELADO = "441d7cb3025b0675"
 
 
 def test_the_contract_did_not_change_without_a_version_bump():
